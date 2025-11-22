@@ -1,0 +1,304 @@
+.iky-monitor {
+    display: flex;
+    height: calc(100vh - 104px);
+    background: #f3f4f6;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* LEFT PANEL */
+.iky-monitor__left {
+    width: 280px;
+    padding: 12px;
+    box-sizing: border-box;
+}
+
+.iky-monitor__left-card {
+    background: #ffffff;
+    border-radius: 10px;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+    border: 1px solid #e5e7eb;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.iky-monitor__left-tabs {
+    display: flex;
+    border-bottom: 1px solid #e5e7eb;
+    background: #f9fafb;
+    border-radius: 10px 10px 0 0;
+    overflow: hidden;
+}
+
+.iky-monitor__left-tab {
+    flex: 1;
+    padding: 10px 12px;
+    border: none;
+    background: transparent;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    color: #6b7280;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.iky-monitor__left-tab--active {
+    color: #111827;
+    background: #ffffff;
+    box-shadow: inset 0 -2px 0 #3b82f6;
+}
+
+.iky-monitor__left-body {
+    padding: 12px 14px 14px;
+    font-size: 13px;
+    overflow: auto;
+}
+
+.iky-monitor__left-section {
+    margin-bottom: 12px;
+}
+
+.iky-monitor__left-label {
+    margin-bottom: 4px;
+    font-weight: 500;
+    color: #374151;
+}
+
+.iky-monitor__input,
+.iky-monitor__select {
+    width: 100%;
+    padding: 7px 9px;
+    font-size: 13px;
+    border-radius: 6px;
+    border: 1px solid #d1d5db;
+    box-sizing: border-box;
+    background: #f9fafb;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.iky-monitor__input:focus,
+.iky-monitor__select:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.2);
+    background: #ffffff;
+}
+
+.iky-monitor__table-placeholder {
+    height: 170px;
+    border-radius: 8px;
+    border: 1px dashed #d1d5db;
+    background: #f9fafb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9ca3af;
+    font-size: 12px;
+}
+
+.iky-monitor__primary-btn {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 999px;
+    border: none;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.4);
+    transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.iky-monitor__primary-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 22px rgba(37, 99, 235, 0.45);
+}
+
+/* CENTER MAP */
+.iky-monitor__center {
+    flex: 1;
+    padding: 12px 12px 12px 0;
+    box-sizing: border-box;
+}
+
+.iky-monitor__map {
+    width: 100%;
+    height: 100%;
+    border-radius: 16px;
+    border: 1px solid #e5e7eb;
+    background: #e5e7eb;
+    position: relative;
+    overflow: hidden;
+}
+
+.iky-monitor__map-inner {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+}
+
+/* popup gắn vào marker */
+.iky-monitor__popup-wrapper {
+    position: absolute;
+    transform: translate(-50%, -100%); /* đáy popup nằm trên marker */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    z-index: 400;
+    pointer-events: none;
+}
+
+.iky-monitor__popup {
+    position: relative;
+    min-width: 360px;
+    max-width: 90vw;
+    background: #ffffff;
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 18px 45px rgba(15, 23, 42, 0.3);
+    font-size: 13px;
+    overflow: hidden;
+    pointer-events: auto; /* trong popup vẫn click được */
+}
+
+.iky-monitor__popup::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -8px;
+    transform: translateX(-50%) rotate(45deg);
+    width: 14px;
+    height: 14px;
+    background: #ffffff;
+    border-left: 1px solid #e5e7eb;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.iky-monitor__popup-tabs {
+    display: flex;
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.iky-monitor__popup-tab {
+    flex: 1;
+    padding: 8px 10px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 13px;
+    color: #6b7280;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.iky-monitor__popup-tab--active {
+    background: #ffffff;
+    color: #111827;
+    font-weight: 600;
+    box-shadow: inset 0 -2px 0 #2563eb;
+}
+
+.iky-monitor__popup-body {
+    padding: 10px 12px 12px;
+}
+
+.iky-monitor__popup-col > div {
+    margin-bottom: 4px;
+}
+
+.iky-monitor__control-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.iky-monitor__toggle-btn {
+    min-width: 56px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    border: none;
+    font-size: 12px;
+    cursor: pointer;
+    color: #fff;
+}
+
+.iky-monitor__toggle-btn--off {
+    background: #ef4444;
+}
+
+.iky-monitor__secondary-btn {
+    padding: 3px 10px;
+    border-radius: 999px;
+    border: none;
+    background: #f59e0b;
+    color: #111827;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.iky-monitor__dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: #9ca3af;
+}
+
+/* RIGHT BOX PIN */
+.iky-monitor__right {
+    width: 260px;
+    padding: 12px 12px 12px 0;
+    box-sizing: border-box;
+}
+
+.iky-monitor__right-title {
+    margin: 0 0 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #111827;
+}
+
+.iky-monitor__battery-box {
+    border-radius: 10px;
+    border: 1px solid #e5e7eb;
+    background: #ffffff;
+    padding: 10px 12px;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+/* RESPONSIVE */
+@media (max-width: 1024px) {
+    .iky-monitor__right {
+        display: none;
+    }
+}
+
+@media (max-width: 768px) {
+    .iky-monitor {
+        flex-direction: column;
+        height: auto;
+    }
+
+    .iky-monitor__left {
+        width: 100%;
+        padding: 8px;
+    }
+
+    .iky-monitor__center {
+        padding: 8px;
+        min-height: 420px; /* đảm bảo map có height trên mobile */
+    }
+
+    .iky-monitor__map {
+        height: 100%;
+    }
+
+    .iky-monitor__popup {
+        min-width: 320px;
+    }
+}

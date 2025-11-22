@@ -1,0 +1,217 @@
+/* ===============================
+   NAVBAR BASE
+================================= */
+.iky-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #2196f3;
+    color: #fff;
+    height: 64px;
+    padding: 0;
+    font-family: system-ui, sans-serif;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* LOGO */
+.iky-nav__logo {
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    height: 100%;
+}
+
+.iky-nav__logo-img {
+    height: 38px;
+    width: auto;
+    object-fit: contain;
+}
+
+/* MENU */
+.iky-nav__menu {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    gap: 4px;
+    flex: 1;
+    justify-content: center;
+}
+
+.iky-nav__item {
+    min-width: 120px;
+    height: 100%;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    transition: background 0.2s ease;
+}
+
+.iky-nav__item:hover {
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.iky-nav__item--active {
+    background: rgba(0, 0, 0, 0.22);
+}
+
+.iky-nav__item-icon {
+    width: 32px;
+    height: 32px;
+}
+
+.iky-nav__item-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.iky-nav__item-label {
+    margin-top: 2px;
+    font-size: 13px;
+}
+
+/* USER */
+.iky-nav__user {
+    position: relative;
+    padding: 0 24px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+}
+
+.iky-nav__user:hover {
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.iky-nav__user-name {
+    font-weight: 600;
+}
+
+.iky-nav__user-sub {
+    opacity: 0.8;
+}
+
+.iky-nav__user-caret {
+    font-size: 10px;
+}
+
+/* DROPDOWN */
+.iky-nav__dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background: #ffffff;
+    color: #333;
+    border-radius: 4px;
+    min-width: 140px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+    overflow: hidden;
+    z-index: 999;
+}
+
+.iky-nav__dropdown-item {
+    width: 100%;
+    padding: 10px 12px;
+    text-align: left;
+    background: #fff;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.iky-nav__dropdown-item:hover {
+    background: #eeeeee;
+}
+
+/* ===============================
+   RESPONSIVE
+================================= */
+
+/* Tablet: thu nhỏ padding & width item */
+@media (max-width: 1024px) {
+    .iky-nav__logo {
+        padding: 0 16px;
+    }
+
+    .iky-nav__item {
+        min-width: 100px;
+    }
+
+    .iky-nav__item-icon {
+        width: 28px;
+        height: 28px;
+    }
+
+    .iky-nav__item-label {
+        font-size: 12px;
+    }
+
+    .iky-nav__user {
+        padding: 0 16px;
+    }
+}
+
+/* Mobile: logo 1 hàng, menu 1 hàng dưới, user vẫn bên phải */
+@media (max-width: 768px) {
+    .iky-nav {
+        flex-wrap: wrap;
+        height: auto;
+        padding: 0;
+    }
+
+    .iky-nav__logo {
+        width: 100%;
+        justify-content: flex-start;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+        padding: 6px 12px;
+    }
+
+    .iky-nav__menu {
+        width: 100%;
+        justify-content: space-around;
+        padding: 4px 0;
+    }
+
+    .iky-nav__item {
+        min-width: auto;
+        padding: 4px 6px;
+    }
+
+    .iky-nav__user {
+        position: absolute;
+        top: 6px;
+        right: 8px;
+        padding: 4px 8px;
+        background: rgba(0, 0, 0, 0.05);
+        border-radius: 4px;
+    }
+
+    .iky-nav__dropdown {
+        top: calc(100% + 4px);
+    }
+}
+
+/* Very small mobile: ẩn text label, chỉ để icon cho đỡ chật */
+@media (max-width: 480px) {
+    .iky-nav__item-label {
+        display: none;
+    }
+
+    .iky-nav__item-icon {
+        width: 26px;
+        height: 26px;
+    }
+
+    .iky-nav__menu {
+        justify-content: space-between;
+        padding: 4px 8px;
+    }
+}

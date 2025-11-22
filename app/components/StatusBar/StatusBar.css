@@ -1,0 +1,106 @@
+.iky-status {
+    width: 100%;
+    background: #f7f7f7;
+    border-bottom: 1px solid #dcdcdc;
+    padding: 6px 16px;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    font-family: system-ui, sans-serif;
+}
+
+.iky-status__breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    color: #4a4a4a;
+}
+
+.iky-status__icon {
+    color: #7abdfb;
+    font-weight: bold;
+}
+
+.iky-status__link {
+    color: #448ccb;
+    cursor: pointer;
+}
+
+.iky-status__current {
+    color: #333;
+    font-weight: 500;
+}
+
+/* STATES (icons xe) */
+.iky-status__states {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+}
+
+.iky-status__state {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    color: #222;
+}
+
+.iky-status__state img {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+}
+
+/* RIGHT SIDE */
+.iky-status__right {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-size: 14px;
+}
+
+.iky-status__notify {
+    color: #1d70b8;
+    cursor: pointer;
+}
+
+.iky-status__notify-count {
+    color: red;
+}
+
+.iky-status__time {
+    color: #333;
+    font-weight: 500;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .iky-status {
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 8px 10px;
+    }
+
+    .iky-status__states {
+        gap: 12px;
+        flex-wrap: wrap;
+        justify-content: center;
+        width: 100%;
+    }
+
+    .iky-status__right {
+        width: 100%;
+        justify-content: flex-end;
+        font-size: 13px;
+    }
+}
+
+@media (max-width: 480px) {
+    .iky-status__state span {
+        display: none; /* ẩn chữ, chỉ để icon */
+    }
+}
