@@ -26,8 +26,6 @@ import {
     EyeOutlined,
 } from '@ant-design/icons';
 
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
 import markerIcon from '../../assets/marker-red.png';
 
 // API REAL
@@ -43,10 +41,10 @@ const { Title, Text } = Typography;
 const { Option } = Select;
 
 export default function ManageDevicesPage() {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : '';
-    const currentRole = typeof window !== 'undefined' ? localStorage.getItem('role') : '';
-
     const [loading, setLoading] = useState(false);
+    const [LMap, setLMap] = useState(null);
+    const [token, setToken] = useState('');
+    const [currentRole, setCurrentRole] = useState('');
 
     // API DATA
     const [devices, setDevices] = useState([]);
@@ -119,6 +117,13 @@ export default function ManageDevicesPage() {
         loadOptions();
     }, [token]);
 
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            setToken(localStorage.getItem('accessToken') || '');
+            setCurrentRole(localStorage.getItem('role') || '');
+        }
+    }, []);
+
     /* =========================
         ADD
     ========================= */
@@ -171,6 +176,15 @@ export default function ManageDevicesPage() {
         if (!phone) return true;
         return /^(0[2-9][0-9]{8,9})$/.test(phone);
     };
+
+    useEffect(() => {
+        const loadLeaflet = async () => {
+            const L = await import('leaflet');
+            await import('leaflet/dist/leaflet.css');
+            setLMap(L);
+        };
+        loadLeaflet();
+    }, []);
 
     /* =========================
         SAVE
@@ -280,7 +294,7 @@ export default function ManageDevicesPage() {
 
         mapRef.current = map;
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        LMap.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
         const mk = L.marker([lat, lon], {
             icon: L.icon({
