@@ -3,13 +3,10 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import './MonitorPage.css';
 
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-
-import { getDevices } from './lib/api/devices'; // chỉnh path cho đúng
-import { getBatteryStatusByImei } from './lib/api/batteryStatus'; // chỉnh path cho đúng
-import { getDeviceInfo } from './lib/api/devices'; // m tạo file / chỉnh path
-import { getLastCruise } from './lib/api/cruise'; // m tạo file / chỉnh path
+import { getDevices } from './lib/api/devices';
+import { getBatteryStatusByImei } from './lib/api/batteryStatus';
+import { getDeviceInfo } from './lib/api/devices';
+import { getLastCruise } from './lib/api/cruise';
 
 import markerIcon from './assets/marker-red.png';
 import { useRouter } from 'next/navigation';
@@ -28,6 +25,7 @@ const MonitorPage = () => {
     const [leftTab, setLeftTab] = useState('monitor');
     const [showPopup, setShowPopup] = useState(false);
     const [detailTab, setDetailTab] = useState('status');
+    const [LMap, setLMap] = useState(null);
 
     // history filter (xem lại lộ trình)
     const [historyDeviceId, setHistoryDeviceId] = useState('');
@@ -60,6 +58,15 @@ const MonitorPage = () => {
     const [lat] = useState(10.7542506);
     const [lng] = useState(106.6170202);
 
+    useEffect(() => {
+        const loadLeaflet = async () => {
+            const L = await import('leaflet');
+            await import('leaflet/dist/leaflet.css');
+            setLMap(L);
+        };
+        loadLeaflet();
+    }, []);
+
     const mapRef = useRef(null);
     const markerRef = useRef(null);
     const [markerScreenPos, setMarkerScreenPos] = useState(null);
@@ -67,7 +74,9 @@ const MonitorPage = () => {
 
     // INIT MAP
     useEffect(() => {
-        const map = L.map('iky-map', {
+        if (!LMap) return; // Đợi Leaflet load xong
+
+        const map = LMap.map('iky-map', {
             center: [lat, lng],
             zoom: 16,
             zoomControl: false,
@@ -78,17 +87,17 @@ const MonitorPage = () => {
 
         mapRef.current = map;
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        LMap.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19,
         }).addTo(map);
 
-        const customIcon = L.icon({
+        const customIcon = LMap.icon({
             iconUrl: markerIcon.src,
             iconSize: [36, 36],
             iconAnchor: [18, 36],
         });
 
-        const marker = L.marker([lat, lng], { icon: customIcon }).addTo(map);
+        const marker = LMap.marker([lat, lng], { icon: customIcon }).addTo(map);
         markerRef.current = marker;
 
         const updatePopupPosition = () => {
@@ -120,7 +129,7 @@ const MonitorPage = () => {
             map.off('zoom', updatePopupPosition);
             map.remove();
         };
-    }, [lat, lng]);
+    }, [LMap, lat, lng]); // Thêm LMap vào dependencies
 
     // LOAD LIST DEVICE
     useEffect(() => {
@@ -150,7 +159,6 @@ const MonitorPage = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [deviceList]);
 
-    // PREFILL history tab từ localStorage hoặc default hôm nay
     // PREFILL history tab: luôn default hôm nay, KHÔNG đọc từ localStorage
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -257,7 +265,7 @@ const MonitorPage = () => {
 
                 // cập nhật map theo lat / lon
                 if (mapRef.current && markerRef.current && cruise.lat && cruise.lon) {
-                    const newLatLng = L.latLng(cruise.lat, cruise.lon);
+                    const newLatLng = LMap.latLng(cruise.lat, cruise.lon);
                     markerRef.current.setLatLng(newLatLng);
                     mapRef.current.setView(newLatLng, 16);
                 }
