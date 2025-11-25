@@ -1,0 +1,77 @@
+.user-page {
+    padding: 16px;
+    background: #f5f5f5;
+    min-height: calc(100vh - 104px); /* chỉnh theo header của m */
+    box-sizing: border-box;
+}
+
+.user-page__card {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.user-page__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.user-page__title {
+    margin: 0;
+}
+
+.user-page__add-btn {
+    flex-shrink: 0;
+}
+
+.user-page__search {
+    margin: 16px 0;
+}
+
+.user-page__table .ant-table {
+    background: #fff;
+}
+
+/* ====== MOBILE ====== */
+@media (max-width: 768px) {
+    .user-page {
+        padding: 8px;
+    }
+
+    .user-page__card {
+        margin: 0 4px;
+    }
+
+    .user-page__header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .user-page__add-btn {
+        width: 100%;
+    }
+
+    .user-page__search {
+        margin: 8px 0 16px;
+    }
+
+    /* modal gọn hơn trên mobile */
+    .user-modal .ant-modal {
+        max-width: 95% !important;
+        margin: 0 auto;
+    }
+
+    .user-modal .ant-modal-body {
+        padding: 16px;
+    }
+
+    .user-modal .ant-modal-header {
+        padding: 12px 16px;
+    }
+
+    .user-modal .ant-modal-footer {
+        padding: 10px 16px;
+    }
+}

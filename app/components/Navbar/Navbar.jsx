@@ -23,6 +23,8 @@ const Navbar = ({ username = 'haidv' }) => {
     const router = useRouter();
     const pathname = usePathname() || '/';
 
+    if (pathname === '/login') return null;
+
     // Tự tính activeKey dựa vào URL
     const computedActiveKey =
         navItems.find((item) => {
@@ -51,10 +53,7 @@ const Navbar = ({ username = 'haidv' }) => {
                     <button
                         key={item.key}
                         type="button"
-                        className={
-                            'iky-nav__item' +
-                            (item.key === computedActiveKey ? ' iky-nav__item--active' : '')
-                        }
+                        className={'iky-nav__item' + (item.key === computedActiveKey ? ' iky-nav__item--active' : '')}
                         onClick={() => handleClickItem(item)}
                     >
                         <div className="iky-nav__item-icon">
@@ -66,10 +65,7 @@ const Navbar = ({ username = 'haidv' }) => {
             </nav>
 
             {/* USER + DROPDOWN */}
-            <div
-                className="iky-nav__user"
-                onClick={() => setOpenDropdown((prev) => !prev)}
-            >
+            <div className="iky-nav__user" onClick={() => setOpenDropdown((prev) => !prev)}>
                 <span className="iky-nav__user-name">{username}</span>
                 <span className="iky-nav__user-sub">({username})</span>
                 <span className="iky-nav__user-caret">▾</span>

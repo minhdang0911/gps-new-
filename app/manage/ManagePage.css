@@ -1,0 +1,431 @@
+.iky-manage {
+    display: flex;
+    min-height: calc(100vh - 140px);
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #f5f7fb;
+}
+
+/* SIDEBAR */
+.iky-manage__sidebar {
+    width: 220px;
+    background: #eef3f7;
+    border-right: 1px solid #d1d5db;
+    padding-top: 16px;
+}
+
+.iky-manage__sidebar-item {
+    padding: 10px 16px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #111827;
+    border-left: 4px solid transparent;
+}
+
+.iky-manage__sidebar-item:hover {
+    background: #dde6f0;
+}
+
+.iky-manage__sidebar-item--active {
+    background: #1d90ff;
+    color: #ffffff;
+    border-left-color: #0b6dc5;
+}
+
+/* CONTENT */
+.iky-manage__content {
+    flex: 1;
+    padding: 20px 24px;
+}
+
+.iky-manage__section {
+    max-width: 1100px;
+    margin: 0 auto;
+}
+
+.iky-manage__section-title {
+    font-size: 18px;
+    margin: 0 0 10px;
+    color: #111827;
+}
+
+.iky-manage__section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.iky-manage__sub-title {
+    font-size: 15px;
+    margin: 16px 0 8px;
+}
+
+/* CARD + TABLE */
+.iky-manage__card {
+    background: #ffffff;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+}
+
+.iky-manage__card--narrow {
+    max-width: 520px;
+}
+
+.iky-manage__card-footer {
+    margin-top: 12px;
+    text-align: right;
+}
+
+.iky-manage__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.iky-manage__table th,
+.iky-manage__table td {
+    border: 1px solid #d1d5db;
+    padding: 6px 8px;
+    text-align: left;
+}
+
+.iky-manage__table th {
+    background: #f3f4f6;
+    font-weight: 600;
+}
+
+.iky-manage__table--striped tbody tr:nth-child(odd) {
+    background: #f9fafb;
+}
+
+/* FILTERS */
+.iky-manage__filters {
+    background: #ffffff;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    padding: 12px 16px;
+}
+
+.iky-manage__filters-row {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 8px;
+}
+
+.iky-manage__filters-actions {
+    text-align: right;
+}
+
+/* FORM */
+.iky-form-item {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    margin-bottom: 6px;
+}
+
+.iky-form-item__label {
+    font-size: 13px;
+    margin-bottom: 4px;
+    color: #374151;
+}
+
+.iky-input,
+.iky-select,
+.iky-textarea {
+    border: 1px solid #d1d5db;
+    border-radius: 3px;
+    padding: 6px 8px;
+    font-size: 13px;
+    outline: none;
+}
+
+.iky-input:focus,
+.iky-select:focus,
+.iky-textarea:focus {
+    border-color: #1d90ff;
+    box-shadow: 0 0 0 1px rgba(29, 144, 255, 0.2);
+}
+
+.iky-textarea {
+    resize: vertical;
+}
+
+/* BUTTONS */
+.iky-btn {
+    border: 1px solid #d1d5db;
+    background: #e5e7eb;
+    color: #111827;
+    padding: 6px 10px;
+    font-size: 13px;
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.iky-btn--primary {
+    background: #1d90ff;
+    border-color: #0b6dc5;
+    color: #ffffff;
+}
+
+.iky-btn--success {
+    background: #22c55e;
+    border-color: #16a34a;
+    color: #ffffff;
+}
+
+.iky-btn--danger {
+    background: #ef4444;
+    border-color: #dc2626;
+    color: #ffffff;
+}
+
+.iky-btn--small {
+    padding: 4px 8px;
+    font-size: 12px;
+    margin-right: 4px;
+}
+
+.iky-btn:hover {
+    filter: brightness(0.96);
+}
+
+/* LINK */
+.iky-link {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    font-size: 13px;
+    color: #1d90ff;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+/* MODAL */
+.iky-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.iky-modal__overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+}
+
+.iky-modal__body {
+    position: relative;
+    background: #ffffff;
+    border-radius: 4px;
+    border: 1px solid #d1d5db;
+    width: 640px;
+    max-width: 95vw;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.iky-modal__body--wide {
+    width: 900px;
+}
+
+.iky-modal__header {
+    padding: 10px 14px;
+    background: #1d90ff;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.iky-modal__header h3 {
+    margin: 0;
+    font-size: 15px;
+}
+
+.iky-modal__close {
+    background: none;
+    border: none;
+    color: #ffffff;
+    font-size: 18px;
+    cursor: pointer;
+}
+
+.iky-modal__content {
+    padding: 12px 16px;
+    overflow: auto;
+}
+
+.iky-modal__row {
+    display: flex;
+    gap: 16px;
+}
+
+.iky-modal__footer {
+    padding: 10px 14px;
+    border-top: 1px solid #d1d5db;
+    text-align: right;
+}
+
+/* DEVICE DETAIL */
+.iky-device-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.iky-device-detail__map {
+    height: 260px;
+    border: 1px solid #d1d5db;
+    margin-bottom: 8px;
+}
+
+.iky-device-detail__map-placeholder {
+    width: 100%;
+    height: 100%;
+    background: #e5e7eb;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #6b7280;
+    font-size: 14px;
+}
+
+.iky-device-detail__bottom {
+    display: flex;
+    gap: 16px;
+}
+
+.iky-device-detail__col {
+    flex: 1;
+}
+
+.iky-device-detail__topup {
+    display: flex;
+    gap: 6px;
+}
+
+/* RESPONSIVE */
+@media (max-width: 1024px) {
+    .iky-manage {
+        flex-direction: column;
+    }
+
+    .iky-manage__sidebar {
+        width: 100%;
+        display: flex;
+        border-right: none;
+        border-bottom: 1px solid #d1d5db;
+    }
+
+    .iky-manage__sidebar-item {
+        flex: 1;
+        text-align: center;
+    }
+}
+
+@media (max-width: 768px) {
+    .iky-manage__filters-row {
+        flex-direction: column;
+    }
+
+    .iky-modal__body--wide {
+        width: 95vw;
+    }
+
+    .iky-device-detail__bottom {
+        flex-direction: column;
+    }
+}
+
+/* MAP WRAPPER RESPONSIVE */
+.iky-device-map-wrapper {
+    width: 100%;
+    height: 380px;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid #d9d9d9;
+}
+
+.iky-device-map-inner {
+    width: 100%;
+    height: 100%;
+}
+
+/* laptop nhỏ / tablet ngang */
+@media (max-width: 992px) {
+    .iky-device-map-wrapper {
+        height: 320px;
+    }
+}
+
+/* tablet dọc / mobile */
+@media (max-width: 768px) {
+    .iky-device-map-wrapper {
+        height: 280px;
+    }
+}
+
+/* mobile nhỏ */
+@media (max-width: 576px) {
+    .iky-device-map-wrapper {
+        height: 240px;
+    }
+}
+
+/* POPUP DẠNG BẢNG TRÊN MARKER */
+.iky-map-popup {
+    font-size: 12px;
+    line-height: 1.4;
+    background: #ffffff;
+}
+
+.iky-map-popup__row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.iky-map-popup__label {
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.iky-map-popup__value {
+    text-align: right;
+}
+
+/* bo góc + shadow cho popup */
+.iky-leaflet-popup .leaflet-popup-content-wrapper {
+    border-radius: 4px;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.25);
+    padding: 8px 10px;
+}
+
+.iky-leaflet-popup .leaflet-popup-content {
+    margin: 0;
+}
+
+.iky-table-responsive {
+    width: 100%;
+    overflow-x: auto; /* cho scroll ngang khi nhỏ */
+}
+
+/* bắt buộc table phải rộng tối thiểu để không bị dồn chữ */
+.iky-table-responsive .ant-table {
+    min-width: 720px;
+}
+
+/* màn to vẫn ok, không ảnh hưởng gì */
+@media (min-width: 1200px) {
+    .iky-table-responsive .ant-table {
+        min-width: 100%;
+    }
+}

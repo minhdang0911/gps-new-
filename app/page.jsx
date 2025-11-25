@@ -1,26 +1,71 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import './MonitorPage.css';
 
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-// đổi path icon cho đúng project
+import { getDevices } from './lib/api/devices'; // chỉnh path cho đúng
+import { getBatteryStatusByImei } from './lib/api/batteryStatus'; // chỉnh path cho đúng
+import { getDeviceInfo } from './lib/api/devices'; // m tạo file / chỉnh path
+import { getLastCruise } from './lib/api/cruise'; // m tạo file / chỉnh path
+
 import markerIcon from './assets/marker-red.png';
+import { useRouter } from 'next/navigation';
+
+const toLocalDateTimeInput = (date) => {
+    const pad = (n) => String(n).padStart(2, '0');
+    const year = date.getFullYear();
+    const month = pad(date.getMonth() + 1);
+    const day = pad(date.getDate());
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+};
 
 const MonitorPage = () => {
     const [leftTab, setLeftTab] = useState('monitor');
     const [showPopup, setShowPopup] = useState(false);
     const [detailTab, setDetailTab] = useState('status');
 
-    // tọa độ công ty iKY
+    // history filter (xem lại lộ trình)
+    const [historyDeviceId, setHistoryDeviceId] = useState('');
+    const [historyStart, setHistoryStart] = useState('');
+    const [historyEnd, setHistoryEnd] = useState('');
+    const [historyMessage, setHistoryMessage] = useState('');
+    const [historyMessageType, setHistoryMessageType] = useState(''); // 'error' | 'success'
+
+    const [deviceList, setDeviceList] = useState([]);
+    const [loadingDevices, setLoadingDevices] = useState(false);
+
+    const [searchText, setSearchText] = useState('');
+    const [statusFilter, setStatusFilter] = useState('all'); // all | online | offline
+
+    // device đang chọn
+    const [selectedDevice, setSelectedDevice] = useState(null);
+
+    // battery status của device đang chọn
+    const [batteryStatus, setBatteryStatus] = useState(null);
+    const [loadingBattery, setLoadingBattery] = useState(false);
+
+    // thêm: thông tin device detail + last cruise
+    const [deviceInfo, setDeviceInfo] = useState(null);
+    const [loadingDeviceInfo, setLoadingDeviceInfo] = useState(false);
+
+    const [lastCruise, setLastCruise] = useState(null);
+    const [loadingCruise, setLoadingCruise] = useState(false);
+    const [cruiseError, setCruiseError] = useState(null);
+
     const [lat] = useState(10.7542506);
     const [lng] = useState(106.6170202);
 
     const mapRef = useRef(null);
+    const markerRef = useRef(null);
     const [markerScreenPos, setMarkerScreenPos] = useState(null);
+    const router = useRouter();
 
+    // INIT MAP
     useEffect(() => {
         const map = L.map('iky-map', {
             center: [lat, lng],
@@ -37,7 +82,6 @@ const MonitorPage = () => {
             maxZoom: 19,
         }).addTo(map);
 
-        // icon custom
         const customIcon = L.icon({
             iconUrl: markerIcon.src,
             iconSize: [36, 36],
@@ -45,6 +89,7 @@ const MonitorPage = () => {
         });
 
         const marker = L.marker([lat, lng], { icon: customIcon }).addTo(map);
+        markerRef.current = marker;
 
         const updatePopupPosition = () => {
             const point = map.latLngToContainerPoint(marker.getLatLng());
@@ -57,12 +102,10 @@ const MonitorPage = () => {
             setShowPopup(true);
         });
 
-        // click chỗ khác trên map thì đóng popup
         map.on('click', () => {
             setShowPopup(false);
         });
 
-        // khi pan / zoom thì cập nhật lại vị trí popup
         map.on('move zoom', updatePopupPosition);
 
         const handleResize = () => {
@@ -78,6 +121,262 @@ const MonitorPage = () => {
             map.remove();
         };
     }, [lat, lng]);
+
+    // LOAD LIST DEVICE
+    useEffect(() => {
+        const token = localStorage.getItem('accessToken');
+        if (!token) return;
+
+        const fetchDevices = async () => {
+            try {
+                setLoadingDevices(true);
+                const res = await getDevices(token, { limit: 50 });
+                setDeviceList(res.devices || []);
+            } catch (err) {
+                console.error('Load devices error:', err);
+            } finally {
+                setLoadingDevices(false);
+            }
+        };
+
+        fetchDevices();
+    }, []);
+
+    // KHI CÓ DANH SÁCH XE -> AUTO CHỌN XE ĐẦU TIÊN
+    useEffect(() => {
+        if (deviceList.length > 0 && !selectedDevice) {
+            handleSelectDevice(deviceList[0]);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [deviceList]);
+
+    // PREFILL history tab từ localStorage hoặc default hôm nay
+    // PREFILL history tab: luôn default hôm nay, KHÔNG đọc từ localStorage
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        if (!deviceList.length) return;
+
+        // luôn chọn xe đầu tiên nếu chưa có
+        if (!historyDeviceId && deviceList[0]) {
+            setHistoryDeviceId(deviceList[0]._id);
+        }
+
+        // luôn set khoảng thời gian là hôm nay nếu chưa có
+        if (!historyStart || !historyEnd) {
+            const now = new Date();
+
+            const start = new Date(now);
+            start.setHours(0, 0, 0, 0);
+
+            const end = new Date(now);
+            end.setHours(23, 59, 0, 0);
+
+            setHistoryStart(toLocalDateTimeInput(start));
+            setHistoryEnd(toLocalDateTimeInput(end));
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [deviceList]);
+
+    // FILTER DEVICE
+    const filteredDevices = useMemo(() => {
+        const keyword = searchText.trim().toLowerCase();
+
+        return deviceList.filter((d) => {
+            const plate = (d.license_plate || '').toLowerCase();
+            const imei = (d.imei || '').toLowerCase();
+            const phone = (d.phone_number || '').toLowerCase();
+
+            const matchSearch =
+                !keyword || plate.includes(keyword) || imei.includes(keyword) || phone.includes(keyword);
+
+            const isOnline = d.status === 10;
+            let matchStatus = true;
+            if (statusFilter === 'online') matchStatus = isOnline;
+            if (statusFilter === 'offline') matchStatus = !isOnline;
+
+            return matchSearch && matchStatus;
+        });
+    }, [deviceList, searchText, statusFilter]);
+
+    // CLICK 1 XE -> chọn device + gọi API pin + device info + last cruise
+    const handleSelectDevice = async (device) => {
+        setSelectedDevice(device);
+        setShowPopup(true);
+        setDetailTab('battery'); // nhảy thẳng sang tab pin
+
+        const token = localStorage.getItem('accessToken');
+        if (!token || !device?.imei) {
+            setBatteryStatus(null);
+            setDeviceInfo(null);
+            setLastCruise(null);
+            setCruiseError('Thiếu token hoặc IMEI để tải dữ liệu');
+            return;
+        }
+
+        // reset state
+        setBatteryStatus(null);
+        setDeviceInfo(null);
+        setLastCruise(null);
+        setCruiseError(null);
+
+        // LOAD PIN
+        try {
+            setLoadingBattery(true);
+            const res = await getBatteryStatusByImei(token, device.imei);
+            setBatteryStatus(res?.batteryStatus || null);
+        } catch (err) {
+            console.error('Load battery status error:', err);
+            setBatteryStatus(null);
+        } finally {
+            setLoadingBattery(false);
+        }
+
+        // LOAD DEVICE INFO
+        try {
+            setLoadingDeviceInfo(true);
+            const info = await getDeviceInfo(token, device._id);
+            setDeviceInfo(info || null);
+        } catch (err) {
+            console.error('Load device info error:', err);
+            setDeviceInfo(null);
+        } finally {
+            setLoadingDeviceInfo(false);
+        }
+
+        // LOAD LAST CRUISE
+        try {
+            setLoadingCruise(true);
+            const cruise = await getLastCruise(token, device.imei);
+
+            if (!cruise || cruise.error) {
+                setLastCruise(null);
+                setCruiseError('Không có dữ liệu hành trình');
+            } else {
+                setLastCruise(cruise);
+                setCruiseError(null);
+
+                // cập nhật map theo lat / lon
+                if (mapRef.current && markerRef.current && cruise.lat && cruise.lon) {
+                    const newLatLng = L.latLng(cruise.lat, cruise.lon);
+                    markerRef.current.setLatLng(newLatLng);
+                    mapRef.current.setView(newLatLng, 16);
+                }
+            }
+        } catch (err) {
+            console.error('Load last cruise error:', err);
+            setLastCruise(null);
+            setCruiseError('Không thể tải dữ liệu hành trình');
+        } finally {
+            setLoadingCruise(false);
+        }
+    };
+
+    const renderBatteryInfo = () => {
+        if (loadingBattery) return <div>Đang tải trạng thái pin...</div>;
+        if (!batteryStatus) return <div>Không có dữ liệu pin cho thiết bị này.</div>;
+
+        const bs = batteryStatus; // alias cho gọn
+
+        return (
+            <>
+                <div>IMEI: {bs.imei || selectedDevice?.imei}</div>
+                <div>Điện áp: {bs.voltage ?? '--'} V</div>
+                <div>Dòng sạc/xả: {bs.current ?? '--'} A</div>
+                <div>Trạng thái sạc (SOC): {bs.soc ?? '--'}%</div>
+                <div>Dung lượng pin: {bs.capacityAh ?? '--'} Ah</div>
+                <div>Sức khỏe pin (SOH): {bs.soh ?? '--'}%</div>
+                <div>Nhiệt độ: {bs.temperature ?? '--'}°C</div>
+                <div>Trạng thái: {bs.status || '--'}</div>
+                <div>Cập nhật lúc: {bs.updatedAt ? new Date(bs.updatedAt).toLocaleString() : '--'}</div>
+            </>
+        );
+    };
+
+    const renderStatusInfo = () => {
+        if (!selectedDevice) return <div>Vui lòng chọn xe bên trái.</div>;
+
+        if (loadingDeviceInfo || loadingCruise) {
+            return <div>Đang tải dữ liệu trạng thái...</div>;
+        }
+
+        const info = deviceInfo || selectedDevice;
+
+        const plate = info?.license_plate || '---';
+        const vehicleType = info?.vehicle_category_id?.name || info?.vehicle_category_id?.model || '---';
+        const manufacturer = info?.device_category_id?.name || info?.device_category_id?.code || '---';
+
+        let timeStr = '--';
+        if (lastCruise?.created) {
+            timeStr = new Date(lastCruise.created).toLocaleString();
+        } else if (lastCruise?.updated) {
+            timeStr = new Date(lastCruise.updated).toLocaleString();
+        }
+
+        const latVal = lastCruise?.lat;
+        const lonVal = lastCruise?.lon;
+
+        return (
+            <>
+                <div>Biển số xe: {plate}</div>
+                <div>Loại xe: {vehicleType}</div>
+                <div>Hãng sản xuất: {manufacturer}</div>
+                <div>Tại thời điểm: {timeStr}</div>
+
+                {lastCruise && (
+                    <>
+                        <div>Vị trí hiện tại: {latVal != null && lonVal != null ? `${latVal}, ${lonVal}` : '--'}</div>
+                        <div>Tọa độ: {latVal != null && lonVal != null ? `${latVal}, ${lonVal}` : '--'}</div>
+                    </>
+                )}
+
+                {cruiseError && <div className="iky-monitor__error">{cruiseError}</div>}
+            </>
+        );
+    };
+
+    // Lưu filter lịch sử sang localStorage + validate
+    const handleSaveHistoryFilter = () => {
+        setHistoryMessage('');
+        setHistoryMessageType('');
+
+        if (!historyDeviceId || !historyStart || !historyEnd) {
+            setHistoryMessage('Vui lòng chọn xe và nhập đầy đủ "Từ ngày" / "Đến ngày".');
+            setHistoryMessageType('error');
+            return;
+        }
+
+        const startDate = new Date(historyStart);
+        const endDate = new Date(historyEnd);
+
+        if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+            setHistoryMessage('Định dạng thời gian không hợp lệ. Vui lòng chọn lại.');
+            setHistoryMessageType('error');
+            return;
+        }
+
+        if (endDate < startDate) {
+            setHistoryMessage('Thời gian "Đến ngày" không được nhỏ hơn "Từ ngày".');
+            setHistoryMessageType('error');
+            return;
+        }
+
+        const filter = {
+            deviceId: historyDeviceId,
+            imei: deviceList.find((d) => d._id === historyDeviceId)?.imei || '',
+            start: historyStart,
+            end: historyEnd,
+        };
+        try {
+            localStorage.setItem('iky_cruise_filter', JSON.stringify(filter));
+            router.push('/cruise');
+            setHistoryMessage('Đã lưu bộ lọc lộ trình. Vào trang "Hành trình" để tải lộ trình.');
+            setHistoryMessageType('success');
+        } catch (e) {
+            console.error('Save iky_cruise_filter error', e);
+            setHistoryMessage('Không thể lưu bộ lọc. Vui lòng thử lại.');
+            setHistoryMessageType('error');
+        }
+    };
 
     return (
         <div className="iky-monitor">
@@ -107,24 +406,32 @@ const MonitorPage = () => {
 
                     {leftTab === 'monitor' && (
                         <div className="iky-monitor__left-body">
+                            {/* SEARCH */}
                             <div className="iky-monitor__left-section">
                                 <div className="iky-monitor__left-label">Nhập xe cần tìm</div>
                                 <input
                                     className="iky-monitor__input"
-                                    placeholder="Biển số / tên xe..."
+                                    placeholder="Biển số / tên xe / IMEI..."
+                                    value={searchText}
+                                    onChange={(e) => setSearchText(e.target.value)}
                                 />
                             </div>
 
+                            {/* FILTER STATUS */}
                             <div className="iky-monitor__left-section">
                                 <div className="iky-monitor__left-label">Trạng thái</div>
-                                <select className="iky-monitor__select">
-                                    <option>-- Chọn --</option>
-                                    <option>Chạy xe</option>
-                                    <option>Dừng xe</option>
-                                    <option>Đỗ xe</option>
+                                <select
+                                    className="iky-monitor__select"
+                                    value={statusFilter}
+                                    onChange={(e) => setStatusFilter(e.target.value)}
+                                >
+                                    <option value="all">-- Tất cả --</option>
+                                    <option value="online">Online</option>
+                                    <option value="offline">Offline</option>
                                 </select>
                             </div>
 
+                            {/* Nhóm (mock) */}
                             <div className="iky-monitor__left-section">
                                 <div className="iky-monitor__left-label">Nhóm</div>
                                 <select className="iky-monitor__select">
@@ -134,10 +441,41 @@ const MonitorPage = () => {
                                 </select>
                             </div>
 
+                            {/* DANH SÁCH XE */}
                             <div className="iky-monitor__left-section">
                                 <div className="iky-monitor__left-label">Danh sách xe</div>
-                                <div className="iky-monitor__table-placeholder">
-                                    Tạm thời mock list xe ở đây
+                                <div className="iky-monitor__device-list">
+                                    {loadingDevices && <div className="iky-loading">Đang tải...</div>}
+
+                                    {!loadingDevices && filteredDevices.length === 0 && (
+                                        <div className="iky-monitor__empty">Không có xe phù hợp</div>
+                                    )}
+
+                                    {!loadingDevices &&
+                                        filteredDevices.map((d) => {
+                                            const isOnline = d.status === 10;
+                                            const isActive = selectedDevice?._id === d._id;
+                                            return (
+                                                <div
+                                                    key={d._id}
+                                                    className={
+                                                        'iky-monitor__device-item' +
+                                                        (isActive ? ' iky-monitor__device-item--active' : '')
+                                                    }
+                                                    onClick={() => handleSelectDevice(d)}
+                                                >
+                                                    <div className="plate">{d.license_plate || 'Không rõ biển số'}</div>
+                                                    <div className="imei">IMEI: {d.imei}</div>
+                                                    <div className="phone">SĐT: {d.phone_number}</div>
+                                                    <div className="status">
+                                                        Trạng thái:{' '}
+                                                        <span className={isOnline ? 'online' : 'offline'}>
+                                                            {isOnline ? 'Online' : 'Offline'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
                                 </div>
                             </div>
                         </div>
@@ -145,42 +483,82 @@ const MonitorPage = () => {
 
                     {leftTab === 'history' && (
                         <div className="iky-monitor__left-body">
+                            {/* CHỌN XE TỪ getDevices */}
+                            <div className="iky-monitor__left-section">
+                                <div className="iky-monitor__left-label">Chọn xe</div>
+                                <select
+                                    className="iky-monitor__select"
+                                    value={historyDeviceId}
+                                    onChange={(e) => setHistoryDeviceId(e.target.value)}
+                                >
+                                    <option value="">-- Chọn xe --</option>
+                                    {deviceList.map((d) => (
+                                        <option key={d._id} value={d._id}>
+                                            {(d.license_plate || d.imei || 'Không rõ').trim()}
+                                            {d.phone_number ? ` - ${d.phone_number}` : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
                             <div className="iky-monitor__left-section">
                                 <div className="iky-monitor__left-label">Từ ngày</div>
-                                <input type="datetime-local" className="iky-monitor__input" />
+                                <input
+                                    type="datetime-local"
+                                    className="iky-monitor__input"
+                                    value={historyStart}
+                                    onChange={(e) => setHistoryStart(e.target.value)}
+                                />
                             </div>
+
                             <div className="iky-monitor__left-section">
                                 <div className="iky-monitor__left-label">Đến ngày</div>
-                                <input type="datetime-local" className="iky-monitor__input" />
+                                <input
+                                    type="datetime-local"
+                                    className="iky-monitor__input"
+                                    value={historyEnd}
+                                    onChange={(e) => setHistoryEnd(e.target.value)}
+                                />
                             </div>
-                            <button className="iky-monitor__primary-btn">Xem lại lộ trình</button>
+
+                            <button className="iky-monitor__primary-btn" onClick={handleSaveHistoryFilter}>
+                                Lưu bộ lọc lộ trình
+                            </button>
+
+                            {historyMessage && (
+                                <div
+                                    className={
+                                        'iky-monitor__alert ' +
+                                        (historyMessageType === 'error'
+                                            ? 'iky-monitor__alert--error'
+                                            : 'iky-monitor__alert--success')
+                                    }
+                                >
+                                    {historyMessage}
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
             </aside>
 
-            {/* MAP AREA */}
+            {/* MAP */}
             <section className="iky-monitor__center">
                 <div className="iky-monitor__map">
                     <div id="iky-map" className="iky-monitor__map-inner" />
 
-                    {/* Popup gắn đúng tọa độ marker */}
+                    {/* POPUP */}
                     {markerScreenPos && showPopup && (
                         <div
                             className="iky-monitor__popup-wrapper"
-                            style={{
-                                left: markerScreenPos.x,
-                                top: markerScreenPos.y,
-                            }}
+                            style={{ left: markerScreenPos.x, top: markerScreenPos.y }}
                         >
                             <div className="iky-monitor__popup">
                                 <div className="iky-monitor__popup-tabs">
                                     <button
                                         className={
                                             'iky-monitor__popup-tab' +
-                                            (detailTab === 'status'
-                                                ? ' iky-monitor__popup-tab--active'
-                                                : '')
+                                            (detailTab === 'status' ? ' iky-monitor__popup-tab--active' : '')
                                         }
                                         onClick={(e) => {
                                             e.stopPropagation();
@@ -192,9 +570,7 @@ const MonitorPage = () => {
                                     <button
                                         className={
                                             'iky-monitor__popup-tab' +
-                                            (detailTab === 'control'
-                                                ? ' iky-monitor__popup-tab--active'
-                                                : '')
+                                            (detailTab === 'control' ? ' iky-monitor__popup-tab--active' : '')
                                         }
                                         onClick={(e) => {
                                             e.stopPropagation();
@@ -206,9 +582,7 @@ const MonitorPage = () => {
                                     <button
                                         className={
                                             'iky-monitor__popup-tab' +
-                                            (detailTab === 'battery'
-                                                ? ' iky-monitor__popup-tab--active'
-                                                : '')
+                                            (detailTab === 'battery' ? ' iky-monitor__popup-tab--active' : '')
                                         }
                                         onClick={(e) => {
                                             e.stopPropagation();
@@ -221,18 +595,7 @@ const MonitorPage = () => {
 
                                 <div className="iky-monitor__popup-body">
                                     {detailTab === 'status' && (
-                                        <div className="iky-monitor__popup-col">
-                                            <div>Biển số xe: test1111</div>
-                                            <div>Loại xe: VinFast Feliz Neo</div>
-                                            <div>Hãng sản xuất: SGC</div>
-                                            <div>Tại thời điểm: 2025-10-21 11:25:04</div>
-                                            <div>
-                                                Vị trí hiện tại: {lat}, {lng}
-                                            </div>
-                                            <div>Trạng thái máy: Tắt máy</div>
-                                            <div>Trạng thái xe: Đỗ xe</div>
-                                            <div>Vận tốc: 0 km/h</div>
-                                        </div>
+                                        <div className="iky-monitor__popup-col">{renderStatusInfo()}</div>
                                     )}
 
                                     {detailTab === 'control' && (
@@ -255,22 +618,13 @@ const MonitorPage = () => {
                                             </div>
                                             <div className="iky-monitor__control-row">
                                                 <span>Số dư tài khoản</span>
-                                                <button className="iky-monitor__secondary-btn">
-                                                    Kiểm tra
-                                                </button>
+                                                <button className="iky-monitor__secondary-btn">Kiểm tra</button>
                                             </div>
                                         </div>
                                     )}
 
                                     {detailTab === 'battery' && (
-                                        <div className="iky-monitor__popup-col">
-                                            <div>Điện áp: 72.00V</div>
-                                            <div>Dòng sạc/xả: 0.02A</div>
-                                            <div>Trạng thái sạc: 49%</div>
-                                            <div>Dung lượng pin: 40Ah</div>
-                                            <div>Sức khỏe pin: 100%</div>
-                                            <div>Nhiệt độ: 30°C</div>
-                                        </div>
+                                        <div className="iky-monitor__popup-col">{renderBatteryInfo()}</div>
                                     )}
                                 </div>
                             </div>
@@ -279,17 +633,11 @@ const MonitorPage = () => {
                 </div>
             </section>
 
+            {/* BOX BÊN PHẢI – TRẠNG THÁI PIN */}
             {showPopup && detailTab === 'battery' && (
                 <aside className="iky-monitor__right">
                     <h4 className="iky-monitor__right-title">Thông tin hiển thị</h4>
-                    <div className="iky-monitor__battery-box">
-                        <div>Điện áp: 72.00V</div>
-                        <div>Dòng sạc/xả: 0.02A</div>
-                        <div>Trạng thái sạc: 49%</div>
-                        <div>Dung lượng pin: 40Ah</div>
-                        <div>Sức khỏe pin: 100%</div>
-                        <div>Nhiệt độ: 30°C</div>
-                    </div>
+                    <div className="iky-monitor__battery-box">{renderBatteryInfo()}</div>
                 </aside>
             )}
         </div>

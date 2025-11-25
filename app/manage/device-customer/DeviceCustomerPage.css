@@ -1,0 +1,67 @@
+.dcustomer-page {
+    padding: 16px;
+    background: #f5f5f5;
+    min-height: calc(100vh - 104px); /* tuỳ nav của m */
+    box-sizing: border-box;
+}
+
+.dcustomer-card {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* select khách hàng ở header card */
+.dcustomer-customer-select {
+    min-width: 220px;
+}
+
+/* text hint khi chưa chọn customer */
+.dcustomer-empty-tip {
+    margin-top: 16px;
+    text-align: center;
+    color: #999;
+}
+
+/* màn denied */
+.dcustomer-page--denied {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: calc(100vh - 104px);
+    background: #f5f5f5;
+}
+
+.dcustomer-card-denied {
+    text-align: center;
+    padding: 32px 24px;
+    max-width: 420px;
+}
+
+/* ===== RESPONSIVE ===== */
+
+@media (max-width: 768px) {
+    .dcustomer-page {
+        padding: 8px;
+    }
+
+    .dcustomer-card {
+        margin: 0 4px;
+    }
+
+    .dcustomer-customer-select {
+        min-width: 160px;
+        width: 160px;
+    }
+
+    /* header card: buttons xuống hàng nếu chật */
+    .ant-card-extra > .ant-space {
+        flex-wrap: wrap;
+        gap: 8px !important;
+        justify-content: flex-end;
+    }
+
+    .ant-modal {
+        max-width: 95% !important;
+        top: 12px !important;
+    }
+}

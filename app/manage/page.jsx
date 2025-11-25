@@ -1,9 +1,14 @@
-import React from 'react'
+'use client';
 
-const page = () => {
-  return (
-    <div>Trang đang phát triển</div>
-  )
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+
+export default function ManageIndexPage() {
+    const router = useRouter();
+
+    useEffect(() => {
+        router.replace('/manage/user');
+    }, []);
+
+    return null;
 }
-
-export default page

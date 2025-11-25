@@ -1,0 +1,109 @@
+.dc-page {
+    padding: 16px;
+    background: #f5f5f5;
+    min-height: calc(100vh - 104px); /* chỉnh theo header/status bar của m */
+    box-sizing: border-box;
+}
+
+.dc-card {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* head card */
+.dc-card .ant-card-head {
+    padding: 0 16px;
+}
+
+.dc-card .ant-card-body {
+    padding: 16px;
+}
+
+/* filter area */
+.dc-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.dc-filter > * {
+    min-width: 160px;
+}
+
+.dc-filter__actions {
+    margin-left: auto;
+}
+
+/* table */
+.dc-table .ant-table {
+    background: #ffffff;
+}
+
+/* ====== MOBILE ====== */
+@media (max-width: 768px) {
+    .dc-page {
+        padding: 8px;
+    }
+
+    .dc-card {
+        margin: 0 4px;
+    }
+
+    .dc-card .ant-card-head-wrapper {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .dc-card__actions {
+        width: 100%;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .dc-card__actions .ant-btn {
+        flex: 1 1 calc(50% - 4px); /* 2 nút / dòng */
+    }
+
+    .dc-filter {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .dc-filter > * {
+        min-width: 100%;
+    }
+
+    .dc-filter__actions {
+        margin-left: 0;
+        justify-content: flex-start;
+    }
+
+    .dc-filter__actions .ant-btn {
+        flex: 1;
+    }
+
+    .dc-card .ant-card-body {
+        padding: 12px;
+    }
+
+    /* modal gọn lại trên mobile */
+    .dc-modal .ant-modal {
+        max-width: 95% !important;
+        margin: 0 auto;
+    }
+
+    .dc-modal .ant-modal-body {
+        padding: 16px;
+    }
+
+    .dc-modal .ant-modal-header {
+        padding: 12px 16px;
+    }
+
+    .dc-modal .ant-modal-footer {
+        padding: 10px 16px;
+    }
+}

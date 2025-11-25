@@ -1,0 +1,82 @@
+.iky-login {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f9fafb; /* trắng xám nhẹ */
+    padding: 20px;
+    font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* CARD */
+.iky-login__card {
+    width: 100%;
+    max-width: 420px;
+    background: #ffffff;
+    border-radius: 14px;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 10px 35px rgba(0, 0, 0, 0.07);
+    padding: 32px 28px 26px;
+}
+
+/* HEADER */
+.iky-login__header {
+    text-align: center;
+    margin-bottom: 22px;
+}
+
+.iky-login__title {
+    margin-bottom: 4px !important;
+    font-weight: 700;
+}
+
+.iky-login__subtitle {
+    font-size: 13px;
+    color: #6b7280;
+}
+
+/* INPUT */
+.ant-input,
+.ant-input-affix-wrapper {
+    border-radius: 8px !important;
+    border-color: #d1d5db;
+}
+
+.ant-input-affix-wrapper:hover {
+    border-color: #111;
+}
+
+.ant-input-affix-wrapper-focused {
+    border-color: #111 !important;
+    box-shadow: 0 0 0 2px rgba(17, 17, 17, 0.12);
+}
+
+/* BUTTON */
+.iky-login__btn {
+    margin-top: 8px;
+    border-radius: 8px !important;
+    background: #111 !important;
+    border-color: #111 !important;
+    font-weight: 600;
+}
+
+.iky-login__btn:hover {
+    background: #1f1f1f !important;
+    border-color: #1f1f1f !important;
+}
+
+/* FOOTER */
+.iky-login__footer {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 12px;
+    color: #6b7280;
+}
+
+/* RESPONSIVE */
+@media (max-width: 480px) {
+    .iky-login__card {
+        padding: 24px 20px;
+        border-radius: 10px;
+    }
+}

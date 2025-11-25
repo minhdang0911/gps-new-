@@ -1,0 +1,115 @@
+.vc-page {
+    padding: 16px;
+    background: #f5f5f5;
+    min-height: calc(100vh - 104px); /* chỉnh theo layout header/status bar của m */
+    box-sizing: border-box;
+}
+
+.vc-card {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* head card */
+.vc-card .ant-card-head {
+    padding: 0 16px;
+}
+
+.vc-card .ant-card-body {
+    padding: 16px;
+}
+
+/* extra actions trên header */
+.vc-card__actions {
+    display: inline-flex;
+    gap: 8px;
+}
+
+/* filter area */
+.vc-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.vc-filter > * {
+    min-width: 160px;
+}
+
+.vc-filter__actions {
+    margin-left: auto;
+}
+
+/* table */
+.vc-table .ant-table {
+    background: #ffffff;
+}
+
+/* ====== MOBILE ====== */
+@media (max-width: 768px) {
+    .vc-page {
+        padding: 8px;
+    }
+
+    .vc-card {
+        margin: 0 4px;
+    }
+
+    .vc-card .ant-card-head-wrapper {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .vc-card__actions {
+        width: 100%;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .vc-card__actions .ant-btn {
+        flex: 1 1 calc(50% - 4px); /* 2 nút / dòng trên mobile */
+    }
+
+    .vc-filter {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .vc-filter > * {
+        min-width: 100%;
+    }
+
+    .vc-filter__actions {
+        margin-left: 0;
+        justify-content: flex-start;
+    }
+
+    .vc-filter__actions .ant-btn {
+        flex: 1;
+    }
+
+    .vc-card .ant-card-body {
+        padding: 12px;
+    }
+
+    /* modal gọn lại trên mobile */
+    .vc-modal .ant-modal {
+        max-width: 95% !important;
+        margin: 0 auto;
+    }
+
+    .vc-modal .ant-modal-body {
+        padding: 16px;
+    }
+
+    .vc-modal .ant-modal-header {
+        padding: 12px 16px;
+    }
+
+    .vc-modal .ant-modal-footer {
+        padding: 10px 16px;
+    }
+}

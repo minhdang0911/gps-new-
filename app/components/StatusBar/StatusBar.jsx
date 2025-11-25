@@ -40,6 +40,7 @@ const StatusBar = () => {
         return () => clearInterval(timer);
     }, []);
 
+    if (pathname === '/login') return null;
     return (
         <div className="iky-status">
             {/* BREADCRUMB */}
