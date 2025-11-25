@@ -3,8 +3,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './cruise.css';
 
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
 import markerIconImg from '../assets/marker-red.png';
 
 import { getCruiseHistory } from '../lib/api/cruise';
@@ -45,6 +43,7 @@ const CruisePage = () => {
     const movingMarkerRef = useRef(null);
     const pointMarkersRef = useRef([]);
     const animationFrameRef = useRef(null);
+    const [LMap, setLMap] = useState(null);
 
     const animStateRef = useRef({
         segmentIndex: 0,
@@ -52,6 +51,15 @@ const CruisePage = () => {
     });
 
     const isPlayingRef = useRef(false);
+
+    useEffect(() => {
+        const loadLeaflet = async () => {
+            const L = await import('leaflet');
+            await import('leaflet/dist/leaflet.css');
+            setLMap(L);
+        };
+        loadLeaflet();
+    }, []);
 
     // Format datetime-local -> "YYYY-MM-DD HH:mm:ss"
     const toApiDateTime = (value) => {
@@ -168,40 +176,22 @@ const CruisePage = () => {
 
     // Initialize map
     useEffect(() => {
+        if (!LMap) return; // chờ leaflet load xong
+
         const initialLat = 10.755937;
         const initialLon = 106.612587;
 
-        const map = L.map('iky-cruise-map', {
+        const map = LMap.map('iky-cruise-map', {
             center: [initialLat, initialLon],
             zoom: 15,
-            zoomControl: true,
-            attributionControl: false,
-            dragging: true,
-            scrollWheelZoom: true,
         });
 
         mapRef.current = map;
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxZoom: 19,
-        }).addTo(map);
+        LMap.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-        map.scrollWheelZoom.enable();
-        map.dragging.enable();
-
-        const handleResize = () => {
-            map.invalidateSize();
-        };
-        window.addEventListener('resize', handleResize);
-
-        return () => {
-            window.removeEventListener('resize', handleResize);
-            if (animationFrameRef.current) {
-                cancelAnimationFrame(animationFrameRef.current);
-            }
-            map.remove();
-        };
-    }, []);
+        return () => map.remove();
+    }, [LMap]);
 
     // Calculate total distance
     useEffect(() => {
