@@ -16,10 +16,18 @@ const geistMono = Geist_Mono({
     variable: '--font-geist-mono',
     subsets: ['latin'],
 });
-
 export default function RootLayout({ children }) {
     return (
         <html lang="vi">
+            <head>
+                <meta
+                    name="description"
+                    content="Nền tảng giám sát GPS – theo dõi hành trình, trạng thái thiết bị, pin, cảnh báo và quản lý toàn bộ hệ thống IKY GPS."
+                />
+                <meta name="keywords" content="IKY GPS, Giám sát hành trình, Thiết bị GPS" />
+                <meta name="author" content="IKY GPS" />
+            </head>
+
             <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
                 <AntdRegistry>
                     <TokenRefresher />

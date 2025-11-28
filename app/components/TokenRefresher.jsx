@@ -10,10 +10,8 @@ export default function TokenRefresher() {
     const startedRef = useRef(false);
 
     useEffect(() => {
-        // không chạy check ở /login
         if (pathname === '/login') return;
 
-        // đảm bảo chỉ setup 1 lần (lần đầu vào route không phải /login)
         if (startedRef.current) return;
         startedRef.current = true;
 
@@ -21,7 +19,6 @@ export default function TokenRefresher() {
             const accessToken = localStorage.getItem('accessToken');
             const refreshToken = localStorage.getItem('refreshToken');
 
-            // ❌ không có token → về login luôn
             if (!accessToken || !refreshToken) {
                 localStorage.clear();
                 router.replace('/login');
