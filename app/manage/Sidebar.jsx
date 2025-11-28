@@ -85,11 +85,11 @@ export default function Sidebar() {
                         icon: <UsergroupAddOutlined />,
                         label: <Link href="/manage/user">Quản lý người dùng</Link>,
                     },
-                    {
-                        key: 'password',
-                        icon: <LockOutlined />,
-                        label: <Link href="/manage/password">Đổi mật khẩu</Link>,
-                    },
+                    // {
+                    //     key: 'password',
+                    //     icon: <LockOutlined />,
+                    //     label: <Link href="/manage/password">Đổi mật khẩu</Link>,
+                    // },
                 ]}
             />
         </Sider>

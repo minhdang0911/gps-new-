@@ -24,7 +24,6 @@ const LoginPage = () => {
             localStorage.setItem('refreshToken', res.refreshToken);
             localStorage.setItem('role', res?.user?.position || '');
 
-            // ✨ lưu info user cho Navbar dùng
             localStorage.setItem('username', res?.user?.username || '');
             localStorage.setItem('email', res?.user?.email || '');
 
