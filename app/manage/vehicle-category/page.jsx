@@ -19,8 +19,6 @@ import {
     getManufacturerOptions,
 } from '../../lib/api/vehicleCategory';
 
-import {} from '../../lib/api/de'
-
 import { getMadeInFromOptions, getDeviceCategories } from '../../lib/api/deviceCategory';
 
 import './VehicleCategoryPage.css';
