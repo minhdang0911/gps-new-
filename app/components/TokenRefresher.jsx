@@ -1,22 +1,27 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useRef } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import { refreshTokenApi } from '../lib/api/auth';
 
 export default function TokenRefresher() {
     const router = useRouter();
+    const pathname = usePathname();
+    const startedRef = useRef(false);
 
     useEffect(() => {
-        document.title = 'Quản lý xe';
-    }, []);
+        // không chạy check ở /login
+        if (pathname === '/login') return;
 
-    useEffect(() => {
-        const interval = setInterval(async () => {
+        // đảm bảo chỉ setup 1 lần (lần đầu vào route không phải /login)
+        if (startedRef.current) return;
+        startedRef.current = true;
+
+        const checkAndRefresh = async () => {
             const accessToken = localStorage.getItem('accessToken');
             const refreshToken = localStorage.getItem('refreshToken');
 
-            // ❌ Không có token → về login
+            // ❌ không có token → về login luôn
             if (!accessToken || !refreshToken) {
                 localStorage.clear();
                 router.replace('/login');
@@ -34,10 +39,14 @@ export default function TokenRefresher() {
                 localStorage.clear();
                 router.replace('/login');
             }
-        }, 5 * 60 * 1000); // 5 phút 1 lần
+        };
+
+        checkAndRefresh();
+
+        const interval = setInterval(checkAndRefresh, 5 * 60 * 1000);
 
         return () => clearInterval(interval);
-    }, [router]);
+    }, [pathname, router]);
 
     return null;
 }
