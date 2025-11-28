@@ -30,27 +30,23 @@ const MonitorPage = () => {
     const [detailTab, setDetailTab] = useState('status');
     const [LMap, setLMap] = useState(null);
 
-    // history filter (xem lại lộ trình)
     const [historyDeviceId, setHistoryDeviceId] = useState('');
     const [historyStart, setHistoryStart] = useState('');
     const [historyEnd, setHistoryEnd] = useState('');
     const [historyMessage, setHistoryMessage] = useState('');
-    const [historyMessageType, setHistoryMessageType] = useState(''); // 'error' | 'success'
+    const [historyMessageType, setHistoryMessageType] = useState('');
 
     const [deviceList, setDeviceList] = useState([]);
     const [loadingDevices, setLoadingDevices] = useState(false);
 
     const [searchText, setSearchText] = useState('');
-    const [statusFilter, setStatusFilter] = useState('all'); // all | online | offline
+    const [statusFilter, setStatusFilter] = useState('all');
 
-    // device đang chọn
     const [selectedDevice, setSelectedDevice] = useState(null);
 
-    // battery status của device đang chọn
     const [batteryStatus, setBatteryStatus] = useState(null);
     const [loadingBattery, setLoadingBattery] = useState(false);
 
-    // thêm: thông tin device detail + last cruise
     const [deviceInfo, setDeviceInfo] = useState(null);
     const [loadingDeviceInfo, setLoadingDeviceInfo] = useState(false);
 
@@ -58,11 +54,9 @@ const MonitorPage = () => {
     const [loadingCruise, setLoadingCruise] = useState(false);
     const [cruiseError, setCruiseError] = useState(null);
 
-    // lock / unlock
     const [lockLoading, setLockLoading] = useState(false);
     const [lockError, setLockError] = useState(null);
 
-    // địa chỉ từ Goong
     const [address, setAddress] = useState('');
     const [loadingAddress, setLoadingAddress] = useState(false);
     const [addressError, setAddressError] = useState(null);
@@ -84,9 +78,8 @@ const MonitorPage = () => {
     const [markerScreenPos, setMarkerScreenPos] = useState(null);
     const router = useRouter();
 
-    // INIT MAP
     useEffect(() => {
-        if (!LMap) return; // Đợi Leaflet load xong
+        if (!LMap) return;
 
         const map = LMap.map('iky-map', {
             center: [lat, lng],
@@ -143,7 +136,6 @@ const MonitorPage = () => {
         };
     }, [LMap, lat, lng]);
 
-    // LOAD LIST DEVICE
     useEffect(() => {
         const token = localStorage.getItem('accessToken');
         if (!token) return;
@@ -163,25 +155,20 @@ const MonitorPage = () => {
         fetchDevices();
     }, []);
 
-    // KHI CÓ DANH SÁCH XE -> AUTO CHỌN XE ĐẦU TIÊN
     useEffect(() => {
         if (deviceList.length > 0 && !selectedDevice) {
             handleSelectDevice(deviceList[0]);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [deviceList]);
 
-    // PREFILL history tab: luôn default hôm nay, KHÔNG đọc từ localStorage
     useEffect(() => {
         if (typeof window === 'undefined') return;
         if (!deviceList.length) return;
 
-        // luôn chọn xe đầu tiên nếu chưa có
         if (!historyDeviceId && deviceList[0]) {
             setHistoryDeviceId(deviceList[0]._id);
         }
 
-        // luôn set khoảng thời gian là hôm nay nếu chưa có
         if (!historyStart || !historyEnd) {
             const now = new Date();
 
@@ -194,16 +181,11 @@ const MonitorPage = () => {
             setHistoryStart(toLocalDateTimeInput(start));
             setHistoryEnd(toLocalDateTimeInput(end));
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [deviceList]);
 
-    // FETCH ĐỊA CHỈ GOONG
     const fetchAddressFromGoong = async (latVal, lonVal) => {
         if (latVal == null || lonVal == null) return;
-        if (!GOONG_API_KEY) {
-            console.warn('Missing NEXT_PUBLIC_GOONG_API_KEY for Goong');
-            return;
-        }
+        if (!GOONG_API_KEY) return;
 
         try {
             setLoadingAddress(true);
@@ -212,9 +194,8 @@ const MonitorPage = () => {
             const res = await fetch(
                 `https://rsapi.goong.io/Geocode?latlng=${latVal},${lonVal}&api_key=${GOONG_API_KEY}`,
             );
-            if (!res.ok) {
-                throw new Error('Goong API error');
-            }
+            if (!res.ok) throw new Error('Goong API error');
+
             const data = await res.json();
             const addr = data?.results?.[0]?.formatted_address || '';
             setAddress(addr);
@@ -226,7 +207,6 @@ const MonitorPage = () => {
         }
     };
 
-    // FILTER DEVICE
     const filteredDevices = useMemo(() => {
         const keyword = searchText.trim().toLowerCase();
 
@@ -247,11 +227,10 @@ const MonitorPage = () => {
         });
     }, [deviceList, searchText, statusFilter]);
 
-    // CLICK 1 XE -> chọn device + gọi API pin + device info + last cruise
     const handleSelectDevice = async (device) => {
         setSelectedDevice(device);
         setShowPopup(true);
-        setDetailTab('battery'); // nhảy thẳng sang tab pin
+        setDetailTab('battery');
 
         const token = localStorage.getItem('accessToken');
         if (!token || !device?.imei) {
@@ -262,7 +241,6 @@ const MonitorPage = () => {
             return;
         }
 
-        // reset state
         setBatteryStatus(null);
         setDeviceInfo(null);
         setLastCruise(null);
@@ -270,31 +248,26 @@ const MonitorPage = () => {
         setAddress('');
         setAddressError(null);
 
-        // LOAD PIN
         try {
             setLoadingBattery(true);
             const res = await getBatteryStatusByImei(token, device.imei);
             setBatteryStatus(res?.batteryStatus || null);
-        } catch (err) {
-            console.error('Load battery status error:', err);
+        } catch {
             setBatteryStatus(null);
         } finally {
             setLoadingBattery(false);
         }
 
-        // LOAD DEVICE INFO
         try {
             setLoadingDeviceInfo(true);
             const info = await getDeviceInfo(token, device._id);
             setDeviceInfo(info || null);
-        } catch (err) {
-            console.error('Load device info error:', err);
+        } catch {
             setDeviceInfo(null);
         } finally {
             setLoadingDeviceInfo(false);
         }
 
-        // LOAD LAST CRUISE
         try {
             setLoadingCruise(true);
             const cruise = await getLastCruise(token, device.imei);
@@ -306,20 +279,17 @@ const MonitorPage = () => {
                 setLastCruise(cruise);
                 setCruiseError(null);
 
-                // cập nhật map theo lat / lon
                 if (mapRef.current && markerRef.current && cruise.lat && cruise.lon) {
                     const newLatLng = LMap.latLng(cruise.lat, cruise.lon);
                     markerRef.current.setLatLng(newLatLng);
                     mapRef.current.setView(newLatLng, 16);
                 }
 
-                // gọi Goong lấy địa chỉ
                 if (cruise.lat != null && cruise.lon != null) {
                     fetchAddressFromGoong(cruise.lat, cruise.lon);
                 }
             }
-        } catch (err) {
-            console.error('Load last cruise error:', err);
+        } catch {
             setLastCruise(null);
             setCruiseError('Không thể tải dữ liệu hành trình');
         } finally {
@@ -327,7 +297,6 @@ const MonitorPage = () => {
         }
     };
 
-    // ===== LOCK / UNLOCK HANDLER =====
     const handleLockDevice = async () => {
         if (!selectedDevice) return;
         const token = localStorage.getItem('accessToken');
@@ -346,12 +315,10 @@ const MonitorPage = () => {
 
             const updated = res?.device || selectedDevice;
 
-            // update state
             setSelectedDevice((prev) => ({ ...prev, ...updated }));
             setDeviceInfo((prev) => ({ ...(prev || {}), ...updated }));
             setDeviceList((prev) => prev.map((d) => (d._id === updated._id ? { ...d, ...updated } : d)));
         } catch (err) {
-            console.error('Lock device error:', err);
             setLockError(err?.message || 'Khoá thiết bị thất bại.');
             message.error(err?.message || 'Khoá thiết bị thất bại.');
         } finally {
@@ -382,7 +349,6 @@ const MonitorPage = () => {
             setDeviceInfo((prev) => ({ ...(prev || {}), ...updated }));
             setDeviceList((prev) => prev.map((d) => (d._id === updated._id ? { ...d, ...updated } : d)));
         } catch (err) {
-            console.error('Unlock device error:', err);
             setLockError(err?.message || 'Mở khoá thiết bị thất bại.');
             message.error(err?.message || 'Mở khoá thiết bị thất bại.');
         } finally {
@@ -390,7 +356,6 @@ const MonitorPage = () => {
         }
     };
 
-    // popup confirm khoá
     const handleConfirmLock = () => {
         if (!selectedDevice || selectedDevice.status === 5) return;
         const plate = selectedDevice.license_plate || selectedDevice.imei || 'thiết bị';
@@ -404,7 +369,6 @@ const MonitorPage = () => {
         });
     };
 
-    // popup confirm mở khoá
     const handleConfirmUnlock = () => {
         if (!selectedDevice || selectedDevice.status !== 5) return;
         const plate = selectedDevice.license_plate || selectedDevice.imei || 'thiết bị';
@@ -420,38 +384,46 @@ const MonitorPage = () => {
 
     const isLocked = selectedDevice?.status === 5;
 
-    // TÍNH MODE SẠC/XẢ DỰA VÀO current
-    const getChargeModeFromCurrent = (currentRaw) => {
-        if (currentRaw == null) return '--';
-        const currentNumber =
-            typeof currentRaw === 'number' ? currentRaw : Number(String(currentRaw).replace(',', '.'));
+    // 🔥 NEW FIXED
+    const parseCurrentValue = (currentRaw) => {
+        if (currentRaw == null) return { text: 'Dòng sạc/xả: --' };
 
-        if (Number.isNaN(currentNumber)) return '--';
+        const num = Number(String(currentRaw).replace(',', '.'));
+        if (Number.isNaN(num)) return { text: 'Dòng sạc/xả: --' };
 
-        if (currentNumber > 0) return 'Đang sạc';
-        if (currentNumber < 0) return 'Đang xả';
-        return 'Đang chờ';
+        if (num > 0) {
+            return { text: `Dòng sạc/xả: Đang sạc ${num}A` };
+        }
+
+        if (num < 0) {
+            return { text: `Dòng sạc/xả: Đang xả ${Math.abs(num)}A` };
+        }
+
+        return { text: `Dòng sạc/xả: 0 A` };
     };
 
+    // 🔥 NEW — render pin
     const renderBatteryInfo = () => {
         if (loadingBattery) return <div>Đang tải trạng thái pin...</div>;
         if (!batteryStatus) return <div>Không có dữ liệu pin cho thiết bị này.</div>;
 
-        const bs = batteryStatus; // alias cho gọn
-        const chargeMode = getChargeModeFromCurrent(bs.current);
+        const bs = batteryStatus;
+        const { mode, value } = parseCurrentValue(bs.current);
 
         return (
             <>
                 <div>IMEI: {bs.imei || selectedDevice?.imei}</div>
                 <div>Điện áp: {bs.voltage ?? '--'} V</div>
-                {/* Không hiển thị số A, chỉ hiển thị trạng thái sạc/xả/chờ */}
-                <div>Dòng sạc/xả: {chargeMode}</div>
+
+                <div>{parseCurrentValue(bs.current).text}</div>
+
                 <div>Trạng thái sạc (SOC): {bs.soc ?? '--'}%</div>
                 <div>Dung lượng pin: {bs.capacityAh ?? '--'} Ah</div>
                 <div>Sức khỏe pin (SOH): {bs.soh ?? '--'}%</div>
                 <div>Nhiệt độ: {bs.temperature ?? '--'}°C</div>
-                {/* Trạng thái cũng dựa trên current */}
-                <div>Trạng thái: {chargeMode}</div>
+
+                <div>Trạng thái: {mode}</div>
+
                 <div>Cập nhật lúc: {bs.updatedAt ? new Date(bs.updatedAt).toLocaleString() : '--'}</div>
             </>
         );
@@ -503,7 +475,6 @@ const MonitorPage = () => {
                     </>
                 )}
 
-                {/* Địa chỉ hiện tại lấy từ Goong */}
                 <div>Địa chỉ hiện tại: {addressText}</div>
 
                 {cruiseError && <div className="iky-monitor__error">{cruiseError}</div>}
@@ -511,7 +482,6 @@ const MonitorPage = () => {
         );
     };
 
-    // Lưu filter lịch sử sang localStorage + validate
     const handleSaveHistoryFilter = () => {
         setHistoryMessage('');
         setHistoryMessageType('');
@@ -549,7 +519,6 @@ const MonitorPage = () => {
             setHistoryMessage('Đã lưu bộ lọc lộ trình. Vào trang "Hành trình" để tải lộ trình.');
             setHistoryMessageType('success');
         } catch (e) {
-            console.error('Save iky_cruise_filter error', e);
             setHistoryMessage('Không thể lưu bộ lọc. Vui lòng thử lại.');
             setHistoryMessageType('error');
         }
@@ -566,7 +535,7 @@ const MonitorPage = () => {
 
     return (
         <div className="iky-monitor">
-            {/* LEFT PANEL */}
+            {/* LEFT */}
             <aside className="iky-monitor__left">
                 <div className="iky-monitor__left-card">
                     <div className="iky-monitor__left-tabs">
@@ -592,7 +561,6 @@ const MonitorPage = () => {
 
                     {leftTab === 'monitor' && (
                         <div className="iky-monitor__left-body">
-                            {/* SEARCH */}
                             <div className="iky-monitor__left-section">
                                 <div className="iky-monitor__left-label">Nhập xe cần tìm</div>
                                 <input
@@ -603,7 +571,6 @@ const MonitorPage = () => {
                                 />
                             </div>
 
-                            {/* FILTER STATUS */}
                             <div className="iky-monitor__left-section">
                                 <div className="iky-monitor__left-label">Trạng thái</div>
                                 <select
@@ -617,9 +584,9 @@ const MonitorPage = () => {
                                 </select>
                             </div>
 
-                            {/* DANH SÁCH XE */}
                             <div className="iky-monitor__left-section">
                                 <div className="iky-monitor__left-label">Danh sách xe</div>
+
                                 <div className="iky-monitor__device-list">
                                     {loadingDevices && <div className="iky-loading">Đang tải...</div>}
 
@@ -659,7 +626,6 @@ const MonitorPage = () => {
 
                     {leftTab === 'history' && (
                         <div className="iky-monitor__left-body">
-                            {/* CHỌN XE TỪ getDevices */}
                             <div className="iky-monitor__left-section">
                                 <div className="iky-monitor__left-label">Chọn xe</div>
                                 <select
@@ -718,12 +684,10 @@ const MonitorPage = () => {
                 </div>
             </aside>
 
-            {/* MAP */}
             <section className="iky-monitor__center">
                 <div className="iky-monitor__map">
                     <div id="iky-map" className="iky-monitor__map-inner" />
 
-                    {/* POPUP */}
                     {markerScreenPos && showPopup && (
                         <div
                             className="iky-monitor__popup-wrapper"
@@ -842,7 +806,6 @@ const MonitorPage = () => {
                 </div>
             </section>
 
-            {/* BOX BÊN PHẢI – TRẠNG THÁI PIN */}
             {showPopup && detailTab === 'battery' && (
                 <aside className="iky-monitor__right">
                     <h4 className="iky-monitor__right-title">Thông tin hiển thị</h4>

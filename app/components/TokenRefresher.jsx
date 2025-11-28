@@ -16,20 +16,25 @@ export default function TokenRefresher() {
         startedRef.current = true;
 
         const checkAndRefresh = async () => {
-            const accessToken = localStorage.getItem('accessToken');
             const refreshToken = localStorage.getItem('refreshToken');
 
-            if (!accessToken || !refreshToken) {
+            // Không có refreshToken -> coi như hết phiên, bắt login lại
+            if (!refreshToken) {
                 localStorage.clear();
                 router.replace('/login');
                 return;
             }
 
             try {
-                const res = await refreshTokenApi(refreshToken, accessToken);
+                const res = await refreshTokenApi(refreshToken);
 
-                localStorage.setItem('accessToken', res.accessToken);
-                localStorage.setItem('refreshToken', res.refreshToken);
+                if (res.accessToken) {
+                    localStorage.setItem('accessToken', res.accessToken);
+                }
+                if (res.refreshToken) {
+                    localStorage.setItem('refreshToken', res.refreshToken);
+                }
+
                 console.log('🔄 Token refreshed!');
             } catch (err) {
                 console.error('Refresh failed:', err);
@@ -38,8 +43,10 @@ export default function TokenRefresher() {
             }
         };
 
+        // Gọi 1 lần khi load
         checkAndRefresh();
 
+        // Rồi 5p refresh 1 lần
         const interval = setInterval(checkAndRefresh, 5 * 60 * 1000);
 
         return () => clearInterval(interval);

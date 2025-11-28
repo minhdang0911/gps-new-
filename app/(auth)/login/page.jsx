@@ -14,10 +14,18 @@ const LoginPage = () => {
     const [loading, setLoading] = useState(false);
     const router = useRouter();
 
+    const getRandomDeviceId = () => {
+        return 'dev_' + Math.random().toString(36).substring(2, 12);
+    };
+
     const onFinish = async (values) => {
         try {
             setLoading(true);
-            const res = await login(values.username, values.password);
+
+            const device = getRandomDeviceId();
+            localStorage.setItem('device', device);
+
+            const res = await login(values.username, values.password, device);
 
             // token + role
             localStorage.setItem('accessToken', res.accessToken);
