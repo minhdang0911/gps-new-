@@ -9,7 +9,10 @@ import { getLastCruise } from './lib/api/cruise';
 
 import markerIcon from './assets/marker-red.png';
 import { useRouter } from 'next/navigation';
-import { message } from 'antd';
+import { message, Modal } from 'antd';
+
+const { confirm } = Modal;
+const GOONG_API_KEY = process.env.NEXT_PUBLIC_GOONG_API_KEY;
 
 const toLocalDateTimeInput = (date) => {
     const pad = (n) => String(n).padStart(2, '0');
@@ -58,6 +61,11 @@ const MonitorPage = () => {
     // lock / unlock
     const [lockLoading, setLockLoading] = useState(false);
     const [lockError, setLockError] = useState(null);
+
+    // địa chỉ từ Goong
+    const [address, setAddress] = useState('');
+    const [loadingAddress, setLoadingAddress] = useState(false);
+    const [addressError, setAddressError] = useState(null);
 
     const [lat] = useState(10.7542506);
     const [lng] = useState(106.6170202);
@@ -189,6 +197,35 @@ const MonitorPage = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [deviceList]);
 
+    // FETCH ĐỊA CHỈ GOONG
+    const fetchAddressFromGoong = async (latVal, lonVal) => {
+        if (latVal == null || lonVal == null) return;
+        if (!GOONG_API_KEY) {
+            console.warn('Missing NEXT_PUBLIC_GOONG_API_KEY for Goong');
+            return;
+        }
+
+        try {
+            setLoadingAddress(true);
+            setAddressError(null);
+
+            const res = await fetch(
+                `https://rsapi.goong.io/Geocode?latlng=${latVal},${lonVal}&api_key=${GOONG_API_KEY}`,
+            );
+            if (!res.ok) {
+                throw new Error('Goong API error');
+            }
+            const data = await res.json();
+            const addr = data?.results?.[0]?.formatted_address || '';
+            setAddress(addr);
+        } catch (err) {
+            console.error('Fetch address error:', err);
+            setAddressError('Không lấy được địa chỉ.');
+        } finally {
+            setLoadingAddress(false);
+        }
+    };
+
     // FILTER DEVICE
     const filteredDevices = useMemo(() => {
         const keyword = searchText.trim().toLowerCase();
@@ -230,6 +267,8 @@ const MonitorPage = () => {
         setDeviceInfo(null);
         setLastCruise(null);
         setCruiseError(null);
+        setAddress('');
+        setAddressError(null);
 
         // LOAD PIN
         try {
@@ -272,6 +311,11 @@ const MonitorPage = () => {
                     const newLatLng = LMap.latLng(cruise.lat, cruise.lon);
                     markerRef.current.setLatLng(newLatLng);
                     mapRef.current.setView(newLatLng, 16);
+                }
+
+                // gọi Goong lấy địa chỉ
+                if (cruise.lat != null && cruise.lon != null) {
+                    fetchAddressFromGoong(cruise.lat, cruise.lon);
                 }
             }
         } catch (err) {
@@ -329,9 +373,8 @@ const MonitorPage = () => {
 
             const res = await unlockDevice(token, selectedDevice._id);
 
-            // 🔥 lấy message chuẩn từ API
             const msg = res?.message || 'Mở khoá thiết bị thành công.';
-            message.success('Mở khoá thiết bị thành công.');
+            message.success(msg);
 
             const updated = res?.device || selectedDevice;
 
@@ -347,24 +390,68 @@ const MonitorPage = () => {
         }
     };
 
+    // popup confirm khoá
+    const handleConfirmLock = () => {
+        if (!selectedDevice || selectedDevice.status === 5) return;
+        const plate = selectedDevice.license_plate || selectedDevice.imei || 'thiết bị';
+
+        confirm({
+            title: 'Xác nhận khoá thiết bị',
+            content: `Bạn có chắc chắn muốn khoá ${plate}?`,
+            okText: 'Khoá',
+            cancelText: 'Huỷ',
+            onOk: () => handleLockDevice(),
+        });
+    };
+
+    // popup confirm mở khoá
+    const handleConfirmUnlock = () => {
+        if (!selectedDevice || selectedDevice.status !== 5) return;
+        const plate = selectedDevice.license_plate || selectedDevice.imei || 'thiết bị';
+
+        confirm({
+            title: 'Xác nhận mở khoá thiết bị',
+            content: `Bạn có chắc chắn muốn mở khoá ${plate}?`,
+            okText: 'Mở khoá',
+            cancelText: 'Huỷ',
+            onOk: () => handleUnlockDevice(),
+        });
+    };
+
     const isLocked = selectedDevice?.status === 5;
+
+    // TÍNH MODE SẠC/XẢ DỰA VÀO current
+    const getChargeModeFromCurrent = (currentRaw) => {
+        if (currentRaw == null) return '--';
+        const currentNumber =
+            typeof currentRaw === 'number' ? currentRaw : Number(String(currentRaw).replace(',', '.'));
+
+        if (Number.isNaN(currentNumber)) return '--';
+
+        if (currentNumber > 0) return 'Đang sạc';
+        if (currentNumber < 0) return 'Đang xả';
+        return 'Đang chờ';
+    };
 
     const renderBatteryInfo = () => {
         if (loadingBattery) return <div>Đang tải trạng thái pin...</div>;
         if (!batteryStatus) return <div>Không có dữ liệu pin cho thiết bị này.</div>;
 
         const bs = batteryStatus; // alias cho gọn
+        const chargeMode = getChargeModeFromCurrent(bs.current);
 
         return (
             <>
                 <div>IMEI: {bs.imei || selectedDevice?.imei}</div>
                 <div>Điện áp: {bs.voltage ?? '--'} V</div>
-                <div>Dòng sạc/xả: {bs.current ?? '--'} A</div>
+                {/* Không hiển thị số A, chỉ hiển thị trạng thái sạc/xả/chờ */}
+                <div>Dòng sạc/xả: {chargeMode}</div>
                 <div>Trạng thái sạc (SOC): {bs.soc ?? '--'}%</div>
                 <div>Dung lượng pin: {bs.capacityAh ?? '--'} Ah</div>
                 <div>Sức khỏe pin (SOH): {bs.soh ?? '--'}%</div>
                 <div>Nhiệt độ: {bs.temperature ?? '--'}°C</div>
-                <div>Trạng thái: {bs.status || '--'}</div>
+                {/* Trạng thái cũng dựa trên current */}
+                <div>Trạng thái: {chargeMode}</div>
                 <div>Cập nhật lúc: {bs.updatedAt ? new Date(bs.updatedAt).toLocaleString() : '--'}</div>
             </>
         );
@@ -393,6 +480,15 @@ const MonitorPage = () => {
         const latVal = lastCruise?.lat;
         const lonVal = lastCruise?.lon;
 
+        let addressText = '--';
+        if (loadingAddress) {
+            addressText = 'Đang lấy địa chỉ...';
+        } else if (address) {
+            addressText = address;
+        } else if (addressError) {
+            addressText = addressError;
+        }
+
         return (
             <>
                 <div>Biển số xe: {plate}</div>
@@ -406,6 +502,9 @@ const MonitorPage = () => {
                         <div>Tọa độ: {latVal != null && lonVal != null ? `${latVal}, ${lonVal}` : '--'}</div>
                     </>
                 )}
+
+                {/* Địa chỉ hiện tại lấy từ Goong */}
+                <div>Địa chỉ hiện tại: {addressText}</div>
 
                 {cruiseError && <div className="iky-monitor__error">{cruiseError}</div>}
             </>
@@ -517,16 +616,6 @@ const MonitorPage = () => {
                                     <option value="offline">Offline</option>
                                 </select>
                             </div>
-
-                            {/* Nhóm (mock) */}
-                            {/* <div className="iky-monitor__left-section">
-                                <div className="iky-monitor__left-label">Nhóm</div>
-                                <select className="iky-monitor__select">
-                                    <option>-- Chọn --</option>
-                                    <option>Nhóm 1</option>
-                                    <option>Nhóm 2</option>
-                                </select>
-                            </div> */}
 
                             {/* DANH SÁCH XE */}
                             <div className="iky-monitor__left-section">
@@ -696,7 +785,7 @@ const MonitorPage = () => {
                                                 <span>Khoá thiết bị</span>
                                                 <button
                                                     className="iky-monitor__secondary-btn"
-                                                    onClick={handleLockDevice}
+                                                    onClick={handleConfirmLock}
                                                     disabled={selectedDevice?.status === 5}
                                                 >
                                                     {lockLoading ? 'Đang xử lý...' : 'Khoá'}
@@ -707,7 +796,7 @@ const MonitorPage = () => {
                                                 <span>Mở khoá thiết bị</span>
                                                 <button
                                                     className="iky-monitor__secondary-btn"
-                                                    onClick={handleUnlockDevice}
+                                                    onClick={handleConfirmUnlock}
                                                     disabled={selectedDevice?.status !== 5}
                                                 >
                                                     {lockLoading ? 'Đang xử lý...' : 'Mở khoá'}
