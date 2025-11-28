@@ -3,13 +3,13 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import './MonitorPage.css';
 
-import { getDevices } from './lib/api/devices';
+import { getDevices, getDeviceInfo, lockDevice, unlockDevice } from './lib/api/devices';
 import { getBatteryStatusByImei } from './lib/api/batteryStatus';
-import { getDeviceInfo } from './lib/api/devices';
 import { getLastCruise } from './lib/api/cruise';
 
 import markerIcon from './assets/marker-red.png';
 import { useRouter } from 'next/navigation';
+import { message } from 'antd';
 
 const toLocalDateTimeInput = (date) => {
     const pad = (n) => String(n).padStart(2, '0');
@@ -54,6 +54,10 @@ const MonitorPage = () => {
     const [lastCruise, setLastCruise] = useState(null);
     const [loadingCruise, setLoadingCruise] = useState(false);
     const [cruiseError, setCruiseError] = useState(null);
+
+    // lock / unlock
+    const [lockLoading, setLockLoading] = useState(false);
+    const [lockError, setLockError] = useState(null);
 
     const [lat] = useState(10.7542506);
     const [lng] = useState(106.6170202);
@@ -129,7 +133,7 @@ const MonitorPage = () => {
             map.off('zoom', updatePopupPosition);
             map.remove();
         };
-    }, [LMap, lat, lng]); // Thêm LMap vào dependencies
+    }, [LMap, lat, lng]);
 
     // LOAD LIST DEVICE
     useEffect(() => {
@@ -279,6 +283,72 @@ const MonitorPage = () => {
         }
     };
 
+    // ===== LOCK / UNLOCK HANDLER =====
+    const handleLockDevice = async () => {
+        if (!selectedDevice) return;
+        const token = localStorage.getItem('accessToken');
+        if (!token) {
+            setLockError('Không tìm thấy accessToken, vui lòng đăng nhập lại.');
+            return;
+        }
+
+        try {
+            setLockLoading(true);
+            setLockError(null);
+
+            const res = await lockDevice(token, selectedDevice._id);
+
+            message.success('Khoá thiết bị thành công');
+
+            const updated = res?.device || selectedDevice;
+
+            // update state
+            setSelectedDevice((prev) => ({ ...prev, ...updated }));
+            setDeviceInfo((prev) => ({ ...(prev || {}), ...updated }));
+            setDeviceList((prev) => prev.map((d) => (d._id === updated._id ? { ...d, ...updated } : d)));
+        } catch (err) {
+            console.error('Lock device error:', err);
+            setLockError(err?.message || 'Khoá thiết bị thất bại.');
+            message.error(err?.message || 'Khoá thiết bị thất bại.');
+        } finally {
+            setLockLoading(false);
+        }
+    };
+
+    const handleUnlockDevice = async () => {
+        if (!selectedDevice) return;
+        const token = localStorage.getItem('accessToken');
+        if (!token) {
+            setLockError('Không tìm thấy accessToken, vui lòng đăng nhập lại.');
+            return;
+        }
+
+        try {
+            setLockLoading(true);
+            setLockError(null);
+
+            const res = await unlockDevice(token, selectedDevice._id);
+
+            // 🔥 lấy message chuẩn từ API
+            const msg = res?.message || 'Mở khoá thiết bị thành công.';
+            message.success('Mở khoá thiết bị thành công.');
+
+            const updated = res?.device || selectedDevice;
+
+            setSelectedDevice((prev) => ({ ...prev, ...updated }));
+            setDeviceInfo((prev) => ({ ...(prev || {}), ...updated }));
+            setDeviceList((prev) => prev.map((d) => (d._id === updated._id ? { ...d, ...updated } : d)));
+        } catch (err) {
+            console.error('Unlock device error:', err);
+            setLockError(err?.message || 'Mở khoá thiết bị thất bại.');
+            message.error(err?.message || 'Mở khoá thiết bị thất bại.');
+        } finally {
+            setLockLoading(false);
+        }
+    };
+
+    const isLocked = selectedDevice?.status === 5;
+
     const renderBatteryInfo = () => {
         if (loadingBattery) return <div>Đang tải trạng thái pin...</div>;
         if (!batteryStatus) return <div>Không có dữ liệu pin cho thiết bị này.</div>;
@@ -386,6 +456,15 @@ const MonitorPage = () => {
         }
     };
 
+    const STATUS_MAP = {
+        5: { text: 'Đã khoá', class: 'iky-monitor__tag-red' },
+        10: { text: 'Đang hoạt động', class: 'iky-monitor__tag-green' },
+    };
+
+    const curStatus = selectedDevice?.status;
+    const deviceStatusText = STATUS_MAP[curStatus]?.text || 'Không rõ';
+    const deviceStatusClass = STATUS_MAP[curStatus]?.class || 'iky-monitor__tag-gray';
+
     return (
         <div className="iky-monitor">
             {/* LEFT PANEL */}
@@ -440,14 +519,14 @@ const MonitorPage = () => {
                             </div>
 
                             {/* Nhóm (mock) */}
-                            <div className="iky-monitor__left-section">
+                            {/* <div className="iky-monitor__left-section">
                                 <div className="iky-monitor__left-label">Nhóm</div>
                                 <select className="iky-monitor__select">
                                     <option>-- Chọn --</option>
                                     <option>Nhóm 1</option>
                                     <option>Nhóm 2</option>
                                 </select>
-                            </div>
+                            </div> */}
 
                             {/* DANH SÁCH XE */}
                             <div className="iky-monitor__left-section">
@@ -609,6 +688,33 @@ const MonitorPage = () => {
                                     {detailTab === 'control' && (
                                         <div className="iky-monitor__popup-col">
                                             <div className="iky-monitor__control-row">
+                                                <span>Trạng thái thiết bị</span>
+                                                <span className={deviceStatusClass}>{deviceStatusText}</span>
+                                            </div>
+
+                                            <div className="iky-monitor__control-row">
+                                                <span>Khoá thiết bị</span>
+                                                <button
+                                                    className="iky-monitor__secondary-btn"
+                                                    onClick={handleLockDevice}
+                                                    disabled={selectedDevice?.status === 5}
+                                                >
+                                                    {lockLoading ? 'Đang xử lý...' : 'Khoá'}
+                                                </button>
+                                            </div>
+
+                                            <div className="iky-monitor__control-row">
+                                                <span>Mở khoá thiết bị</span>
+                                                <button
+                                                    className="iky-monitor__secondary-btn"
+                                                    onClick={handleUnlockDevice}
+                                                    disabled={selectedDevice?.status !== 5}
+                                                >
+                                                    {lockLoading ? 'Đang xử lý...' : 'Mở khoá'}
+                                                </button>
+                                            </div>
+
+                                            <div className="iky-monitor__control-row">
                                                 <span>Bảo vệ</span>
                                                 <button className="iky-monitor__toggle-btn iky-monitor__toggle-btn--off">
                                                     Tắt
@@ -628,6 +734,12 @@ const MonitorPage = () => {
                                                 <span>Số dư tài khoản</span>
                                                 <button className="iky-monitor__secondary-btn">Kiểm tra</button>
                                             </div>
+
+                                            {lockError && (
+                                                <div className="iky-monitor__error" style={{ marginTop: 8 }}>
+                                                    {lockError}
+                                                </div>
+                                            )}
                                         </div>
                                     )}
 

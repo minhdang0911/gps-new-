@@ -11,9 +11,15 @@ export default function ManageLayout({ children }) {
         <Layout style={{ minHeight: 'calc(100vh - 140px)', background: '#f5f7fb' }}>
             <Sidebar />
 
-            <Layout>
-                <Content style={{ padding: '20px 24px' }}>
-                    <div style={{ maxWidth: 1100, margin: '0 auto' }}>{children}</div>
+            <Layout style={{ background: 'transparent' }}>
+                <Content
+                    style={{
+                        padding: '20px',
+                        paddingLeft: '20px',
+                        width: '100%',
+                    }}
+                >
+                    {children}
                 </Content>
             </Layout>
         </Layout>

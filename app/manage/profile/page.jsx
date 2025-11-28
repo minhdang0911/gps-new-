@@ -44,10 +44,10 @@ export default function ProfilePage() {
 
     return (
         <div style={{ width: '100%' }}>
-            <Space direction="vertical" size="large" style={{ width: '100%' }}>
+            <Space orientation="vertical" size="large" style={{ width: '100%' }}>
                 <Title level={4}>Thông tin người dùng</Title>
 
-                <Card bordered>
+                <Card variant="">
                     <Descriptions bordered column={1} size="small">
                         <Descriptions.Item label="Họ tên">{mockUserInfo.fullName}</Descriptions.Item>
                         <Descriptions.Item label="Số điện thoại">{mockUserInfo.phone}</Descriptions.Item>
@@ -67,7 +67,7 @@ export default function ProfilePage() {
 
                 <Title level={4}>Thông tin tài khoản</Title>
 
-                <Card bordered>
+                <Card variant="">
                     <Descriptions bordered column={1} size="small">
                         <Descriptions.Item label="Tên đăng nhập">{mockAccountInfo.username}</Descriptions.Item>
                         <Descriptions.Item label="Mật khẩu">{mockAccountInfo.password}</Descriptions.Item>

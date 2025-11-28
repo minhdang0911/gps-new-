@@ -1,106 +1,129 @@
 .iky-status {
     width: 100%;
-    background: #f7f7f7;
-    border-bottom: 1px solid #dcdcdc;
+    background: #ffffff;
+    border-bottom: 1px solid #e5e7eb;
     padding: 6px 16px;
 
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
 
-    font-family: system-ui, sans-serif;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+/* LEFT: breadcrumb */
+.iky-status__left {
+    flex: 1;
+    min-width: 0;
 }
 
 .iky-status__breadcrumb {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 14px;
-    color: #4a4a4a;
+    font-size: 13px;
 }
 
-.iky-status__icon {
-    color: #7abdfb;
-    font-weight: bold;
+.iky-status__breadcrumb .ant-breadcrumb-link,
+.iky-status__breadcrumb .ant-breadcrumb-separator {
+    color: #6b7280;
 }
 
-.iky-status__link {
-    color: #448ccb;
-    cursor: pointer;
-}
-
-.iky-status__current {
-    color: #333;
+.iky-status__breadcrumb .ant-breadcrumb-link:last-child {
+    color: #111827;
     font-weight: 500;
 }
 
-/* STATES (icons xe) */
-.iky-status__states {
+/* CENTER: states */
+.iky-status__center {
+    flex: 1.4;
     display: flex;
-    align-items: center;
-    gap: 24px;
+    justify-content: center;
 }
 
 .iky-status__state {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-size: 14px;
-    color: #222;
+    font-size: 13px;
+    color: #111827;
 }
 
-.iky-status__state img {
+.iky-status__state-icon {
     width: 22px;
     height: 22px;
-    object-fit: contain;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
-/* RIGHT SIDE */
+.iky-status__state-text {
+    white-space: nowrap;
+}
+
+/* RIGHT: noti + time */
 .iky-status__right {
+    flex: 1;
     display: flex;
     align-items: center;
-    gap: 20px;
-    font-size: 14px;
+    justify-content: flex-end;
+    gap: 16px;
+    font-size: 13px;
 }
 
-.iky-status__notify {
-    color: #1d70b8;
+.iky-status__badge .ant-badge-count {
+    box-shadow: none;
+}
+
+.iky-status__notify-label {
+    color: #1d4ed8;
+    font-weight: 500;
     cursor: pointer;
 }
 
-.iky-status__notify-count {
-    color: red;
-}
-
 .iky-status__time {
-    color: #333;
+    color: #111827;
     font-weight: 500;
+    font-variant-numeric: tabular-nums;
 }
 
-/* Responsive */
-@media (max-width: 768px) {
+/* ------------ Responsive ------------ */
+@media (max-width: 992px) {
     .iky-status {
         flex-wrap: wrap;
-        gap: 8px;
-        padding: 8px 10px;
+        align-items: flex-start;
+        padding: 8px 12px;
     }
 
-    .iky-status__states {
-        gap: 12px;
-        flex-wrap: wrap;
-        justify-content: center;
-        width: 100%;
+    .iky-status__left {
+        flex: 1 0 100%;
+        margin-bottom: 4px;
+    }
+
+    .iky-status__center {
+        order: 3;
+        flex: 1 0 100%;
+        justify-content: flex-start;
+        margin-top: 4px;
     }
 
     .iky-status__right {
-        width: 100%;
+        order: 2;
+        flex: 0 0 auto;
         justify-content: flex-end;
-        font-size: 13px;
+        width: 100%;
     }
 }
 
-@media (max-width: 480px) {
-    .iky-status__state span {
-        display: none; /* ẩn chữ, chỉ để icon */
+@media (max-width: 576px) {
+    .iky-status__center {
+        justify-content: center;
+    }
+
+    .iky-status__state-text {
+        display: none; /* mobile chỉ để icon cho gọn */
+    }
+
+    .iky-status__right {
+        justify-content: space-between;
     }
 }

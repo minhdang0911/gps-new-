@@ -1,12 +1,17 @@
 'use client';
+
 import React, { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import Image from 'next/image';
+import { Breadcrumb, Typography, Space, Badge } from 'antd';
 import './StatusBar.css';
 
-import xeDung from '../../assets/ico_biker_1.png';
-import xeChay from '../../assets/ico_biker_2.png';
-import xe50 from '../../assets/ico_biker_3.png';
-import xe80 from '../../assets/ico_biker_4.png';
+import xeDung from '../../assets/ico_biker_1.webp';
+import xeChay from '../../assets/ico_biker_2.webp';
+import xe50 from '../../assets/ico_biker_3.webp';
+import xe80 from '../../assets/ico_biker_4.webp';
+
+const { Text } = Typography;
 
 const StatusBar = () => {
     const pathname = usePathname() || '/';
@@ -27,7 +32,6 @@ const StatusBar = () => {
         currentTitle = 'Hỗ trợ';
     }
 
-    // ----- CLOCK -----
     useEffect(() => {
         const updateClock = () => {
             const now = new Date();
@@ -41,42 +45,56 @@ const StatusBar = () => {
     }, []);
 
     if (pathname === '/login') return null;
+
     return (
         <div className="iky-status">
-            {/* BREADCRUMB */}
-            <div className="iky-status__breadcrumb">
-                <span className="iky-status__icon">&raquo;&raquo;</span>
-                <span className="iky-status__link">Trang chủ</span>
-                <span className="iky-status__slash"> / </span>
-                <span className="iky-status__current">{currentTitle}</span>
+            {/* LEFT: BREADCRUMB */}
+            <div className="iky-status__left">
+                <Breadcrumb
+                    className="iky-status__breadcrumb"
+                    items={[{ title: 'Trang chủ' }, { title: currentTitle }]}
+                />
             </div>
 
-            {/* ICON XE */}
-            <div className="iky-status__states">
-                <div className="iky-status__state">
-                    <img src={xeDung.src} alt="Xe dừng" />
-                    <span>Xe dừng</span>
-                </div>
-                <div className="iky-status__state">
-                    <img src={xeChay.src} alt="Xe đang chạy" />
-                    <span>Xe đang chạy</span>
-                </div>
-                <div className="iky-status__state">
-                    <img src={xe50.src} alt="Xe quá 50km/h" />
-                    <span>Xe quá 50km/h</span>
-                </div>
-                <div className="iky-status__state">
-                    <img src={xe80.src} alt="Xe quá 80km/h" />
-                    <span>Xe quá 80km/h</span>
-                </div>
+            {/* CENTER: TRẠNG THÁI XE */}
+            <div className="iky-status__center">
+                <Space size={20} wrap>
+                    <div className="iky-status__state">
+                        <div className="iky-status__state-icon">
+                            <img src={xeDung.src} alt="Xe dừng" width={22} height={22} />
+                        </div>
+                        <Text className="iky-status__state-text">Xe dừng</Text>
+                    </div>
+
+                    <div className="iky-status__state">
+                        <div className="iky-status__state-icon">
+                            <img src={xeChay.src} alt="Xe đang chạy" width={22} height={22} />
+                        </div>
+                        <Text className="iky-status__state-text">Xe đang chạy</Text>
+                    </div>
+
+                    <div className="iky-status__state">
+                        <div className="iky-status__state-icon">
+                            <img src={xe50.src} alt="Xe quá 50km/h" width={22} height={22} />
+                        </div>
+                        <Text className="iky-status__state-text">Xe quá 50km/h</Text>
+                    </div>
+
+                    <div className="iky-status__state">
+                        <div className="iky-status__state-icon">
+                            <Image src={xe80} alt="Xe quá 80km/h" width={22} height={22} />
+                        </div>
+                        <Text className="iky-status__state-text">Xe quá 80km/h</Text>
+                    </div>
+                </Space>
             </div>
 
-            {/* NOTI + TIME */}
+            {/* RIGHT: NOTI + TIME */}
             <div className="iky-status__right">
-                <span className="iky-status__notify">
-                    Thông Báo <span className="iky-status__notify-count">(0)</span>
-                </span>
-                <span className="iky-status__time">{time}</span>
+                <Badge count={0} overflowCount={99} size="small" className="iky-status__badge" showZero>
+                    <span className="iky-status__notify-label">Thông báo</span>
+                </Badge>
+                <Text className="iky-status__time">{time}</Text>
             </div>
         </div>
     );

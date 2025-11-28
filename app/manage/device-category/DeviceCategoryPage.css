@@ -4,10 +4,10 @@
     min-height: calc(100vh - 104px); /* chỉnh theo header/status bar của m */
     box-sizing: border-box;
 }
-
 .dc-card {
-    max-width: 1200px;
-    margin: 0 auto;
+    width: 100%;
+    max-width: none;
+    margin: 0;
 }
 
 /* head card */

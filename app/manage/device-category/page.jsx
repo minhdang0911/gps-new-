@@ -2,7 +2,14 @@
 
 import React, { useEffect, useState } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Space, Popconfirm, message, Card } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import {
+    PlusOutlined,
+    EditOutlined,
+    DeleteOutlined,
+    ReloadOutlined,
+    SearchOutlined,
+    DownloadOutlined,
+} from '@ant-design/icons';
 
 import {
     getDeviceCategories,
@@ -13,6 +20,12 @@ import {
 } from '../../lib/api/deviceCategory';
 
 import './DeviceCategoryPage.css';
+
+import { getTodayForFileName } from '../../util/FormatDate';
+
+// Excel style lib
+import * as XLSX from 'xlsx-js-style';
+import { saveAs } from 'file-saver';
 
 const { Option } = Select;
 
@@ -46,6 +59,12 @@ const DeviceCategoryPage = () => {
     const isAdmin = role === 'administrator';
     const isDistributor = role === 'distributor';
     const isCustomer = role === 'customer';
+
+    // helper lấy label xuất xứ
+    const getMadeInFromLabel = (value) => {
+        const found = mifOptions.find((opt) => String(opt.value) === String(value));
+        return found ? found.label : value || '';
+    };
 
     // Lấy role từ localStorage
     useEffect(() => {
@@ -237,36 +256,155 @@ const DeviceCategoryPage = () => {
         });
     };
 
+    /* =========================
+        EXPORT EXCEL (xlsx-js-style)
+    ========================= */
+    const exportExcel = () => {
+        if (!data.length) {
+            message.warning('Không có dữ liệu để xuất');
+            return;
+        }
+
+        try {
+            // 1. Chuẩn bị data
+            const excelData = data.map((item) => ({
+                'Mã dòng': item.code || '',
+                'Tên dòng thiết bị': item.name || '',
+                Năm: item.year || '',
+                Model: item.model || '',
+                'Xuất xứ': getMadeInFromLabel(item.madeInFrom),
+                'Mô tả': item.description || '',
+            }));
+
+            // 2. Tạo sheet, chừa dòng 1 cho title
+            const ws = XLSX.utils.json_to_sheet(excelData, { origin: 'A2' });
+            const headers = Object.keys(excelData[0]);
+
+            // 3. Title dòng 1
+            const title = 'Báo cáo danh sách dòng thiết bị';
+            ws['A1'] = { v: title, t: 's' };
+            ws['!merges'] = [
+                {
+                    s: { r: 0, c: 0 },
+                    e: { r: 0, c: headers.length - 1 },
+                },
+            ];
+            ws['A1'].s = {
+                font: { bold: true, sz: 18, color: { rgb: 'FFFFFF' } },
+                fill: { fgColor: { rgb: '4F81BD' } },
+                alignment: { horizontal: 'center', vertical: 'center' },
+            };
+            ws['!rows'] = [{ hpt: 28 }, { hpt: 22 }];
+
+            // 4. Header row (row 2)
+            headers.forEach((h, idx) => {
+                const ref = XLSX.utils.encode_cell({ r: 1, c: idx });
+                if (!ws[ref]) return;
+                ws[ref].s = {
+                    font: { bold: true, color: { rgb: 'FFFFFF' } },
+                    fill: { fgColor: { rgb: '4F81BD' } },
+                    alignment: { horizontal: 'center', vertical: 'center' },
+                    border: {
+                        top: { style: 'thin', color: { rgb: '000000' } },
+                        bottom: { style: 'thin', color: { rgb: '000000' } },
+                        left: { style: 'thin', color: { rgb: '000000' } },
+                        right: { style: 'thin', color: { rgb: '000000' } },
+                    },
+                };
+            });
+
+            // 5. Style data
+            const range = XLSX.utils.decode_range(ws['!ref']);
+            for (let R = range.s.r; R <= range.e.r; R++) {
+                for (let C = range.s.c; C <= range.e.c; C++) {
+                    const ref = XLSX.utils.encode_cell({ r: R, c: C });
+                    const cell = ws[ref];
+                    if (!cell) continue;
+
+                    cell.s = cell.s || {};
+                    cell.s.alignment = { horizontal: 'center', vertical: 'center' };
+                    cell.s.border = {
+                        top: { style: 'thin', color: { rgb: '000000' } },
+                        bottom: { style: 'thin', color: { rgb: '000000' } },
+                        left: { style: 'thin', color: { rgb: '000000' } },
+                        right: { style: 'thin', color: { rgb: '000000' } },
+                    };
+
+                    // zebra stripe cho row > header
+                    if (R > 1 && R % 2 === 0) {
+                        cell.s.fill = cell.s.fill || {};
+                        cell.s.fill.fgColor = cell.s.fill.fgColor || { rgb: 'F9F9F9' };
+                    }
+                }
+            }
+
+            // 6. Auto width
+            ws['!cols'] = headers.map((key) => {
+                const maxLen = Math.max(key.length, ...excelData.map((row) => String(row[key] || '').length));
+                return { wch: maxLen + 4 };
+            });
+
+            // 7. Auto filter (header row 2)
+            ws['!autofilter'] = {
+                ref: XLSX.utils.encode_range({
+                    s: { r: 1, c: 0 },
+                    e: { r: range.e.r, c: range.e.c },
+                }),
+            };
+
+            // 8. Workbook + save
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'DeviceCategories');
+
+            const excelBuffer = XLSX.write(wb, {
+                bookType: 'xlsx',
+                type: 'array',
+                cellStyles: true,
+            });
+
+            saveAs(new Blob([excelBuffer]), `DanhSachDongThietBi_${getTodayForFileName()}.xlsx`);
+            message.success('Xuất Excel thành công');
+        } catch (err) {
+            console.error('Export excel error:', err);
+            message.error('Xuất Excel thất bại');
+        }
+    };
+
+    /* =========================
+        COLUMNS + SORTER
+    ========================= */
     const columns = [
         {
             title: 'Mã dòng',
             dataIndex: 'code',
             key: 'code',
+            sorter: (a, b) => (a.code || '').localeCompare(b.code || ''),
         },
         {
             title: 'Tên dòng thiết bị',
             dataIndex: 'name',
             key: 'name',
+            sorter: (a, b) => (a.name || '').localeCompare(b.name || ''),
         },
         {
             title: 'Năm',
             dataIndex: 'year',
             key: 'year',
             width: 100,
+            sorter: (a, b) => Number(a.year || 0) - Number(b.year || 0),
         },
         {
             title: 'Model',
             dataIndex: 'model',
             key: 'model',
+            sorter: (a, b) => (a.model || '').localeCompare(b.model || ''),
         },
         {
             title: 'Xuất xứ',
             dataIndex: 'madeInFrom',
             key: 'madeInFrom',
-            render: (value) => {
-                const found = mifOptions.find((opt) => String(opt.value) === String(value));
-                return found ? found.label : value || '-';
-            },
+            sorter: (a, b) => getMadeInFromLabel(a.madeInFrom).localeCompare(getMadeInFromLabel(b.madeInFrom)),
+            render: (value) => getMadeInFromLabel(value) || '-',
         },
         {
             title: 'Mô tả',
@@ -331,6 +469,9 @@ const DeviceCategoryPage = () => {
                             onClick={() => fetchList(pagination.current, pagination.pageSize)}
                         >
                             Refresh
+                        </Button>
+                        <Button icon={<DownloadOutlined />} onClick={exportExcel}>
+                            Xuất Excel
                         </Button>
                         {isAdmin && (
                             <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
@@ -440,7 +581,7 @@ const DeviceCategoryPage = () => {
                 okText="Lưu"
                 cancelText="Huỷ"
                 wrapClassName="dc-modal"
-                destroyOnClose
+                destroyOnHidden
             >
                 <Form form={form} layout="vertical">
                     <Form.Item

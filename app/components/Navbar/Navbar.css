@@ -12,6 +12,8 @@
     font-family: system-ui, sans-serif;
     width: 100%;
     box-sizing: border-box;
+    position: relative;
+    z-index: 100;
 }
 
 /* LOGO */
@@ -50,6 +52,7 @@
     justify-content: center;
     align-items: center;
     transition: background 0.2s ease;
+    padding: 8px 12px;
 }
 
 .iky-nav__item:hover {
@@ -72,19 +75,22 @@
 }
 
 .iky-nav__item-label {
-    margin-top: 2px;
+    margin-top: 4px;
     font-size: 13px;
+    font-weight: 500;
 }
 
 /* USER */
 .iky-nav__user {
     position: relative;
-    padding: 0 24px;
+    padding: 12px 24px;
     cursor: pointer;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     white-space: nowrap;
+    height: 100%;
+    transition: background 0.2s ease;
 }
 
 .iky-nav__user:hover {
@@ -93,41 +99,77 @@
 
 .iky-nav__user-name {
     font-weight: 600;
+    font-size: 14px;
 }
 
 .iky-nav__user-sub {
-    opacity: 0.8;
+    opacity: 0.85;
+    font-size: 13px;
 }
 
 .iky-nav__user-caret {
-    font-size: 10px;
+    font-size: 12px;
+    margin-left: 2px;
+    transition: transform 0.2s ease;
 }
 
-/* DROPDOWN */
+.iky-nav__user:hover .iky-nav__user-caret {
+    transform: translateY(2px);
+}
+
+/* DROPDOWN - NÂNG CẤP */
 .iky-nav__dropdown {
     position: absolute;
-    top: 100%;
+    top: calc(100% + 2px);
     right: 0;
     background: #ffffff;
     color: #333;
-    border-radius: 4px;
-    min-width: 140px;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+    border-radius: 6px;
+    min-width: 180px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15), 0 0 1px rgba(0, 0, 0, 0.1);
     overflow: hidden;
-    z-index: 999;
+    z-index: 9999;
+    animation: dropdownFadeIn 0.2s ease;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+@keyframes dropdownFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .iky-nav__dropdown-item {
     width: 100%;
-    padding: 10px 12px;
+    padding: 12px 16px;
     text-align: left;
     background: #fff;
     border: none;
     cursor: pointer;
     font-size: 14px;
+    color: #333;
+    display: block;
+    transition: all 0.15s ease;
+    font-weight: 500;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.iky-nav__dropdown-item:last-child {
+    border-bottom: none;
 }
 
 .iky-nav__dropdown-item:hover {
+    background: #f5f5f5;
+    color: #2196f3;
+    padding-left: 20px;
+}
+
+.iky-nav__dropdown-item:active {
     background: #eeeeee;
 }
 
@@ -143,6 +185,7 @@
 
     .iky-nav__item {
         min-width: 100px;
+        padding: 6px 10px;
     }
 
     .iky-nav__item-icon {
@@ -155,7 +198,7 @@
     }
 
     .iky-nav__user {
-        padding: 0 16px;
+        padding: 10px 16px;
     }
 }
 
@@ -171,31 +214,45 @@
         width: 100%;
         justify-content: flex-start;
         border-bottom: 1px solid rgba(255, 255, 255, 0.25);
-        padding: 6px 12px;
+        padding: 8px 12px;
+        height: 54px;
     }
 
     .iky-nav__menu {
         width: 100%;
         justify-content: space-around;
-        padding: 4px 0;
+        padding: 6px 0;
+        gap: 2px;
     }
 
     .iky-nav__item {
         min-width: auto;
-        padding: 4px 6px;
+        padding: 6px 8px;
+        height: 60px;
     }
 
     .iky-nav__user {
         position: absolute;
-        top: 6px;
-        right: 8px;
-        padding: 4px 8px;
-        background: rgba(0, 0, 0, 0.05);
-        border-radius: 4px;
+        top: 8px;
+        right: 12px;
+        padding: 6px 12px;
+        background: rgba(0, 0, 0, 0.15);
+        border-radius: 6px;
+        height: auto;
+    }
+
+    .iky-nav__user-name {
+        font-size: 13px;
+    }
+
+    .iky-nav__user-sub {
+        font-size: 12px;
     }
 
     .iky-nav__dropdown {
         top: calc(100% + 4px);
+        right: 0;
+        min-width: 160px;
     }
 }
 
@@ -210,8 +267,20 @@
         height: 26px;
     }
 
+    .iky-nav__item {
+        height: 50px;
+    }
+
     .iky-nav__menu {
         justify-content: space-between;
         padding: 4px 8px;
+    }
+
+    .iky-nav__user-sub {
+        display: none;
+    }
+
+    .iky-nav__user {
+        padding: 6px 10px;
     }
 }

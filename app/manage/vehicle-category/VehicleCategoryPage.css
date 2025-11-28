@@ -6,10 +6,10 @@
 }
 
 .vc-card {
-    max-width: 1200px;
-    margin: 0 auto;
+    width: 100%;
+    max-width: none;
+    margin: 0;
 }
-
 /* head card */
 .vc-card .ant-card-head {
     padding: 0 16px;

@@ -39,3 +39,19 @@ export const refreshTokenApi = async (refreshToken) => {
 
     return await res.json();
 };
+
+export const logoutApi = async () => {
+    const refreshToken = localStorage.getItem('refreshToken');
+
+    // Không có refreshToken thì coi như đã logout rồi
+    if (!refreshToken) {
+        console.warn('Không có refreshToken, bỏ qua gọi /logout');
+        return;
+    }
+
+    try {
+        await api.post('/logout', { refreshToken });
+    } catch (err) {
+        console.error('Logout error:', err);
+    }
+};

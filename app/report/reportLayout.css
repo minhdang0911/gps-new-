@@ -1,0 +1,187 @@
+/* ============================================================
+   DESKTOP LAYOUT
+   ============================================================ */
+
+.report-layout-desktop {
+    height: calc(100vh - 104px); /* trừ navbar + status bar */
+    background: #f3f4f6;
+}
+
+/* SIDEBAR */
+.report-sider {
+    background: #ffffff !important; /* TRẮNG / XÁM RẤT NHẸ */
+    border-right: 1px solid #e5e7eb;
+}
+
+.report-logo {
+    height: 56px;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    border-bottom: 1px solid #e5e7eb;
+    box-sizing: border-box;
+    background: #ffffff;
+}
+
+.report-logo__title {
+    margin: 0;
+    color: #0f172a !important;
+    font-weight: 600;
+}
+
+/* MENU (theme=light) */
+.report-sider .ant-menu {
+    background: transparent !important;
+    border-right: none !important;
+}
+
+.report-sider .ant-menu-item {
+    border-radius: 6px !important;
+    margin: 4px 8px;
+    height: 40px !important;
+    line-height: 40px !important;
+}
+
+.report-sider .ant-menu-item:not(.ant-menu-item-selected):hover {
+    background: #e5f0ff !important;
+}
+
+.report-sider .ant-menu-item-selected {
+    background: #2563eb !important;
+    color: #ffffff !important;
+}
+
+.report-sider .ant-menu-item-selected .anticon {
+    color: #ffffff !important;
+}
+
+.report-sider .ant-menu-item .anticon {
+    font-size: 16px;
+    color: #4b5563;
+}
+
+.report-menu-link {
+    color: inherit;
+    text-decoration: none;
+}
+
+/* chống vỡ layout desktop khi menu dài */
+.report-sider .ant-menu {
+    max-height: calc(100vh - 56px - 104px);
+    overflow-y: auto;
+}
+
+/* scrollbar tinh tế */
+.report-sider .ant-menu::-webkit-scrollbar {
+    width: 6px;
+}
+.report-sider .ant-menu::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    border-radius: 4px;
+}
+
+/* MAIN CONTENT */
+.report-main {
+    height: 100%;
+    background: transparent;
+}
+
+.report-content {
+    height: 100%;
+    padding: 24px;
+    background: #f3f4f6;
+    box-sizing: border-box;
+}
+
+/* ============================================================
+   MOBILE & TABLET LAYOUT
+   ============================================================ */
+
+.report-layout-mobile {
+    min-height: calc(100vh - 104px);
+    display: flex;
+    flex-direction: column;
+    background: #f3f4f6;
+}
+
+/* ----- TOP NAV MOBILE ----- */
+.report-topnav {
+    background: #ffffff;
+    padding: 10px 10px 6px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.report-topnav__title {
+    margin: 0 0 6px 2px;
+    color: #0f172a !important;
+    font-weight: 600;
+}
+
+/* ----- MOBILE TABS ----- */
+.report-topnav-tabs {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 6px;
+}
+
+/* scrollbar nhỏ đẹp */
+.report-topnav-tabs::-webkit-scrollbar {
+    height: 4px;
+}
+.report-topnav-tabs::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    border-radius: 999px;
+}
+
+.report-topnav-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: #f3f4f6;
+    font-size: 13px;
+    font-weight: 500;
+    color: #1f2937;
+    text-decoration: none;
+    white-space: nowrap;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+    transition: 0.15s ease;
+}
+
+.report-topnav-tab .anticon {
+    font-size: 14px;
+    color: #2563eb;
+}
+
+.report-topnav-tab__text {
+    line-height: 1;
+}
+
+/* ACTIVE TAB */
+.report-topnav-tab.is-active {
+    background: #2563eb;
+    color: #ffffff;
+}
+
+.report-topnav-tab.is-active .anticon {
+    color: #ffffff;
+}
+
+/* ----- MOBILE CONTENT ----- */
+.report-content-mobile {
+    flex: 1;
+    padding: 16px 12px;
+    background: #f3f4f6;
+    min-height: calc(100vh - 104px);
+    box-sizing: border-box;
+}
+
+/* Tablet padding rộng hơn */
+@media (min-width: 576px) and (max-width: 991px) {
+    .report-content-mobile {
+        padding: 20px;
+    }
+}

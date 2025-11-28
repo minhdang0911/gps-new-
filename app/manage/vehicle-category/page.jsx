@@ -2,7 +2,14 @@
 
 import React, { useEffect, useState } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Space, Popconfirm, message, Card } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import {
+    PlusOutlined,
+    EditOutlined,
+    DeleteOutlined,
+    ReloadOutlined,
+    SearchOutlined,
+    DownloadOutlined,
+} from '@ant-design/icons';
 
 import {
     getVehicleCategories,
@@ -12,9 +19,16 @@ import {
     getManufacturerOptions,
 } from '../../lib/api/vehicleCategory';
 
+import {} from '../../lib/api/de'
+
 import { getMadeInFromOptions, getDeviceCategories } from '../../lib/api/deviceCategory';
 
 import './VehicleCategoryPage.css';
+
+// Excel
+import * as XLSX from 'xlsx-js-style';
+import { saveAs } from 'file-saver';
+import { getTodayForFileName } from '../../util/FormatDate';
 
 const { Option } = Select;
 
@@ -51,6 +65,23 @@ const VehicleCategoryPage = () => {
     const isDistributor = role === 'distributor';
     const isCustomer = role === 'customer';
 
+    // helper label
+    const getMifLabel = (value) => {
+        const found = mifOptions.find((opt) => String(opt.value) === String(value));
+        return found ? found.label : value || '';
+    };
+
+    const getManufacturerLabel = (value) => {
+        const found = manufacturerOptions.find((opt) => String(opt.value) === String(value));
+        return found ? found.label : value || '';
+    };
+
+    const getDeviceTypeLabel = (value) => {
+        if (!value) return '';
+        const found = deviceTypeOptions.find((opt) => String(opt.value) === String(value));
+        return found ? found.label : value || '';
+    };
+
     // Lấy role từ localStorage
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -79,7 +110,7 @@ const VehicleCategoryPage = () => {
                 }));
                 setManufacturerOptions(manuOpts);
 
-                // Dòng thiết bị (device category) – lấy làm options cho deviceTypeId
+                // Dòng thiết bị (device category)
                 const dcRes = await getDeviceCategories(token, {
                     page: 1,
                     limit: 100,
@@ -210,7 +241,6 @@ const VehicleCategoryPage = () => {
                 madeInFrom: values.madeInFrom,
             };
 
-            // deviceTypeId không bắt buộc – chỉ gửi nếu có chọn
             if (values.deviceTypeId) {
                 payload.deviceTypeId = values.deviceTypeId;
             }
@@ -228,7 +258,6 @@ const VehicleCategoryPage = () => {
             fetchList(pagination.current, pagination.pageSize);
         } catch (err) {
             if (err?.errorFields) {
-                // lỗi validate form
                 return;
             }
 
@@ -268,49 +297,165 @@ const VehicleCategoryPage = () => {
         });
     };
 
+    /* =========================
+       EXPORT EXCEL
+    ========================= */
+    const exportExcel = () => {
+        if (!data.length) {
+            message.warning('Không có dữ liệu để xuất');
+            return;
+        }
+
+        try {
+            const excelData = data.map((item) => ({
+                'Tên dòng xe': item.name || '',
+                'Hãng xe': getManufacturerLabel(item.manufacturer),
+                Năm: item.year || '',
+                'Phiên bản / Model': item.model || '',
+                'Xuất xứ': getMifLabel(item.madeInFrom),
+                'Dòng thiết bị': getDeviceTypeLabel(item.deviceTypeId || item.deviceType_id),
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(excelData, { origin: 'A2' });
+            const headers = Object.keys(excelData[0]);
+
+            // Title
+            const title = 'Báo cáo danh sách dòng xe';
+            ws['A1'] = { v: title, t: 's' };
+            ws['!merges'] = [
+                {
+                    s: { r: 0, c: 0 },
+                    e: { r: 0, c: headers.length - 1 },
+                },
+            ];
+            ws['A1'].s = {
+                font: { bold: true, sz: 18, color: { rgb: 'FFFFFF' } },
+                fill: { fgColor: { rgb: '4F81BD' } },
+                alignment: { horizontal: 'center', vertical: 'center' },
+            };
+            ws['!rows'] = [{ hpt: 26 }, { hpt: 22 }];
+
+            // Header row (index 1)
+            headers.forEach((h, idx) => {
+                const ref = XLSX.utils.encode_cell({ r: 1, c: idx });
+                if (!ws[ref]) return;
+                ws[ref].s = {
+                    font: { bold: true, color: { rgb: 'FFFFFF' } },
+                    fill: { fgColor: { rgb: '4F81BD' } },
+                    alignment: { horizontal: 'center', vertical: 'center' },
+                    border: {
+                        top: { style: 'thin', color: { rgb: '000000' } },
+                        bottom: { style: 'thin', color: { rgb: '000000' } },
+                        left: { style: 'thin', color: { rgb: '000000' } },
+                        right: { style: 'thin', color: { rgb: '000000' } },
+                    },
+                };
+            });
+
+            const range = XLSX.utils.decode_range(ws['!ref']);
+
+            // Style data
+            for (let R = range.s.r; R <= range.e.r; R++) {
+                for (let C = range.s.c; C <= range.e.c; C++) {
+                    const ref = XLSX.utils.encode_cell({ r: R, c: C });
+                    const cell = ws[ref];
+                    if (!cell) continue;
+
+                    cell.s = cell.s || {};
+                    cell.s.alignment = { horizontal: 'center', vertical: 'center' };
+                    cell.s.border = {
+                        top: { style: 'thin', color: { rgb: '000000' } },
+                        bottom: { style: 'thin', color: { rgb: '000000' } },
+                        left: { style: 'thin', color: { rgb: '000000' } },
+                        right: { style: 'thin', color: { rgb: '000000' } },
+                    };
+
+                    if (R > 1 && R % 2 === 0) {
+                        cell.s.fill = cell.s.fill || {};
+                        cell.s.fill.fgColor = cell.s.fill.fgColor || { rgb: 'F9F9F9' };
+                    }
+                }
+            }
+
+            // Auto width
+            ws['!cols'] = headers.map((key) => {
+                const maxLen = Math.max(key.length, ...excelData.map((row) => String(row[key] || '').length));
+                return { wch: maxLen + 4 };
+            });
+
+            // Auto filter
+            ws['!autofilter'] = {
+                ref: XLSX.utils.encode_range({
+                    s: { r: 1, c: 0 },
+                    e: { r: range.e.r, c: range.e.c },
+                }),
+            };
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'VehicleCategories');
+
+            const excelBuffer = XLSX.write(wb, {
+                bookType: 'xlsx',
+                type: 'array',
+                cellStyles: true,
+            });
+
+            saveAs(new Blob([excelBuffer]), `DanhSachDongXe_${getTodayForFileName()}.xlsx`);
+            message.success('Xuất Excel thành công');
+        } catch (err) {
+            console.error('Export excel vehicle category error:', err);
+            message.error('Xuất Excel thất bại');
+        }
+    };
+
+    /* =========================
+       COLUMNS + SORTER
+    ========================= */
     const columns = [
         {
             title: 'Tên dòng xe',
             dataIndex: 'name',
             key: 'name',
+            sorter: (a, b) => (a.name || '').localeCompare(b.name || ''),
         },
         {
             title: 'Hãng xe',
             dataIndex: 'manufacturer',
             key: 'manufacturer',
-            render: (value) => {
-                const found = manufacturerOptions.find((opt) => String(opt.value) === String(value));
-                return found ? found.label : value || '-';
-            },
+            sorter: (a, b) => getManufacturerLabel(a.manufacturer).localeCompare(getManufacturerLabel(b.manufacturer)),
+            render: (value) => getManufacturerLabel(value) || '-',
         },
         {
             title: 'Năm',
             dataIndex: 'year',
             key: 'year',
             width: 100,
+            sorter: (a, b) => Number(a.year || 0) - Number(b.year || 0),
         },
         {
             title: 'Phiên bản / Model',
             dataIndex: 'model',
             key: 'model',
+            sorter: (a, b) => (a.model || '').localeCompare(b.model || ''),
         },
         {
             title: 'Xuất xứ',
             dataIndex: 'madeInFrom',
             key: 'madeInFrom',
-            render: (value) => {
-                const found = mifOptions.find((opt) => String(opt.value) === String(value));
-                return found ? found.label : value || '-';
-            },
+            sorter: (a, b) => getMifLabel(a.madeInFrom).localeCompare(getMifLabel(b.madeInFrom)),
+            render: (value) => getMifLabel(value) || '-',
         },
         {
             title: 'Dòng thiết bị',
             dataIndex: 'deviceTypeId',
             key: 'deviceTypeId',
-            render: (value) => {
-                if (!value) return '-';
-                const found = deviceTypeOptions.find((opt) => String(opt.value) === String(value));
-                return found ? found.label : value;
+            sorter: (a, b) =>
+                getDeviceTypeLabel(a.deviceTypeId || a.deviceType_id).localeCompare(
+                    getDeviceTypeLabel(b.deviceTypeId || b.deviceType_id),
+                ),
+            render: (value, record) => {
+                const v = value || record.deviceType_id;
+                return getDeviceTypeLabel(v) || '-';
             },
         },
         {
@@ -370,6 +515,9 @@ const VehicleCategoryPage = () => {
                             onClick={() => fetchList(pagination.current, pagination.pageSize)}
                         >
                             Refresh
+                        </Button>
+                        <Button icon={<DownloadOutlined />} onClick={exportExcel} disabled={!data.length}>
+                            Xuất Excel
                         </Button>
                         {isAdmin && (
                             <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
@@ -486,7 +634,7 @@ const VehicleCategoryPage = () => {
                 okText="Lưu"
                 cancelText="Huỷ"
                 wrapClassName="vc-modal"
-                destroyOnClose
+                destroyOnHidden
             >
                 <Form form={form} layout="vertical">
                     <Form.Item

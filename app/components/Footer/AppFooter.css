@@ -1,0 +1,42 @@
+/* Gốc footer */
+.ikygps-footer {
+    background: #0f172a !important; /* xanh đen hiện đại */
+    padding: 10px 0 !important;
+    border-top: 1px solid #1e293b;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Layout trong */
+.ikygps-footer__inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 16px;
+
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+/* Text trái */
+.ikygps-footer__left {
+    color: #cbd5e1 !important;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+/* Text phải */
+.ikygps-footer__right {
+    color: #94a3b8 !important;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .ikygps-footer__inner {
+        flex-direction: column;
+        text-align: center;
+        gap: 4px;
+    }
+}

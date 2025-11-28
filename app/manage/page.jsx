@@ -7,7 +7,7 @@ export default function ManageIndexPage() {
     const router = useRouter();
 
     useEffect(() => {
-        router.replace('/manage/user');
+        router.replace('/manage/devices');
     }, []);
 
     return null;

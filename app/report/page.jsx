@@ -1,9 +1,14 @@
-import React from 'react'
+'use client';
 
-const page = () => {
-  return (
-    <div>Trang đang phát triển</div>
-  )
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+
+export default function ReportHomePage() {
+    const router = useRouter();
+
+    useEffect(() => {
+        router.replace('/report/usage-session');
+    }, []);
+
+    return null;
 }
-
-export default page

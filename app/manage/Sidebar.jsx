@@ -2,7 +2,16 @@
 
 import React from 'react';
 import { Layout, Menu, Typography } from 'antd';
-import { UserOutlined, HddOutlined, TeamOutlined, LockOutlined } from '@ant-design/icons';
+import {
+    UserOutlined,
+    MobileOutlined,
+    AppstoreOutlined,
+    CarOutlined,
+    ToolOutlined,
+    TeamOutlined,
+    UsergroupAddOutlined,
+    LockOutlined,
+} from '@ant-design/icons';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -37,43 +46,43 @@ export default function Sidebar() {
                 mode="inline"
                 selectedKeys={[active]}
                 items={[
-                    {
-                        key: 'profile',
-                        icon: <UserOutlined />,
-                        label: <Link href="/manage/profile">Thông tin tài khoản</Link>,
-                    },
+                    // {
+                    //     key: 'profile',
+                    //     icon: <UserOutlined />,
+                    //     label: <Link href="/manage/profile">Thông tin tài khoản</Link>,
+                    // },
                     {
                         key: 'devices',
-                        icon: <HddOutlined />,
+                        icon: <MobileOutlined />,
                         label: <Link href="/manage/devices">Quản lý thiết bị</Link>,
                     },
 
                     {
                         key: 'device-category',
-                        icon: <TeamOutlined />,
+                        icon: <AppstoreOutlined />,
                         label: <Link href="/manage/device-category">Quản lý danh mục thiết bị</Link>,
                     },
 
                     {
                         key: 'vehicle-category',
-                        icon: <TeamOutlined />,
+                        icon: <CarOutlined />,
                         label: <Link href="/manage/vehicle-category">Quản lý loại xe</Link>,
                     },
 
                     {
                         key: 'vehicle-customer',
-                        icon: <TeamOutlined />,
+                        icon: <ToolOutlined />,
                         label: <Link href="/manage/device-customer">Quản lý thiết bị khách hàng</Link>,
                     },
 
-                    {
-                        key: 'groups',
-                        icon: <TeamOutlined />,
-                        label: <Link href="/manage/groups">Quản lý nhóm</Link>,
-                    },
+                    // {
+                    //     key: 'groups',
+                    //     icon: <TeamOutlined />,
+                    //     label: <Link href="/manage/groups">Quản lý nhóm</Link>,
+                    // },
                     {
                         key: 'user',
-                        icon: <TeamOutlined />,
+                        icon: <UsergroupAddOutlined />,
                         label: <Link href="/manage/user">Quản lý người dùng</Link>,
                     },
                     {

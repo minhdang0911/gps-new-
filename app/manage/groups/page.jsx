@@ -63,7 +63,7 @@ export default function ManageGroupsPage() {
     ];
 
     return (
-        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+        <Space orientation="vertical" style={{ width: '100%' }} size="middle">
             <Space style={{ justifyContent: 'space-between', width: '100%' }}>
                 <Title level={4} style={{ margin: 0 }}>
                     Quản lý nhóm thiết bị

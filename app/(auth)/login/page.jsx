@@ -19,9 +19,14 @@ const LoginPage = () => {
             setLoading(true);
             const res = await login(values.username, values.password);
 
+            // token + role
             localStorage.setItem('accessToken', res.accessToken);
             localStorage.setItem('refreshToken', res.refreshToken);
-            localStorage.setItem('role', res?.user?.position);
+            localStorage.setItem('role', res?.user?.position || '');
+
+            // ✨ lưu info user cho Navbar dùng
+            localStorage.setItem('username', res?.user?.username || '');
+            localStorage.setItem('email', res?.user?.email || '');
 
             router.push('/');
         } catch (err) {

@@ -82,3 +82,27 @@ export const deleteDevice = async (token, id) => {
 
     return res.data;
 };
+
+export const lockDevice = async (token, id) => {
+    const res = await api.post(`device/lock/${id}`, null, {
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    });
+
+    return res.data; // { message, device, ... }
+};
+
+// ===========================
+// UNLOCK DEVICE
+// POST device/unlock/:id
+// ===========================
+export const unlockDevice = async (token, id) => {
+    const res = await api.post(`device/unlock/${id}`, null, {
+        headers: {
+            Authorization: `Bearer ${token}`,
+        },
+    });
+
+    return res.data; // { message, device, ... }
+};

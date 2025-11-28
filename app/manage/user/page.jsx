@@ -1,12 +1,24 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Card, Input, Button, Table, Space, Modal, Typography, Form, Select, Descriptions } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, EyeOutlined } from '@ant-design/icons';
+import { Card, Input, Button, Table, Space, Modal, Typography, Form, Select, Descriptions, message } from 'antd';
+import {
+    PlusOutlined,
+    EditOutlined,
+    DeleteOutlined,
+    SearchOutlined,
+    EyeOutlined,
+    DownloadOutlined,
+} from '@ant-design/icons';
 
 import { createUser, updateUser, deleteUser, getUserInfo, getUserList } from '../../lib/api/user';
 
 import './ManageUserPage.css';
+
+// Excel
+import * as XLSX from 'xlsx-js-style';
+import { saveAs } from 'file-saver';
+import { getTodayForFileName } from '../../util/FormatDate';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -60,6 +72,7 @@ export default function ManageUserPage() {
             setUsers(res?.items || []);
         } catch (err) {
             console.log('LOAD USER ERROR', err);
+            message.error('Không tải được danh sách người dùng');
         } finally {
             setLoadingUsers(false);
         }
@@ -126,6 +139,7 @@ export default function ManageUserPage() {
             setViewUserModalVisible(true);
         } catch (err) {
             console.log(err);
+            message.error('Không tải được thông tin người dùng');
         }
     };
 
@@ -149,6 +163,7 @@ export default function ManageUserPage() {
                 }
 
                 await updateUser(editingUser._id, payload);
+                message.success('Cập nhật người dùng thành công');
             } else {
                 const payload = { ...userFormData };
 
@@ -157,12 +172,21 @@ export default function ManageUserPage() {
                 }
 
                 await createUser(payload);
+                message.success('Tạo người dùng thành công');
             }
 
             setUserModalVisible(false);
             loadUsers();
         } catch (err) {
             console.log('SAVE USER ERROR', err);
+            const apiData = err?.response?.data;
+            const msg =
+                apiData?.error ||
+                apiData?.message ||
+                (typeof apiData === 'string' ? apiData : null) ||
+                err?.message ||
+                'Lưu người dùng thất bại';
+            message.error(msg);
         }
     };
 
@@ -172,22 +196,171 @@ export default function ManageUserPage() {
             content: `Bạn có chắc muốn xóa ${record.username}?`,
             okType: 'danger',
             onOk: async () => {
-                await deleteUser(record._id);
-                loadUsers();
+                try {
+                    await deleteUser(record._id);
+                    message.success('Xóa người dùng thành công');
+                    loadUsers();
+                } catch (err) {
+                    console.log('DELETE USER ERROR', err);
+                    message.error('Xóa người dùng thất bại');
+                }
             },
         });
     };
 
+    // ===== EXPORT EXCEL =====
+    const exportExcel = () => {
+        if (!users.length) {
+            message.warning('Không có dữ liệu để xuất');
+            return;
+        }
+
+        try {
+            const excelData = users.map((u) => {
+                let distributorText = '';
+                if (u.distributor_id) {
+                    // có thể là id string hoặc object
+                    if (typeof u.distributor_id === 'string') {
+                        distributorText = u.distributor_id;
+                    } else {
+                        distributorText = `${u.distributor_id?.email || ''} (${u.distributor_id?.username || ''})`;
+                    }
+                }
+
+                return {
+                    'Tên đăng nhập': u.username || '',
+                    'Họ tên': u.name || '',
+                    Email: u.email || '',
+                    'Số điện thoại': u.phone || '',
+                    'Vai trò': u.position || '',
+                    'Thuộc đại lý': distributorText,
+                    'Ngày tạo': u.createdAt ? new Date(u.createdAt).toLocaleString('vi-VN') : '',
+                };
+            });
+
+            const ws = XLSX.utils.json_to_sheet(excelData, { origin: 'A2' });
+            const headers = Object.keys(excelData[0]);
+
+            // Title dòng 1
+            const title = 'Báo cáo danh sách người dùng';
+            ws['A1'] = { v: title, t: 's' };
+            ws['!merges'] = [
+                {
+                    s: { r: 0, c: 0 },
+                    e: { r: 0, c: headers.length - 1 },
+                },
+            ];
+            ws['A1'].s = {
+                font: { bold: true, sz: 18, color: { rgb: 'FFFFFF' } },
+                fill: { fgColor: { rgb: '4F81BD' } },
+                alignment: { horizontal: 'center', vertical: 'center' },
+            };
+            ws['!rows'] = [{ hpt: 26 }, { hpt: 22 }];
+
+            // Header row (row 2 / index 1)
+            headers.forEach((h, idx) => {
+                const ref = XLSX.utils.encode_cell({ r: 1, c: idx });
+                if (!ws[ref]) return;
+                ws[ref].s = {
+                    font: { bold: true, color: { rgb: 'FFFFFF' } },
+                    fill: { fgColor: { rgb: '4F81BD' } },
+                    alignment: { horizontal: 'center', vertical: 'center' },
+                    border: {
+                        top: { style: 'thin', color: { rgb: '000000' } },
+                        bottom: { style: 'thin', color: { rgb: '000000' } },
+                        left: { style: 'thin', color: { rgb: '000000' } },
+                        right: { style: 'thin', color: { rgb: '000000' } },
+                    },
+                };
+            });
+
+            // Style data
+            const range = XLSX.utils.decode_range(ws['!ref']);
+            for (let R = range.s.r; R <= range.e.r; R++) {
+                for (let C = range.s.c; C <= range.e.c; C++) {
+                    const ref = XLSX.utils.encode_cell({ r: R, c: C });
+                    const cell = ws[ref];
+                    if (!cell) continue;
+
+                    cell.s = cell.s || {};
+                    cell.s.alignment = { horizontal: 'center', vertical: 'center' };
+                    cell.s.border = {
+                        top: { style: 'thin', color: { rgb: '000000' } },
+                        bottom: { style: 'thin', color: { rgb: '000000' } },
+                        left: { style: 'thin', color: { rgb: '000000' } },
+                        right: { style: 'thin', color: { rgb: '000000' } },
+                    };
+
+                    // zebra stripe cho row > header
+                    if (R > 1 && R % 2 === 0) {
+                        cell.s.fill = cell.s.fill || {};
+                        cell.s.fill.fgColor = cell.s.fill.fgColor || { rgb: 'F9F9F9' };
+                    }
+                }
+            }
+
+            // Auto width
+            ws['!cols'] = headers.map((key) => {
+                const maxLen = Math.max(key.length, ...excelData.map((row) => String(row[key] || '').length));
+                return { wch: maxLen + 4 };
+            });
+
+            // Auto filter
+            ws['!autofilter'] = {
+                ref: XLSX.utils.encode_range({
+                    s: { r: 1, c: 0 },
+                    e: { r: range.e.r, c: range.e.c },
+                }),
+            };
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Users');
+
+            const excelBuffer = XLSX.write(wb, {
+                bookType: 'xlsx',
+                type: 'array',
+                cellStyles: true,
+            });
+
+            saveAs(new Blob([excelBuffer]), `DanhSachNguoiDung_${getTodayForFileName()}.xlsx`);
+            message.success('Xuất Excel thành công');
+        } catch (err) {
+            console.log('EXPORT EXCEL ERROR', err);
+            message.error('Xuất Excel thất bại');
+        }
+    };
+
+    // ===== COLUMNS + SORTER =====
     const userColumns = [
-        { title: 'Tên đăng nhập', dataIndex: 'username' },
-        { title: 'Họ tên', dataIndex: 'name' },
-        { title: 'Email', dataIndex: 'email' },
-        { title: 'Số điện thoại', dataIndex: 'phone' },
-        { title: 'Vai trò', dataIndex: 'position' },
+        {
+            title: 'Tên đăng nhập',
+            dataIndex: 'username',
+            sorter: (a, b) => (a.username || '').localeCompare(b.username || ''),
+        },
+        {
+            title: 'Họ tên',
+            dataIndex: 'name',
+            sorter: (a, b) => (a.name || '').localeCompare(b.name || ''),
+        },
+        {
+            title: 'Email',
+            dataIndex: 'email',
+            sorter: (a, b) => (a.email || '').localeCompare(b.email || ''),
+        },
+        {
+            title: 'Số điện thoại',
+            dataIndex: 'phone',
+            sorter: (a, b) => (a.phone || '').localeCompare(b.phone || ''),
+        },
+        {
+            title: 'Vai trò',
+            dataIndex: 'position',
+            sorter: (a, b) => (a.position || '').localeCompare(b.position || ''),
+        },
         {
             title: 'Thao tác',
             fixed: 'right',
-            width: 200,
+            width: 220,
             render: (_, record) => (
                 <Space>
                     <Button size="small" icon={<EditOutlined />} onClick={() => handleOpenEditUser(record)}>
@@ -215,14 +388,20 @@ export default function ManageUserPage() {
                         Quản lý người dùng
                     </Title>
 
-                    <Button
-                        type="primary"
-                        icon={<PlusOutlined />}
-                        onClick={handleOpenAddUser}
-                        className="user-page__add-btn"
-                    >
-                        Thêm người dùng
-                    </Button>
+                    <Space>
+                        <Button icon={<DownloadOutlined />} onClick={exportExcel} disabled={!users.length}>
+                            Xuất Excel
+                        </Button>
+
+                        <Button
+                            type="primary"
+                            icon={<PlusOutlined />}
+                            onClick={handleOpenAddUser}
+                            className="user-page__add-btn"
+                        >
+                            Thêm người dùng
+                        </Button>
+                    </Space>
                 </div>
 
                 {/* SEARCH */}
@@ -242,7 +421,8 @@ export default function ManageUserPage() {
                     loading={loadingUsers}
                     dataSource={users}
                     className="user-page__table"
-                    scroll={{ x: 800 }}
+                    scroll={{ x: 900 }}
+                    size="middle"
                 />
             </Card>
 
@@ -255,7 +435,7 @@ export default function ManageUserPage() {
                 okText="Lưu"
                 cancelText="Đóng"
                 wrapClassName="user-modal"
-                destroyOnClose
+                destroyOnHidden
             >
                 <Form layout="vertical">
                     <Form.Item label="Tên đăng nhập">
@@ -378,7 +558,7 @@ export default function ManageUserPage() {
                 onCancel={() => setViewUserModalVisible(false)}
                 footer={<Button onClick={() => setViewUserModalVisible(false)}>Đóng</Button>}
                 wrapClassName="user-modal"
-                destroyOnClose
+                destroyOnHidden
             >
                 {viewUserData ? (
                     <Descriptions column={1} bordered>
@@ -387,9 +567,15 @@ export default function ManageUserPage() {
                         <Descriptions.Item label="Email">{viewUserData.email}</Descriptions.Item>
                         <Descriptions.Item label="Số điện thoại">{viewUserData.phone}</Descriptions.Item>
                         <Descriptions.Item label="Vai trò">{viewUserData.position}</Descriptions.Item>
-                        <Descriptions.Item label="Distributor">{viewUserData.distributor_id}</Descriptions.Item>
+                        <Descriptions.Item label="Distributor">
+                            {typeof viewUserData.distributor_id === 'string'
+                                ? viewUserData.distributor_id
+                                : viewUserData.distributor_id
+                                ? `${viewUserData.distributor_id.email} (${viewUserData.distributor_id.username})`
+                                : ''}
+                        </Descriptions.Item>
                         <Descriptions.Item label="Ngày tạo">
-                            {new Date(viewUserData.createdAt).toLocaleString()}
+                            {viewUserData.createdAt ? new Date(viewUserData.createdAt).toLocaleString('vi-VN') : ''}
                         </Descriptions.Item>
                     </Descriptions>
                 ) : (

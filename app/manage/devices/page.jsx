@@ -24,9 +24,15 @@ import {
     DeleteOutlined,
     ArrowLeftOutlined,
     EyeOutlined,
+    DownloadOutlined,
 } from '@ant-design/icons';
 
+// DÙNG BẢN HỖ TRỢ STYLE
+import * as XLSX from 'xlsx-js-style';
+import { saveAs } from 'file-saver';
+
 import markerIcon from '../../assets/marker-red.png';
+import { getTodayForFileName } from '../../util/FormatDate';
 
 // API REAL
 import { getDevices, createDevice, updateDevice, deleteDevice } from '../../lib/api/devices';
@@ -82,7 +88,7 @@ export default function ManageDevicesPage() {
             setLoading(true);
             const res = await getDevices(token, {
                 page: 1,
-                limit: 50,
+                limit: 200,
                 ...filters,
             });
             setDevices(res?.devices || []);
@@ -104,7 +110,7 @@ export default function ManageDevicesPage() {
             const vc = await getVehicleCategories(token, { limit: 200 });
             setVehicleCategories(vc.items || []);
 
-            const users = await getUserList({ limit: 300 });
+            const users = await getUserList({ limit: 3000 });
             setUserOptions(users.items || []);
         } catch (err) {
             message.error('Không tải dữ liệu cấu hình');
@@ -123,6 +129,147 @@ export default function ManageDevicesPage() {
             setCurrentRole(localStorage.getItem('role') || '');
         }
     }, []);
+
+    /* =========================
+        EXPORT EXCEL (xlsx-js-style)
+    ========================= */
+    const exportExcel = () => {
+        try {
+            if (!devices.length) {
+                return message.warning('Không có dữ liệu');
+            }
+
+            // 1. DATA EXPORT
+            const excelData = devices.map((d) => ({
+                IMEI: d.imei,
+                'Loại thiết bị': d.device_category_id?.name || '-',
+                'Số ĐT': d.phone_number || '-',
+                'Biển số': d.license_plate || '-',
+                KháchHàng: d.user_id?.email || 'Chưa gán',
+                ĐạiLý: d.distributor_id?.username || '-',
+                Active: d.active ? 'Có' : 'Không',
+                NgàyTạo: new Date(d.createdAt).toLocaleString('vi-VN'),
+                Driver: d.driver || '-',
+            }));
+
+            // Tạo sheet từ json, origin A2 để chừa dòng title
+            const ws = XLSX.utils.json_to_sheet(excelData, { origin: 'A2' });
+            const headers = Object.keys(excelData[0]);
+
+            // 2. TITLE DÒNG 1
+            const title = 'Báo cáo danh sách thiết bị';
+            ws['A1'] = { v: title, t: 's' };
+            ws['!merges'] = [
+                {
+                    s: { r: 0, c: 0 },
+                    e: { r: 0, c: headers.length - 1 },
+                },
+            ];
+
+            ws['A1'].s = {
+                font: { bold: true, sz: 18, color: { rgb: 'FFFFFF' } },
+                fill: { fgColor: { rgb: '4F81BD' } },
+                alignment: { horizontal: 'center', vertical: 'center' },
+            };
+
+            // set height cho title + header
+            ws['!rows'] = [
+                { hpt: 28 }, // row 1
+                { hpt: 22 }, // row 2
+            ];
+
+            // 3. STYLE HEADER (ROW 2)
+            headers.forEach((h, idx) => {
+                const cellRef = XLSX.utils.encode_cell({ r: 1, c: idx }); // row index = 1 (dòng 2)
+                if (!ws[cellRef]) return;
+
+                ws[cellRef].s = {
+                    font: { bold: true, color: { rgb: 'FFFFFF' } },
+                    fill: { fgColor: { rgb: '4F81BD' } },
+                    alignment: { horizontal: 'center', vertical: 'center' },
+                    border: {
+                        top: { style: 'thin', color: { rgb: '000000' } },
+                        bottom: { style: 'thin', color: { rgb: '000000' } },
+                        left: { style: 'thin', color: { rgb: '000000' } },
+                        right: { style: 'thin', color: { rgb: '000000' } },
+                    },
+                };
+            });
+
+            // 4. STYLE DATA (CENTER + BORDER + MÀU)
+            const range = XLSX.utils.decode_range(ws['!ref']);
+            const activeCol = headers.indexOf('Active');
+            const khCol = headers.indexOf('KháchHàng');
+
+            for (let R = range.s.r; R <= range.e.r; R++) {
+                for (let C = range.s.c; C <= range.e.c; C++) {
+                    const ref = XLSX.utils.encode_cell({ r: R, c: C });
+                    const cell = ws[ref];
+                    if (!cell) continue;
+
+                    // base style
+                    cell.s = cell.s || {};
+                    cell.s.alignment = { horizontal: 'center', vertical: 'center' };
+                    cell.s.border = {
+                        top: { style: 'thin', color: { rgb: '000000' } },
+                        bottom: { style: 'thin', color: { rgb: '000000' } },
+                        left: { style: 'thin', color: { rgb: '000000' } },
+                        right: { style: 'thin', color: { rgb: '000000' } },
+                    };
+
+                    // data row (bỏ row title + header)
+                    if (R > 1) {
+                        // zebra stripe cho đẹp
+                        if (R % 2 === 0) {
+                            cell.s.fill = cell.s.fill || {};
+                            cell.s.fill.fgColor = cell.s.fill.fgColor || { rgb: 'F9F9F9' };
+                        }
+
+                        // Active = Không -> đỏ
+                        if (C === activeCol && String(cell.v).trim() === 'Không') {
+                            cell.s.fill = { fgColor: { rgb: 'FFC7CE' } };
+                        }
+
+                        // KháchHàng = Chưa gán -> vàng
+                        if (C === khCol && String(cell.v).trim() === 'Chưa gán') {
+                            cell.s.fill = { fgColor: { rgb: 'FFF2CC' } };
+                        }
+                    }
+                }
+            }
+
+            // 5. AUTO WIDTH
+            ws['!cols'] = headers.map((key) => {
+                const maxLen = Math.max(key.length, ...excelData.map((row) => String(row[key] || '').length));
+                return { wch: maxLen + 4 };
+            });
+
+            // 6. AUTO FILTER CHO HEADER (DÒNG 2)
+            ws['!autofilter'] = {
+                ref: XLSX.utils.encode_range({
+                    s: { r: 1, c: 0 },
+                    e: { r: range.e.r, c: range.e.c },
+                }),
+            };
+
+            // 7. TẠO WORKBOOK & SAVE
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Devices');
+
+            const excelBuffer = XLSX.write(wb, {
+                bookType: 'xlsx',
+                type: 'array',
+                cellStyles: true,
+            });
+
+            saveAs(new Blob([excelBuffer]), `DanhSachThietBi_${getTodayForFileName()}.xlsx`);
+
+            message.success('Xuất Excel thành công');
+        } catch (err) {
+            console.error(err);
+            message.error('Xuất Excel thất bại');
+        }
+    };
 
     /* =========================
         ADD
@@ -276,7 +423,6 @@ export default function ManageDevicesPage() {
     ========================= */
     useEffect(() => {
         if (viewMode !== 'detail' || !selectedDevice) return;
-
         if (!cruiseInfo) return;
 
         if (mapRef.current) {
@@ -286,7 +432,7 @@ export default function ManageDevicesPage() {
         const lat = cruiseInfo.lat || 10.75;
         const lon = cruiseInfo.lon || 106.6;
 
-        const map = L.map('iky-device-map', {
+        const map = LMap.map('iky-device-map', {
             center: [lat, lon],
             zoom: 16,
             zoomControl: false,
@@ -296,8 +442,8 @@ export default function ManageDevicesPage() {
 
         LMap.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-        const mk = L.marker([lat, lon], {
-            icon: L.icon({
+        const mk = LMap.marker([lat, lon], {
+            icon: LMap.icon({
                 iconUrl: markerIcon.src,
                 iconSize: [40, 40],
                 iconAnchor: [20, 40],
@@ -316,10 +462,10 @@ export default function ManageDevicesPage() {
         );
 
         setTimeout(() => map.invalidateSize(), 200);
-    }, [viewMode, selectedDevice, cruiseInfo]);
+    }, [viewMode, selectedDevice, cruiseInfo, batteryInfo, LMap]);
 
     /* =========================
-        TABLE COLUMNS
+        TABLE COLUMNS (SORTER)
     ========================= */
     const columns = [
         {
@@ -330,6 +476,7 @@ export default function ManageDevicesPage() {
         {
             title: 'IMEI',
             dataIndex: 'imei',
+            sorter: (a, b) => a.imei.localeCompare(b.imei),
             render: (text, record) => (
                 <Button type="link" onClick={() => handleSelectDevice(record)}>
                     {text}
@@ -339,33 +486,40 @@ export default function ManageDevicesPage() {
         {
             title: 'Loại thiết bị',
             dataIndex: 'device_category_id',
-            render: (device) => device?.name || '-',
+            sorter: (a, b) => (a.device_category_id?.name || '').localeCompare(b.device_category_id?.name || ''),
+            render: (d) => d?.name || '-',
         },
         {
             title: 'SĐT',
             dataIndex: 'phone_number',
+            sorter: (a, b) => (a.phone_number || '').localeCompare(b.phone_number || ''),
         },
         {
             title: 'Biển số',
             dataIndex: 'license_plate',
+            sorter: (a, b) => (a.license_plate || '').localeCompare(b.license_plate || ''),
+        },
+        {
+            title: 'Lái xe',
+            dataIndex: 'driver',
+            sorter: (a, b) => (a.driver || '').localeCompare(b.driver || ''),
         },
         {
             title: 'Khách hàng',
             dataIndex: 'user_id',
+            sorter: (a, b) => (a.user_id?.email || '').localeCompare(b.user_id?.email || ''),
             render: (u) => u?.email || 'Chưa gán',
         },
         {
             title: 'Đại lý',
             dataIndex: 'distributor_id',
+            sorter: (a, b) => (a.distributor_id?.username || '').localeCompare(b.distributor_id?.username || ''),
             render: (u) => u?.username || '-',
-        },
-        {
-            title: 'Active',
-            dataIndex: 'active',
         },
         {
             title: 'Ngày tạo',
             dataIndex: 'createdAt',
+            sorter: (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
             render: (v) => new Date(v).toLocaleString(),
         },
         {
@@ -393,22 +547,26 @@ export default function ManageDevicesPage() {
         RENDER LIST MODE
     ========================= */
     const renderList = () => (
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-            {/* HEADER */}
+        <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
             <Row justify="space-between" align="middle">
                 <Col>
                     <Title level={4}>Quản lý thiết bị</Title>
                 </Col>
                 <Col>
-                    {currentRole === 'administrator' && (
-                        <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
-                            Thêm thiết bị
+                    <Space>
+                        <Button icon={<DownloadOutlined />} onClick={exportExcel}>
+                            Xuất Excel
                         </Button>
-                    )}
+
+                        {currentRole === 'administrator' && (
+                            <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
+                                Thêm thiết bị
+                            </Button>
+                        )}
+                    </Space>
                 </Col>
             </Row>
 
-            {/* FILTER */}
             <Card>
                 <Row gutter={[12, 12]}>
                     <Col xs={24} md={6}>
@@ -448,7 +606,6 @@ export default function ManageDevicesPage() {
                 </Row>
             </Card>
 
-            {/* TABLE */}
             <Card>
                 <Text strong>Danh sách thiết bị ({devices.length})</Text>
                 <Table
@@ -468,7 +625,7 @@ export default function ManageDevicesPage() {
         RENDER DETAIL MODE
     ========================= */
     const renderDetail = () => (
-        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+        <Space orientation="vertical" style={{ width: '100%' }} size="middle">
             <Space wrap>
                 <Button icon={<ArrowLeftOutlined />} onClick={goBack}>
                     Quay lại
@@ -527,7 +684,6 @@ export default function ManageDevicesPage() {
         <>
             {viewMode === 'list' ? renderList() : renderDetail()}
 
-            {/* MODAL */}
             <Modal
                 title={modalMode === 'add' ? 'Thêm thiết bị' : 'Sửa thiết bị'}
                 open={!!modalMode}

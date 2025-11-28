@@ -81,6 +81,22 @@ const CruisePage = () => {
     const handleSelectPoint = (idx) => {
         if (!routeData.length) return;
 
+        const p = routeData[idx];
+
+        // 🔥 Luôn cập nhật index để list/slider highlight đúng
+        setActiveIndex(idx);
+
+        // Không có lat/lon thì chỉ highlight, không pan / không move marker
+        if (p.lat == null || p.lon == null) {
+            setIsPlaying(false);
+            isPlayingRef.current = false;
+            if (animationFrameRef.current) {
+                cancelAnimationFrame(animationFrameRef.current);
+                animationFrameRef.current = null;
+            }
+            return;
+        }
+
         setIsPlaying(false);
         isPlayingRef.current = false;
         if (animationFrameRef.current) {
@@ -88,10 +104,7 @@ const CruisePage = () => {
             animationFrameRef.current = null;
         }
 
-        setActiveIndex(idx);
         animStateRef.current = { segmentIndex: idx, t: 0 };
-
-        const p = routeData[idx];
 
         if (mapRef.current) {
             mapRef.current.panTo([p.lat, p.lon]);
@@ -203,9 +216,9 @@ const CruisePage = () => {
         for (let i = 1; i < routeData.length; i++) {
             const p1 = routeData[i - 1];
             const p2 = routeData[i];
-            const ll1 = L.latLng(p1.lat, p1.lon);
-            const ll2 = L.latLng(p2.lat, p2.lon);
-            totalMeters += ll1.distanceTo(ll2);
+            const ll1 = L?.latLng(p1.lat, p1.lon);
+            const ll2 = L?.latLng(p2.lat, p2.lon);
+            totalMeters += ll1?.distanceTo(ll2);
         }
         setTotalKm(totalMeters / 1000);
     }, [routeData]);
@@ -215,7 +228,7 @@ const CruisePage = () => {
         const map = mapRef.current;
         if (!map) return;
 
-        // Clear existing layers
+        // Xoá layer cũ
         if (polylineRef.current) {
             map.removeLayer(polylineRef.current);
             polylineRef.current = null;
@@ -229,19 +242,27 @@ const CruisePage = () => {
 
         if (!routeData.length) return;
 
-        const latlngs = routeData.map((p) => [p.lat, p.lon]);
+        // 🔥 chỉ lấy những point có tọa độ để vẽ trên map
+        const routeWithCoords = routeData.filter((p) => typeof p.lat === 'number' && typeof p.lon === 'number');
 
-        // Draw polyline
+        if (!routeWithCoords.length) {
+            // không có tọa độ → thôi khỏi vẽ, nhưng list vẫn đang show bình thường
+            return;
+        }
+
+        const latlngs = routeWithCoords.map((p) => [p.lat, p.lon]);
+
+        // Vẽ polyline
         polylineRef.current = L.polyline(latlngs, {
             color: '#f97316',
             weight: 4,
             opacity: 0.9,
         }).addTo(map);
 
-        // Draw points with A/B markers
-        pointMarkersRef.current = routeData.map((p, idx) => {
-            const isStart = idx === 0;
-            const isEnd = idx === routeData.length - 1;
+        // Vẽ các điểm A/B
+        pointMarkersRef.current = routeWithCoords.map((p) => {
+            const isStart = p === routeWithCoords[0];
+            const isEnd = p === routeWithCoords[routeWithCoords.length - 1];
 
             const marker = L.circleMarker([p.lat, p.lon], {
                 radius: isStart || isEnd ? 7 : 6,
@@ -264,65 +285,58 @@ const CruisePage = () => {
                 L.marker([p.lat, p.lon], { icon: divIcon }).addTo(map);
             }
 
+            // tìm index thật trong routeData để khi click thì list / slider sync đúng
+            const globalIndex = routeData.indexOf(p);
+
             marker.on('click', () => {
-                if (!routeData.length) return;
-
-                setIsPlaying(false);
-                isPlayingRef.current = false;
-                if (animationFrameRef.current) {
-                    cancelAnimationFrame(animationFrameRef.current);
-                    animationFrameRef.current = null;
-                }
-
-                const point = routeData[idx];
-
-                setActiveIndex(idx);
-                animStateRef.current = { segmentIndex: idx, t: 0 };
-
-                if (mapRef.current) {
-                    mapRef.current.panTo([point.lat, point.lon]);
-                }
-
-                if (movingMarkerRef.current) {
-                    movingMarkerRef.current.setLatLng([point.lat, point.lon]);
-                    movingMarkerRef.current.setPopupContent(buildPopupHtml(point));
-                    movingMarkerRef.current.openPopup();
+                if (globalIndex >= 0) {
+                    handleSelectPoint(globalIndex);
                 }
             });
 
             return marker;
         });
 
-        // Create moving marker
+        // Marker di chuyển
+        const firstPoint = routeWithCoords[0];
+
         const customIcon = L.icon({
             iconUrl: markerIconImg.src,
             iconSize: [36, 36],
             iconAnchor: [18, 36],
         });
 
-        movingMarkerRef.current = L.marker(latlngs[0], {
+        movingMarkerRef.current = L.marker([firstPoint.lat, firstPoint.lon], {
             icon: customIcon,
         })
             .addTo(map)
-            .bindPopup(buildPopupHtml(routeData[0]));
+            .bindPopup(buildPopupHtml(firstPoint));
 
-        // Reset animation state
+        // reset animation state
         setIsPlaying(false);
         isPlayingRef.current = false;
         animStateRef.current = { segmentIndex: 0, t: 0 };
 
-        // Fit map to route bounds
+        // fit bounds
         map.fitBounds(polylineRef.current.getBounds(), { padding: [40, 40] });
         map.invalidateSize();
         map.scrollWheelZoom.enable();
         map.dragging.enable();
-    }, [routeData]);
+    }, [routeData]); // giữ nguyên deps
 
     // Sync marker position with activeIndex
+    // Sync marker with activeIndex
     useEffect(() => {
         if (!routeData.length || !movingMarkerRef.current || !mapRef.current) return;
 
         const p = routeData[activeIndex];
+
+        // 🔥 Nếu point không có tọa độ → KHÔNG move marker
+        if (p.lat == null || p.lon == null) {
+            // có thể đóng popup hoặc để nguyên — tuỳ m
+            return;
+        }
+
         movingMarkerRef.current.setLatLng([p.lat, p.lon]);
         movingMarkerRef.current.setPopupContent(buildPopupHtml(p));
     }, [activeIndex, routeData]);
@@ -591,9 +605,9 @@ const CruisePage = () => {
                                     >
                                         <div className="iky-cruise__list-time">{p.dateTime}</div>
                                         <div className="iky-cruise__list-meta">
-                                            <span>{p.lat.toFixed(6)}</span>
-                                            <span>{p.lon.toFixed(6)}</span>
-                                            <span>{p.velocity}</span>
+                                            <span>{p?.lat?.toFixed(6)}</span>
+                                            <span>{p?.lon?.toFixed(6)}</span>
+                                            <span>{p?.velocity}</span>
                                         </div>
                                     </div>
                                 ))}

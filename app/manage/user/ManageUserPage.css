@@ -1,15 +1,15 @@
 .user-page {
     padding: 16px;
     background: #f5f5f5;
-    min-height: calc(100vh - 104px); /* chỉnh theo header của m */
+    min-height: calc(100vh - 104px);
     box-sizing: border-box;
 }
 
 .user-page__card {
-    max-width: 1200px;
-    margin: 0 auto;
+    width: 100%;
+    max-width: none;
+    margin: 0;
 }
-
 .user-page__header {
     display: flex;
     align-items: center;

@@ -1,11 +1,11 @@
-'use client';
-
 import './globals.css';
+import 'antd/dist/reset.css';
+import { AntdRegistry } from '@ant-design/nextjs-registry';
 import { Geist, Geist_Mono } from 'next/font/google';
 import Navbar from './components/Navbar/Navbar';
 import StatusBar from './components/StatusBar/StatusBar';
-import { useEffect } from 'react';
-import { refreshTokenApi } from './lib/api/auth';
+import TokenRefresher from './components/TokenRefresher';
+import AppFooter from './components/Footer/AppFooter';
 
 const geistSans = Geist({
     variable: '--font-geist-sans',
@@ -17,48 +17,17 @@ const geistMono = Geist_Mono({
     subsets: ['latin'],
 });
 
-// export const metadata = {
-//     title: 'IKY GPS',
-//     description: 'Hệ thống theo dõi GPS',
-// };
-
 export default function RootLayout({ children }) {
-    useEffect(() => {
-        document.title = 'Quản lý xe';
-    }, []);
-    // 🔄 AUTO REFRESH TOKEN mỗi 10 phút
-    useEffect(() => {
-        const interval = setInterval(async () => {
-            const refreshToken = localStorage.getItem('refreshToken');
-            const token = localStorage.getItem('accessToken');
-            if (!refreshToken) return;
-
-            try {
-                const res = await refreshTokenApi(refreshToken, token);
-                localStorage.setItem('accessToken', res.accessToken);
-                localStorage.setItem('refreshToken', res.refreshToken);
-                console.log('🔄 Token refreshed!');
-            } catch (err) {
-                console.error('Refresh failed:', err);
-                // optional: window.location.href = "/login";
-            }
-        }, 10 * 60 * 1000); // 10 phút
-
-        return () => clearInterval(interval);
-    }, []);
-
     return (
-        <html lang="en">
+        <html lang="vi">
             <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-                {/* NAV ẩn khi vào /login */}
-
-                <>
-                    <Navbar activeKey="monitor" username="haidv" />
+                <AntdRegistry>
+                    <TokenRefresher />
+                    <Navbar activeKey="monitor" />
                     <StatusBar />
-                </>
-
-                {/* PAGE */}
-                <main style={{ paddingTop: 0 }}>{children}</main>
+                    <main>{children}</main>
+                    <AppFooter />
+                </AntdRegistry>
             </body>
         </html>
     );

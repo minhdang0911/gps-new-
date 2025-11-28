@@ -1,14 +1,17 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import Image from 'next/image';
 import './Navbar.css';
 import { useRouter, usePathname } from 'next/navigation';
 
-import giamsat from '../../assets/giamsat.png';
-import hanhtrinh from '../../assets/hanhtrinh.png';
-import baocao from '../../assets/baocao.png';
-import quanly from '../../assets/quanly.png';
+import giamsat from '../../assets/giamsat.webp';
+import hanhtrinh from '../../assets/hanhtrinh.webp';
+import baocao from '../../assets/baocao.webp';
+import quanly from '../../assets/quanly.webp';
 import hotro from '../../assets/hotro.png';
 import logo from '../../assets/logo-iky.webp';
+
+import { logoutApi } from '../../lib/api/auth';
 
 const navItems = [
     { key: 'monitor', label: 'Giám Sát', img: giamsat, path: '/' },
@@ -18,36 +21,73 @@ const navItems = [
     { key: 'support', label: 'Hỗ Trợ', img: hotro, path: '/support' },
 ];
 
-const Navbar = ({ username = 'haidv' }) => {
-    const [openDropdown, setOpenDropdown] = useState(false);
+const Navbar = () => {
     const router = useRouter();
     const pathname = usePathname() || '/';
 
+    const [openDropdown, setOpenDropdown] = useState(false);
+    const [displayName, setDisplayName] = useState('Tài khoản');
+    const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+    useEffect(() => {
+        const username = localStorage.getItem('username');
+        const email = localStorage.getItem('email');
+        setDisplayName(username || email || 'Tài khoản');
+    }, []);
+
+    const computedActiveKey = useMemo(() => {
+        return (
+            navItems.find((item) => {
+                if (item.path === '/') return pathname === '/';
+                return pathname.startsWith(item.path);
+            })?.key || 'monitor'
+        );
+    }, [pathname]);
+
     if (pathname === '/login') return null;
 
-    // Tự tính activeKey dựa vào URL
-    const computedActiveKey =
-        navItems.find((item) => {
-            if (item.path === '/') {
-                return pathname === '/';
-            }
-            return pathname.startsWith(item.path);
-        })?.key || 'monitor';
-
     const handleClickItem = (item) => {
-        if (pathname !== item.path) {
-            router.push(item.path);
+        if (pathname !== item.path) router.push(item.path);
+    };
+
+    const handleLogout = async () => {
+        if (isLoggingOut) return; // Tránh click nhiều lần
+
+        try {
+            setIsLoggingOut(true);
+            setOpenDropdown(false);
+
+            const response = await logoutApi();
+
+            // Check response từ API
+            if (response && response.message === 'Thành công') {
+                console.log('Đăng xuất thành công');
+            } else {
+                console.warn('Response không như mong đợi:', response);
+            }
+        } catch (err) {
+            console.error('Lỗi khi đăng xuất:', err);
+            // Vẫn cho logout ở client side ngay cả khi API lỗi
+        } finally {
+            // Xoá sạch localStorage
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('refreshToken');
+            localStorage.removeItem('role');
+            localStorage.removeItem('username');
+            localStorage.removeItem('email');
+            localStorage.removeItem('currentUser');
+
+            setIsLoggingOut(false);
+            router.push('/login');
         }
     };
 
     return (
         <header className="iky-nav">
-            {/* LOGO */}
             <div className="iky-nav__logo">
                 <img src={logo.src} alt="IKY GPS" className="iky-nav__logo-img" />
             </div>
 
-            {/* MENU */}
             <nav className="iky-nav__menu">
                 {navItems.map((item) => (
                     <button
@@ -57,23 +97,24 @@ const Navbar = ({ username = 'haidv' }) => {
                         onClick={() => handleClickItem(item)}
                     >
                         <div className="iky-nav__item-icon">
-                            <img src={item.img.src} alt={item.label} />
+                            <Image src={item.img} alt={item.label} width={26} height={26} />
                         </div>
                         <span className="iky-nav__item-label">{item.label}</span>
                     </button>
                 ))}
             </nav>
 
-            {/* USER + DROPDOWN */}
             <div className="iky-nav__user" onClick={() => setOpenDropdown((prev) => !prev)}>
-                <span className="iky-nav__user-name">{username}</span>
-                <span className="iky-nav__user-sub">({username})</span>
+                <span className="iky-nav__user-name">{displayName}</span>
+                <span className="iky-nav__user-sub">({displayName})</span>
                 <span className="iky-nav__user-caret">▾</span>
 
                 {openDropdown && (
                     <div className="iky-nav__dropdown">
                         <button className="iky-nav__dropdown-item">Cá nhân</button>
-                        <button className="iky-nav__dropdown-item">Đăng xuất</button>
+                        <button className="iky-nav__dropdown-item" onClick={handleLogout} disabled={isLoggingOut}>
+                            {isLoggingOut ? 'Đang đăng xuất...' : 'Đăng xuất'}
+                        </button>
                     </div>
                 )}
             </div>
