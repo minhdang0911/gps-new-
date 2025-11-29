@@ -21,31 +21,46 @@ export const login = async (username, password, device = '') => {
     }
 };
 
+// ✅ Form-urlencoded, không cần Authorization
 export const refreshTokenApi = async (refreshToken) => {
-    const token = localStorage.getItem('accessToken');
+    console.log('🔄 Refreshing token...');
 
-    const res = await fetch('https://gps-bms-tracking.iky.vn/refresh', {
-        method: 'POST',
-        headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ refreshToken }),
-    });
-
-    if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
+    if (!refreshToken) {
+        throw new Error('No refresh token provided');
     }
 
-    return await res.json();
+    try {
+        const formData = new URLSearchParams();
+        formData.append('refreshToken', refreshToken);
+
+        const res = await fetch('https://gps-bms-tracking.iky.vn/refresh', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: formData.toString(),
+        });
+
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            console.error('❌ Refresh failed:', errorData);
+            throw new Error(`HTTP error! status: ${res.status}`);
+        }
+
+        const data = await res.json();
+        console.log('✅ Token refreshed successfully');
+
+        return data;
+    } catch (err) {
+        console.error('❌ Refresh error:', err);
+        throw err;
+    }
 };
 
 export const logoutApi = async () => {
     const refreshToken = localStorage.getItem('refreshToken');
 
-    // Không có refreshToken thì coi như đã logout rồi
     if (!refreshToken) {
-        console.warn('Không có refreshToken, bỏ qua gọi /logout');
         return;
     }
 

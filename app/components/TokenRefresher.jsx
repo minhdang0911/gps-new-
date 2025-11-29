@@ -15,10 +15,9 @@ export default function TokenRefresher() {
         if (startedRef.current) return;
         startedRef.current = true;
 
-        const checkAndRefresh = async () => {
+        const proactiveRefresh = async () => {
             const refreshToken = localStorage.getItem('refreshToken');
 
-            // Không có refreshToken -> coi như hết phiên, bắt login lại
             if (!refreshToken) {
                 localStorage.clear();
                 router.replace('/login');
@@ -35,21 +34,27 @@ export default function TokenRefresher() {
                     localStorage.setItem('refreshToken', res.refreshToken);
                 }
 
-                console.log('🔄 Token refreshed!');
+                console.log('✅ Proactive refresh thành công');
             } catch (err) {
-                console.error('Refresh failed:', err);
-                localStorage.clear();
-                router.replace('/login');
+                console.error('❌ Proactive refresh thất bại:', err);
             }
         };
 
-        // Gọi 1 lần khi load
-        checkAndRefresh();
+        const interval = setInterval(proactiveRefresh, 10 * 60 * 1000);
 
-        // Rồi 5p refresh 1 lần
-        const interval = setInterval(checkAndRefresh, 5 * 60 * 1000);
+        const handleVisibilityChange = () => {
+            if (!document.hidden) {
+                console.log('👀 User quay lại tab');
+                proactiveRefresh();
+            }
+        };
 
-        return () => clearInterval(interval);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            clearInterval(interval);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
     }, [pathname, router]);
 
     return null;
