@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://gps-bms-tracking.iky.vn/</loc>
+    <changefreq>always</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://gps-bms-tracking.iky.vn/cruise</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://gps-bms-tracking.iky.vn/report</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://gps-bms-tracking.iky.vn/report/usage-session</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://gps-bms-tracking.iky.vn/manage/devices</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://gps-bms-tracking.iky.vn/support</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+</urlset>
