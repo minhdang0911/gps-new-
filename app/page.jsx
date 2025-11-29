@@ -10,6 +10,7 @@ import { getLastCruise } from './lib/api/cruise';
 import markerIcon from './assets/marker-red.png';
 import { useRouter } from 'next/navigation';
 import { message, Modal } from 'antd';
+import { CheckCircleFilled, LockFilled } from '@ant-design/icons';
 
 const { confirm } = Modal;
 const GOONG_API_KEY = process.env.NEXT_PUBLIC_GOONG_API_KEY;
@@ -383,6 +384,7 @@ const MonitorPage = () => {
     };
 
     const isLocked = selectedDevice?.status === 5;
+    const isConnected = selectedDevice?.status === 10;
 
     // 🔥 NEW FIXED
     const parseCurrentValue = (currentRaw) => {
@@ -442,11 +444,28 @@ const MonitorPage = () => {
         const vehicleType = info?.vehicle_category_id?.name || info?.vehicle_category_id?.model || '---';
         const manufacturer = info?.device_category_id?.name || info?.device_category_id?.code || '---';
 
+        const parseTimToDate = (tim) => {
+            if (!tim || tim.length !== 12) return null;
+
+            const dd = tim.slice(0, 2);
+            const MM = tim.slice(2, 4);
+            const yy = tim.slice(4, 6);
+            const hh = tim.slice(6, 8);
+            const mm = tim.slice(8, 10);
+            const ss = tim.slice(10, 12);
+
+            // Convert yy → yyyy (20xx)
+            const yyyy = Number(yy) + 2000;
+
+            return new Date(`${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}`);
+        };
+
         let timeStr = '--';
-        if (lastCruise?.created) {
-            timeStr = new Date(lastCruise.created).toLocaleString();
-        } else if (lastCruise?.updated) {
-            timeStr = new Date(lastCruise.updated).toLocaleString();
+        if (lastCruise?.tim) {
+            const parsed = parseTimToDate(lastCruise.tim);
+            if (parsed) {
+                timeStr = parsed.toLocaleString();
+            }
         }
 
         const latVal = lastCruise?.lat;
@@ -465,7 +484,7 @@ const MonitorPage = () => {
             <>
                 <div>Biển số xe: {plate}</div>
                 <div>Loại xe: {vehicleType}</div>
-                <div>Hãng sản xuất: {manufacturer}</div>
+                <div>Dòng thiết bị: {manufacturer}</div>
                 <div>Tại thời điểm: {timeStr}</div>
 
                 {lastCruise && (
@@ -475,7 +494,7 @@ const MonitorPage = () => {
                     </>
                 )}
 
-                <div>Địa chỉ hiện tại: {addressText}</div>
+                <span className="iky-monitor__address-text">Địa chỉ hiện tại: {addressText}</span>
 
                 {cruiseError && <div className="iky-monitor__error">{cruiseError}</div>}
             </>
@@ -741,16 +760,43 @@ const MonitorPage = () => {
                                     {detailTab === 'control' && (
                                         <div className="iky-monitor__popup-col">
                                             <div className="iky-monitor__control-row">
+                                                <span>Trạng thái kết nối</span>
+                                                <div
+                                                    className={
+                                                        'iky-monitor__connection ' +
+                                                        (isConnected
+                                                            ? 'iky-monitor__connection--on'
+                                                            : 'iky-monitor__connection--off')
+                                                    }
+                                                >
+                                                    <span className="iky-monitor__connection-icon">✓</span>
+                                                    <span className="iky-monitor__connection-text">
+                                                        {isConnected ? 'Kết nối' : 'Mất kết nối'}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            <div className="iky-monitor__control-row">
                                                 <span>Trạng thái thiết bị</span>
-                                                <span className={deviceStatusClass}>{deviceStatusText}</span>
+
+                                                <div className={`iky-status-badge ${isLocked ? 'off' : 'on'}`}>
+                                                    {isLocked ? (
+                                                        <LockFilled className="iky-status-icon" />
+                                                    ) : (
+                                                        <CheckCircleFilled className="iky-status-icon" />
+                                                    )}
+                                                    <span>{deviceStatusText}</span>
+                                                </div>
                                             </div>
 
                                             <div className="iky-monitor__control-row">
                                                 <span>Khoá thiết bị</span>
                                                 <button
-                                                    className="iky-monitor__secondary-btn"
+                                                    className={
+                                                        'iky-monitor__secondary-btn' +
+                                                        (isLocked ? ' iky-monitor__secondary-btn--disabled' : '')
+                                                    }
                                                     onClick={handleConfirmLock}
-                                                    disabled={selectedDevice?.status === 5}
+                                                    disabled={isLocked}
                                                 >
                                                     {lockLoading ? 'Đang xử lý...' : 'Khoá'}
                                                 </button>
@@ -759,15 +805,18 @@ const MonitorPage = () => {
                                             <div className="iky-monitor__control-row">
                                                 <span>Mở khoá thiết bị</span>
                                                 <button
-                                                    className="iky-monitor__secondary-btn"
+                                                    className={
+                                                        'iky-monitor__secondary-btn' +
+                                                        (!isLocked ? ' iky-monitor__secondary-btn--disabled' : '')
+                                                    }
                                                     onClick={handleConfirmUnlock}
-                                                    disabled={selectedDevice?.status !== 5}
+                                                    disabled={!isLocked}
                                                 >
                                                     {lockLoading ? 'Đang xử lý...' : 'Mở khoá'}
                                                 </button>
                                             </div>
 
-                                            <div className="iky-monitor__control-row">
+                                            {/* <div className="iky-monitor__control-row">
                                                 <span>Bảo vệ</span>
                                                 <button className="iky-monitor__toggle-btn iky-monitor__toggle-btn--off">
                                                     Tắt
@@ -786,7 +835,7 @@ const MonitorPage = () => {
                                             <div className="iky-monitor__control-row">
                                                 <span>Số dư tài khoản</span>
                                                 <button className="iky-monitor__secondary-btn">Kiểm tra</button>
-                                            </div>
+                                            </div> */}
 
                                             {lockError && (
                                                 <div className="iky-monitor__error" style={{ marginTop: 8 }}>

@@ -5,6 +5,18 @@
     --foreground: #171717;
 }
 
+* {
+    -webkit-font-smoothing: antialiased !important;
+    -moz-osx-font-smoothing: grayscale !important;
+    text-rendering: optimizeLegibility !important;
+}
+
+html,
+body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
 @theme inline {
     --color-background: var(--background);
     --color-foreground: var(--foreground);

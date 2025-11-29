@@ -16,10 +16,12 @@ const geistMono = Geist_Mono({
     variable: '--font-geist-mono',
     subsets: ['latin'],
 });
+
 export default function RootLayout({ children }) {
     return (
         <html lang="vi">
             <head>
+                <title>IKY GPS - Nền tảng giám sát hành trình GPS</title>
                 <meta
                     name="description"
                     content="Nền tảng giám sát GPS – theo dõi hành trình, trạng thái thiết bị, pin, cảnh báo và quản lý toàn bộ hệ thống IKY GPS."
