@@ -12,6 +12,9 @@ import { useRouter } from 'next/navigation';
 import { message, Modal } from 'antd';
 import { CheckCircleFilled, LockFilled } from '@ant-design/icons';
 
+// 🔥 MQTT
+import MqttConnector from './components/MqttConnector';
+
 const { confirm } = Modal;
 const GOONG_API_KEY = process.env.NEXT_PUBLIC_GOONG_API_KEY;
 
@@ -64,6 +67,9 @@ const MonitorPage = () => {
 
     const [lat] = useState(10.7542506);
     const [lng] = useState(106.6170202);
+
+    // 🔥 dữ liệu realtime từ MQTT
+    const [liveTelemetry, setLiveTelemetry] = useState(null);
 
     useEffect(() => {
         const loadLeaflet = async () => {
@@ -233,6 +239,9 @@ const MonitorPage = () => {
         setShowPopup(true);
         setDetailTab('battery');
 
+        // reset MQTT data khi đổi xe
+        setLiveTelemetry(null);
+
         const token = localStorage.getItem('accessToken');
         if (!token || !device?.imei) {
             setBatteryStatus(null);
@@ -386,7 +395,7 @@ const MonitorPage = () => {
     const isLocked = selectedDevice?.status === 5;
     const isConnected = selectedDevice?.status === 10;
 
-    // 🔥 NEW FIXED
+    // parse dòng sạc/xả
     const parseCurrentValue = (currentRaw) => {
         if (currentRaw == null) return { text: 'Dòng sạc/xả: --' };
 
@@ -404,29 +413,92 @@ const MonitorPage = () => {
         return { text: `Dòng sạc/xả: 0 A` };
     };
 
-    // 🔥 NEW — render pin
+    // 🔥 nhận MQTT → update liveTelemetry + map
+    const handleMqttMessage = (topic, data) => {
+        const parts = topic.split('/');
+        const topicImei = parts[1];
+
+        if (!selectedDevice || topicImei !== selectedDevice.imei) return;
+
+        if (typeof data === 'string') {
+            try {
+                data = JSON.parse(data);
+            } catch {
+                console.log('MQTT payload string, không parse được JSON');
+                return;
+            }
+        }
+
+        if (!data || typeof data !== 'object') return;
+
+        setLiveTelemetry((prev) => ({ ...(prev || {}), ...data }));
+
+        // lat/lon realtime
+        if (data.lat != null && data.lon != null && mapRef.current && markerRef.current && LMap) {
+            const newLatLng = LMap.latLng(data.lat, data.lon);
+            markerRef.current.setLatLng(newLatLng);
+            mapRef.current.setView(newLatLng, 16);
+            fetchAddressFromGoong(data.lat, data.lon);
+        }
+
+        // nếu muốn dùng tim/spd/dst cho lastCruise luôn:
+        setLastCruise((prev) => ({ ...(prev || {}), ...data }));
+    };
+
+    // 🔋 dùng MQTT override batteryStatus
     const renderBatteryInfo = () => {
         if (loadingBattery) return <div>Đang tải trạng thái pin...</div>;
-        if (!batteryStatus) return <div>Không có dữ liệu pin cho thiết bị này.</div>;
+        if (!batteryStatus && !liveTelemetry) return <div>Không có dữ liệu pin cho thiết bị này.</div>;
 
-        const bs = batteryStatus;
-        const { mode, value } = parseCurrentValue(bs.current);
+        // Ưu tiên MQTT
+        const src = liveTelemetry || {};
+        const bs = batteryStatus || {};
+
+        const soc = src.soc ?? bs.soc;
+        const soh = src.soh ?? bs.soh;
+        const voltage = src.vavg ?? src.vmax ?? bs.voltage;
+        const temp = src.tavg ?? src.tmax ?? bs.temperature;
+        const current = src.cur ?? bs.current;
+
+        // 🔥 LẤY TRẠNG THÁI (mode)
+        let mode = '';
+        if (current > 0) mode = 'Đang sạc';
+        else if (current < 0) mode = 'Đang xả';
+        else mode = 'Đang standby';
+
+        // 🔥 LẤY “Cập nhật lúc”
+        // MQTT thì dùng “tim” → format lại
+        const parseTimToDate = (tim) => {
+            if (!tim || tim.length !== 12) return null;
+            const dd = tim.slice(0, 2);
+            const MM = tim.slice(2, 4);
+            const yy = tim.slice(4, 6);
+            const hh = tim.slice(6, 8);
+            const mm = tim.slice(8, 10);
+            const ss = tim.slice(10, 12);
+
+            const yyyy = Number(yy) + 2000;
+            return new Date(`${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}`);
+        };
+        let updatedAt = '--';
+
+        if (src.tim) {
+            const dt = parseTimToDate(src.tim);
+            if (dt) updatedAt = dt.toLocaleString();
+        } else if (bs.updatedAt) {
+            updatedAt = new Date(bs.updatedAt).toLocaleString();
+        }
 
         return (
             <>
                 <div>IMEI: {bs.imei || selectedDevice?.imei}</div>
-                <div>Điện áp: {bs.voltage ?? '--'} V</div>
-
-                <div>{parseCurrentValue(bs.current).text}</div>
-
-                <div>Trạng thái sạc (SOC): {bs.soc ?? '--'}%</div>
-                <div>Dung lượng pin: {bs.capacityAh ?? '--'} Ah</div>
-                <div>Sức khỏe pin (SOH): {bs.soh ?? '--'}%</div>
-                <div>Nhiệt độ: {bs.temperature ?? '--'}°C</div>
-
-                <div>Trạng thái: {mode}</div>
-
-                <div>Cập nhật lúc: {bs.updatedAt ? new Date(bs.updatedAt).toLocaleString() : '--'}</div>
+                <div>Điện áp: {voltage ?? '--'} V</div>
+                <div>{parseCurrentValue(current).text}</div>
+                <div>Trạng thái: {mode}</div> {/* 🔥 TRẠNG THÁI → đã trả lại */}
+                <div>Trạng thái sạc (SOC): {soc ?? '--'}%</div>
+                <div>Sức khỏe pin (SOH): {soh ?? '--'}%</div>
+                <div>Nhiệt độ TB: {temp ?? '--'}°C</div>
+                <div>Cập nhật lúc: {updatedAt}</div> {/* 🔥 CẬP NHẬT LÚC */}
             </>
         );
     };
@@ -447,15 +519,14 @@ const MonitorPage = () => {
         const parseTimToDate = (tim) => {
             if (!tim || tim.length !== 12) return null;
 
-            const dd = tim.slice(0, 2);
-            const MM = tim.slice(2, 4);
-            const yy = tim.slice(4, 6);
-            const hh = tim.slice(6, 8);
-            const mm = tim.slice(8, 10);
-            const ss = tim.slice(10, 12);
+            const yy = tim.slice(0, 2); // năm
+            const MM = tim.slice(2, 4); // tháng
+            const dd = tim.slice(4, 6); // ngày
+            const hh = tim.slice(6, 8); // giờ
+            const mm = tim.slice(8, 10); // phút
+            const ss = tim.slice(10, 12); // giây
 
-            // Convert yy → yyyy (20xx)
-            const yyyy = Number(yy) + 2000;
+            const yyyy = 2000 + Number(yy);
 
             return new Date(`${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}`);
         };
@@ -463,22 +534,22 @@ const MonitorPage = () => {
         let timeStr = '--';
         if (lastCruise?.tim) {
             const parsed = parseTimToDate(lastCruise.tim);
-            if (parsed) {
-                timeStr = parsed.toLocaleString();
-            }
+            if (parsed) timeStr = parsed.toLocaleString();
         }
 
-        const latVal = lastCruise?.lat;
-        const lonVal = lastCruise?.lon;
+        // vị trí ưu tiên MQTT / rồi đến lastCruise
+        const src = liveTelemetry || lastCruise || {};
+        const latVal = src.lat ?? lastCruise?.lat;
+        const lonVal = src.lon ?? lastCruise?.lon;
+
+        // 🔥 speed / distance CHỈ LẤY TỪ MQTT
+        const speed = liveTelemetry?.spd;
+        const distance = liveTelemetry?.dst;
 
         let addressText = '--';
-        if (loadingAddress) {
-            addressText = 'Đang lấy địa chỉ...';
-        } else if (address) {
-            addressText = address;
-        } else if (addressError) {
-            addressText = addressError;
-        }
+        if (loadingAddress) addressText = 'Đang lấy địa chỉ...';
+        else if (address) addressText = address;
+        else if (addressError) addressText = addressError;
 
         return (
             <>
@@ -487,12 +558,16 @@ const MonitorPage = () => {
                 <div>Dòng thiết bị: {manufacturer}</div>
                 <div>Tại thời điểm: {timeStr}</div>
 
-                {lastCruise && (
+                {/* 🔥 Chỉ hiện nếu có MQTT */}
+                {liveTelemetry && (
                     <>
-                        <div>Vị trí hiện tại: {latVal != null && lonVal != null ? `${latVal}, ${lonVal}` : '--'}</div>
-                        <div>Tọa độ: {latVal != null && lonVal != null ? `${latVal}, ${lonVal}` : '--'}</div>
+                        {speed != null && <div>Tốc độ: {speed} km/h</div>}
+                        {distance != null && <div>Quãng đường: {distance} km</div>}
                     </>
                 )}
+
+                <div>Vị trí hiện tại: {latVal != null && lonVal != null ? `${latVal}, ${lonVal}` : '--'}</div>
+                <div>Tọa độ: {latVal != null && lonVal != null ? `${latVal}, ${lonVal}` : '--'}</div>
 
                 <span className="iky-monitor__address-text">Địa chỉ hiện tại: {addressText}</span>
 
@@ -553,315 +628,301 @@ const MonitorPage = () => {
     const deviceStatusClass = STATUS_MAP[curStatus]?.class || 'iky-monitor__tag-gray';
 
     return (
-        <div className="iky-monitor">
-            {/* LEFT */}
-            <aside className="iky-monitor__left">
-                <div className="iky-monitor__left-card">
-                    <div className="iky-monitor__left-tabs">
-                        <button
-                            className={
-                                'iky-monitor__left-tab' +
-                                (leftTab === 'monitor' ? ' iky-monitor__left-tab--active' : '')
-                            }
-                            onClick={() => setLeftTab('monitor')}
-                        >
-                            Giám sát xe
-                        </button>
-                        <button
-                            className={
-                                'iky-monitor__left-tab' +
-                                (leftTab === 'history' ? ' iky-monitor__left-tab--active' : '')
-                            }
-                            onClick={() => setLeftTab('history')}
-                        >
-                            Xem lại lộ trình
-                        </button>
+        <>
+            {/* MQTT realtime cho xe đang chọn */}
+            <MqttConnector imei={selectedDevice?.imei} onMessage={handleMqttMessage} />
+
+            <div className="iky-monitor">
+                {/* LEFT */}
+                <aside className="iky-monitor__left">
+                    <div className="iky-monitor__left-card">
+                        <div className="iky-monitor__left-tabs">
+                            <button
+                                className={
+                                    'iky-monitor__left-tab' +
+                                    (leftTab === 'monitor' ? ' iky-monitor__left-tab--active' : '')
+                                }
+                                onClick={() => setLeftTab('monitor')}
+                            >
+                                Giám sát xe
+                            </button>
+                            <button
+                                className={
+                                    'iky-monitor__left-tab' +
+                                    (leftTab === 'history' ? ' iky-monitor__left-tab--active' : '')
+                                }
+                                onClick={() => setLeftTab('history')}
+                            >
+                                Xem lại lộ trình
+                            </button>
+                        </div>
+
+                        {leftTab === 'monitor' && (
+                            <div className="iky-monitor__left-body">
+                                <div className="iky-monitor__left-section">
+                                    <div className="iky-monitor__left-label">Nhập xe cần tìm</div>
+                                    <input
+                                        className="iky-monitor__input"
+                                        placeholder="Biển số / tên xe / IMEI..."
+                                        value={searchText}
+                                        onChange={(e) => setSearchText(e.target.value)}
+                                    />
+                                </div>
+
+                                <div className="iky-monitor__left-section">
+                                    <div className="iky-monitor__left-label">Trạng thái</div>
+                                    <select
+                                        className="iky-monitor__select"
+                                        value={statusFilter}
+                                        onChange={(e) => setStatusFilter(e.target.value)}
+                                    >
+                                        <option value="all">-- Tất cả --</option>
+                                        <option value="online">Online</option>
+                                        <option value="offline">Offline</option>
+                                    </select>
+                                </div>
+
+                                <div className="iky-monitor__left-section">
+                                    <div className="iky-monitor__left-label">Danh sách xe</div>
+
+                                    <div className="iky-monitor__device-list">
+                                        {loadingDevices && <div className="iky-loading">Đang tải...</div>}
+
+                                        {!loadingDevices && filteredDevices.length === 0 && (
+                                            <div className="iky-monitor__empty">Không có xe phù hợp</div>
+                                        )}
+
+                                        {!loadingDevices &&
+                                            filteredDevices.map((d) => {
+                                                const isOnline = d.status === 10;
+                                                const isActive = selectedDevice?._id === d._id;
+                                                return (
+                                                    <div
+                                                        key={d._id}
+                                                        className={
+                                                            'iky-monitor__device-item' +
+                                                            (isActive ? ' iky-monitor__device-item--active' : '')
+                                                        }
+                                                        onClick={() => handleSelectDevice(d)}
+                                                    >
+                                                        <div className="plate">
+                                                            {d.license_plate || 'Không rõ biển số'}
+                                                        </div>
+                                                        <div className="imei">IMEI: {d.imei}</div>
+                                                        <div className="phone">SĐT: {d.phone_number}</div>
+                                                        <div className="status">
+                                                            Trạng thái:{' '}
+                                                            <span className={isOnline ? 'online' : 'offline'}>
+                                                                {isOnline ? 'Online' : 'Offline'}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {leftTab === 'history' && (
+                            <div className="iky-monitor__left-body">
+                                <div className="iky-monitor__left-section">
+                                    <div className="iky-monitor__left-label">Chọn xe</div>
+                                    <select
+                                        className="iky-monitor__select"
+                                        value={historyDeviceId}
+                                        onChange={(e) => setHistoryDeviceId(e.target.value)}
+                                    >
+                                        <option value="">-- Chọn xe --</option>
+                                        {deviceList.map((d) => (
+                                            <option key={d._id} value={d._id}>
+                                                {(d.license_plate || d.imei || 'Không rõ').trim()}
+                                                {d.phone_number ? ` - ${d.phone_number}` : ''}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div className="iky-monitor__left-section">
+                                    <div className="iky-monitor__left-label">Từ ngày</div>
+                                    <input
+                                        type="datetime-local"
+                                        className="iky-monitor__input"
+                                        value={historyStart}
+                                        onChange={(e) => setHistoryStart(e.target.value)}
+                                    />
+                                </div>
+
+                                <div className="iky-monitor__left-section">
+                                    <div className="iky-monitor__left-label">Đến ngày</div>
+                                    <input
+                                        type="datetime-local"
+                                        className="iky-monitor__input"
+                                        value={historyEnd}
+                                        onChange={(e) => setHistoryEnd(e.target.value)}
+                                    />
+                                </div>
+
+                                <button className="iky-monitor__primary-btn" onClick={handleSaveHistoryFilter}>
+                                    Lưu bộ lọc lộ trình
+                                </button>
+
+                                {historyMessage && (
+                                    <div
+                                        className={
+                                            'iky-monitor__alert ' +
+                                            (historyMessageType === 'error'
+                                                ? 'iky-monitor__alert--error'
+                                                : 'iky-monitor__alert--success')
+                                        }
+                                    >
+                                        {historyMessage}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
+                </aside>
 
-                    {leftTab === 'monitor' && (
-                        <div className="iky-monitor__left-body">
-                            <div className="iky-monitor__left-section">
-                                <div className="iky-monitor__left-label">Nhập xe cần tìm</div>
-                                <input
-                                    className="iky-monitor__input"
-                                    placeholder="Biển số / tên xe / IMEI..."
-                                    value={searchText}
-                                    onChange={(e) => setSearchText(e.target.value)}
-                                />
-                            </div>
+                <section className="iky-monitor__center">
+                    <div className="iky-monitor__map">
+                        <div id="iky-map" className="iky-monitor__map-inner" />
 
-                            <div className="iky-monitor__left-section">
-                                <div className="iky-monitor__left-label">Trạng thái</div>
-                                <select
-                                    className="iky-monitor__select"
-                                    value={statusFilter}
-                                    onChange={(e) => setStatusFilter(e.target.value)}
-                                >
-                                    <option value="all">-- Tất cả --</option>
-                                    <option value="online">Online</option>
-                                    <option value="offline">Offline</option>
-                                </select>
-                            </div>
+                        {markerScreenPos && showPopup && (
+                            <div
+                                className="iky-monitor__popup-wrapper"
+                                style={{ left: markerScreenPos.x, top: markerScreenPos.y }}
+                            >
+                                <div className="iky-monitor__popup">
+                                    <div className="iky-monitor__popup-tabs">
+                                        <button
+                                            className={
+                                                'iky-monitor__popup-tab' +
+                                                (detailTab === 'status' ? ' iky-monitor__popup-tab--active' : '')
+                                            }
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setDetailTab('status');
+                                            }}
+                                        >
+                                            Trạng thái
+                                        </button>
+                                        <button
+                                            className={
+                                                'iky-monitor__popup-tab' +
+                                                (detailTab === 'control' ? ' iky-monitor__popup-tab--active' : '')
+                                            }
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setDetailTab('control');
+                                            }}
+                                        >
+                                            Điều khiển
+                                        </button>
+                                        <button
+                                            className={
+                                                'iky-monitor__popup-tab' +
+                                                (detailTab === 'battery' ? ' iky-monitor__popup-tab--active' : '')
+                                            }
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setDetailTab('battery');
+                                            }}
+                                        >
+                                            Trạng thái Pin
+                                        </button>
+                                    </div>
 
-                            <div className="iky-monitor__left-section">
-                                <div className="iky-monitor__left-label">Danh sách xe</div>
+                                    <div className="iky-monitor__popup-body">
+                                        {detailTab === 'status' && (
+                                            <div className="iky-monitor__popup-col">{renderStatusInfo()}</div>
+                                        )}
 
-                                <div className="iky-monitor__device-list">
-                                    {loadingDevices && <div className="iky-loading">Đang tải...</div>}
-
-                                    {!loadingDevices && filteredDevices.length === 0 && (
-                                        <div className="iky-monitor__empty">Không có xe phù hợp</div>
-                                    )}
-
-                                    {!loadingDevices &&
-                                        filteredDevices.map((d) => {
-                                            const isOnline = d.status === 10;
-                                            const isActive = selectedDevice?._id === d._id;
-                                            return (
-                                                <div
-                                                    key={d._id}
-                                                    className={
-                                                        'iky-monitor__device-item' +
-                                                        (isActive ? ' iky-monitor__device-item--active' : '')
-                                                    }
-                                                    onClick={() => handleSelectDevice(d)}
-                                                >
-                                                    <div className="plate">{d.license_plate || 'Không rõ biển số'}</div>
-                                                    <div className="imei">IMEI: {d.imei}</div>
-                                                    <div className="phone">SĐT: {d.phone_number}</div>
-                                                    <div className="status">
-                                                        Trạng thái:{' '}
-                                                        <span className={isOnline ? 'online' : 'offline'}>
-                                                            {isOnline ? 'Online' : 'Offline'}
+                                        {detailTab === 'control' && (
+                                            <div className="iky-monitor__popup-col">
+                                                <div className="iky-monitor__control-row">
+                                                    <span>Trạng thái kết nối</span>
+                                                    <div
+                                                        className={
+                                                            'iky-monitor__connection ' +
+                                                            (isConnected
+                                                                ? 'iky-monitor__connection--on'
+                                                                : 'iky-monitor__connection--off')
+                                                        }
+                                                    >
+                                                        <span className="iky-monitor__connection-icon">✓</span>
+                                                        <span className="iky-monitor__connection-text">
+                                                            {isConnected ? 'Kết nối' : 'Mất kết nối'}
                                                         </span>
                                                     </div>
                                                 </div>
-                                            );
-                                        })}
-                                </div>
-                            </div>
-                        </div>
-                    )}
+                                                <div className="iky-monitor__control-row">
+                                                    <span>Trạng thái thiết bị</span>
 
-                    {leftTab === 'history' && (
-                        <div className="iky-monitor__left-body">
-                            <div className="iky-monitor__left-section">
-                                <div className="iky-monitor__left-label">Chọn xe</div>
-                                <select
-                                    className="iky-monitor__select"
-                                    value={historyDeviceId}
-                                    onChange={(e) => setHistoryDeviceId(e.target.value)}
-                                >
-                                    <option value="">-- Chọn xe --</option>
-                                    {deviceList.map((d) => (
-                                        <option key={d._id} value={d._id}>
-                                            {(d.license_plate || d.imei || 'Không rõ').trim()}
-                                            {d.phone_number ? ` - ${d.phone_number}` : ''}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            <div className="iky-monitor__left-section">
-                                <div className="iky-monitor__left-label">Từ ngày</div>
-                                <input
-                                    type="datetime-local"
-                                    className="iky-monitor__input"
-                                    value={historyStart}
-                                    onChange={(e) => setHistoryStart(e.target.value)}
-                                />
-                            </div>
-
-                            <div className="iky-monitor__left-section">
-                                <div className="iky-monitor__left-label">Đến ngày</div>
-                                <input
-                                    type="datetime-local"
-                                    className="iky-monitor__input"
-                                    value={historyEnd}
-                                    onChange={(e) => setHistoryEnd(e.target.value)}
-                                />
-                            </div>
-
-                            <button className="iky-monitor__primary-btn" onClick={handleSaveHistoryFilter}>
-                                Lưu bộ lọc lộ trình
-                            </button>
-
-                            {historyMessage && (
-                                <div
-                                    className={
-                                        'iky-monitor__alert ' +
-                                        (historyMessageType === 'error'
-                                            ? 'iky-monitor__alert--error'
-                                            : 'iky-monitor__alert--success')
-                                    }
-                                >
-                                    {historyMessage}
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
-            </aside>
-
-            <section className="iky-monitor__center">
-                <div className="iky-monitor__map">
-                    <div id="iky-map" className="iky-monitor__map-inner" />
-
-                    {markerScreenPos && showPopup && (
-                        <div
-                            className="iky-monitor__popup-wrapper"
-                            style={{ left: markerScreenPos.x, top: markerScreenPos.y }}
-                        >
-                            <div className="iky-monitor__popup">
-                                <div className="iky-monitor__popup-tabs">
-                                    <button
-                                        className={
-                                            'iky-monitor__popup-tab' +
-                                            (detailTab === 'status' ? ' iky-monitor__popup-tab--active' : '')
-                                        }
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setDetailTab('status');
-                                        }}
-                                    >
-                                        Trạng thái
-                                    </button>
-                                    <button
-                                        className={
-                                            'iky-monitor__popup-tab' +
-                                            (detailTab === 'control' ? ' iky-monitor__popup-tab--active' : '')
-                                        }
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setDetailTab('control');
-                                        }}
-                                    >
-                                        Điều khiển
-                                    </button>
-                                    <button
-                                        className={
-                                            'iky-monitor__popup-tab' +
-                                            (detailTab === 'battery' ? ' iky-monitor__popup-tab--active' : '')
-                                        }
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setDetailTab('battery');
-                                        }}
-                                    >
-                                        Trạng thái Pin
-                                    </button>
-                                </div>
-
-                                <div className="iky-monitor__popup-body">
-                                    {detailTab === 'status' && (
-                                        <div className="iky-monitor__popup-col">{renderStatusInfo()}</div>
-                                    )}
-
-                                    {detailTab === 'control' && (
-                                        <div className="iky-monitor__popup-col">
-                                            <div className="iky-monitor__control-row">
-                                                <span>Trạng thái kết nối</span>
-                                                <div
-                                                    className={
-                                                        'iky-monitor__connection ' +
-                                                        (isConnected
-                                                            ? 'iky-monitor__connection--on'
-                                                            : 'iky-monitor__connection--off')
-                                                    }
-                                                >
-                                                    <span className="iky-monitor__connection-icon">✓</span>
-                                                    <span className="iky-monitor__connection-text">
-                                                        {isConnected ? 'Kết nối' : 'Mất kết nối'}
-                                                    </span>
+                                                    <div className={`iky-status-badge ${isLocked ? 'off' : 'on'}`}>
+                                                        {isLocked ? (
+                                                            <LockFilled className="iky-status-icon" />
+                                                        ) : (
+                                                            <CheckCircleFilled className="iky-status-icon" />
+                                                        )}
+                                                        <span>{deviceStatusText}</span>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                            <div className="iky-monitor__control-row">
-                                                <span>Trạng thái thiết bị</span>
 
-                                                <div className={`iky-status-badge ${isLocked ? 'off' : 'on'}`}>
-                                                    {isLocked ? (
-                                                        <LockFilled className="iky-status-icon" />
-                                                    ) : (
-                                                        <CheckCircleFilled className="iky-status-icon" />
-                                                    )}
-                                                    <span>{deviceStatusText}</span>
+                                                <div className="iky-monitor__control-row">
+                                                    <span>Khoá thiết bị</span>
+                                                    <button
+                                                        className={
+                                                            'iky-monitor__secondary-btn' +
+                                                            (isLocked ? ' iky-monitor__secondary-btn--disabled' : '')
+                                                        }
+                                                        onClick={handleConfirmLock}
+                                                        disabled={isLocked}
+                                                    >
+                                                        {lockLoading ? 'Đang xử lý...' : 'Khoá'}
+                                                    </button>
                                                 </div>
-                                            </div>
 
-                                            <div className="iky-monitor__control-row">
-                                                <span>Khoá thiết bị</span>
-                                                <button
-                                                    className={
-                                                        'iky-monitor__secondary-btn' +
-                                                        (isLocked ? ' iky-monitor__secondary-btn--disabled' : '')
-                                                    }
-                                                    onClick={handleConfirmLock}
-                                                    disabled={isLocked}
-                                                >
-                                                    {lockLoading ? 'Đang xử lý...' : 'Khoá'}
-                                                </button>
-                                            </div>
-
-                                            <div className="iky-monitor__control-row">
-                                                <span>Mở khoá thiết bị</span>
-                                                <button
-                                                    className={
-                                                        'iky-monitor__secondary-btn' +
-                                                        (!isLocked ? ' iky-monitor__secondary-btn--disabled' : '')
-                                                    }
-                                                    onClick={handleConfirmUnlock}
-                                                    disabled={!isLocked}
-                                                >
-                                                    {lockLoading ? 'Đang xử lý...' : 'Mở khoá'}
-                                                </button>
-                                            </div>
-
-                                            {/* <div className="iky-monitor__control-row">
-                                                <span>Bảo vệ</span>
-                                                <button className="iky-monitor__toggle-btn iky-monitor__toggle-btn--off">
-                                                    Tắt
-                                                </button>
-                                            </div>
-                                            <div className="iky-monitor__control-row">
-                                                <span>Tắt xe khẩn cấp</span>
-                                                <button className="iky-monitor__toggle-btn iky-monitor__toggle-btn--off">
-                                                    Tắt
-                                                </button>
-                                            </div>
-                                            <div className="iky-monitor__control-row">
-                                                <span>Kết nối</span>
-                                                <span className="iky-monitor__dot" />
-                                            </div>
-                                            <div className="iky-monitor__control-row">
-                                                <span>Số dư tài khoản</span>
-                                                <button className="iky-monitor__secondary-btn">Kiểm tra</button>
-                                            </div> */}
-
-                                            {lockError && (
-                                                <div className="iky-monitor__error" style={{ marginTop: 8 }}>
-                                                    {lockError}
+                                                <div className="iky-monitor__control-row">
+                                                    <span>Mở khoá thiết bị</span>
+                                                    <button
+                                                        className={
+                                                            'iky-monitor__secondary-btn' +
+                                                            (!isLocked ? ' iky-monitor__secondary-btn--disabled' : '')
+                                                        }
+                                                        onClick={handleConfirmUnlock}
+                                                        disabled={!isLocked}
+                                                    >
+                                                        {lockLoading ? 'Đang xử lý...' : 'Mở khoá'}
+                                                    </button>
                                                 </div>
-                                            )}
-                                        </div>
-                                    )}
 
-                                    {detailTab === 'battery' && (
-                                        <div className="iky-monitor__popup-col">{renderBatteryInfo()}</div>
-                                    )}
+                                                {lockError && (
+                                                    <div className="iky-monitor__error" style={{ marginTop: 8 }}>
+                                                        {lockError}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {detailTab === 'battery' && (
+                                            <div className="iky-monitor__popup-col">{renderBatteryInfo()}</div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    )}
-                </div>
-            </section>
+                        )}
+                    </div>
+                </section>
 
-            {showPopup && detailTab === 'battery' && (
-                <aside className="iky-monitor__right">
-                    <h4 className="iky-monitor__right-title">Thông tin hiển thị</h4>
-                    <div className="iky-monitor__battery-box">{renderBatteryInfo()}</div>
-                </aside>
-            )}
-        </div>
+                {showPopup && detailTab === 'battery' && (
+                    <aside className="iky-monitor__right">
+                        <h4 className="iky-monitor__right-title">Thông tin hiển thị</h4>
+                        <div className="iky-monitor__battery-box">{renderBatteryInfo()}</div>
+                    </aside>
+                )}
+            </div>
+        </>
     );
 };
 

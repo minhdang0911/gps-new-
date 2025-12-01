@@ -2,10 +2,13 @@ import './globals.css';
 import 'antd/dist/reset.css';
 import { AntdRegistry } from '@ant-design/nextjs-registry';
 import { Geist, Geist_Mono } from 'next/font/google';
+
 import Navbar from './components/Navbar/Navbar';
 import StatusBar from './components/StatusBar/StatusBar';
 import TokenRefresher from './components/TokenRefresher';
 import AppFooter from './components/Footer/AppFooter';
+
+import MqttConnector from './components/MqttConnector'; // ⬅️ thêm dòng này
 
 const geistSans = Geist({
     variable: '--font-geist-sans',
@@ -33,6 +36,10 @@ export default function RootLayout({ children }) {
             <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
                 <AntdRegistry>
                     <TokenRefresher />
+
+                    {/* MQTT chạy nền */}
+                    <MqttConnector />
+
                     <Navbar activeKey="monitor" />
                     <StatusBar />
                     <main>{children}</main>
