@@ -44,7 +44,7 @@ export default function TokenRefresher() {
 
         const handleVisibilityChange = () => {
             if (!document.hidden) {
-                console.log('👀 User quay lại tab');
+                // console.log('👀 User quay lại tab');
                 proactiveRefresh();
             }
         };

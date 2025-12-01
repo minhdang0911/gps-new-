@@ -464,7 +464,7 @@ const MonitorPage = () => {
         let mode = '';
         if (current > 0) mode = 'Đang sạc';
         else if (current < 0) mode = 'Đang xả';
-        else mode = 'Đang standby';
+        else mode = 'Đang chờ';
 
         // 🔥 LẤY “Cập nhật lúc”
         // MQTT thì dùng “tim” → format lại
