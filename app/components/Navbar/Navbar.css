@@ -4,18 +4,16 @@
 .iky-nav {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     background: #2196f3;
     color: #fff;
     height: 64px;
-    padding: 0;
+    padding: 0 16px; /* thêm padding hai bên */
     font-family: system-ui, sans-serif;
     width: 100%;
     box-sizing: border-box;
     position: relative;
     z-index: 100;
 }
-
 /* LOGO */
 .iky-nav__logo {
     display: flex;
@@ -63,9 +61,22 @@
     background: rgba(0, 0, 0, 0.22);
 }
 
+.iky-nav__user-caret {
+    font-size: 12px;
+    margin-left: 6px;
+    transition: 0.2s ease;
+}
+
 .iky-nav__item-icon {
     width: 32px;
     height: 32px;
+}
+
+.iky-nav__right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 100%;
 }
 
 .iky-nav__item-icon img {
@@ -83,18 +94,27 @@
 /* USER */
 .iky-nav__user {
     position: relative;
-    padding: 12px 24px;
+    padding: 8px 16px;
     cursor: pointer;
     display: flex;
     align-items: center;
     gap: 6px;
     white-space: nowrap;
-    height: 100%;
+    height: auto;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.08);
     transition: background 0.2s ease;
 }
 
 .iky-nav__user:hover {
-    background: rgba(0, 0, 0, 0.12);
+    background: rgba(0, 0, 0, 0.16);
+}
+
+/* lang text */
+.iky-nav__lang-text {
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 0.03em;
 }
 
 .iky-nav__user-name {
@@ -131,6 +151,44 @@
     z-index: 9999;
     animation: dropdownFadeIn 0.2s ease;
     border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.iky-nav__lang {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 4px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(6px);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.iky-nav__lang-btn {
+    border: none;
+    background: transparent;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    cursor: pointer;
+    font-size: 11px;
+    line-height: 1;
+    color: #f5f7ff;
+    opacity: 0.7;
+    transition: background 0.15s ease, opacity 0.15s ease, transform 0.1s ease;
+}
+.iky-nav__lang-btn:hover {
+    opacity: 1;
+    transform: translateY(-0.5px);
+}
+
+/* active lang */
+.iky-nav__lang-btn--active {
+    background: #ffffff;
+    color: #2268c7;
+    opacity: 1;
 }
 
 @keyframes dropdownFadeIn {

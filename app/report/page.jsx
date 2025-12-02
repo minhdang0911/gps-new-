@@ -1,14 +1,21 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 
 export default function ReportHomePage() {
     const router = useRouter();
+    const pathname = usePathname() || '';
 
     useEffect(() => {
-        router.replace('/report/usage-session');
-    }, []);
+        // ['/','report','en'] hoặc ['/','report']...
+        const segments = pathname.split('/').filter(Boolean);
+        const last = segments[segments.length - 1];
+        const isEn = last === 'en';
+        const suffix = isEn ? '/en' : '';
+
+        router.replace(`/report/usage-session${suffix}`);
+    }, [pathname, router]);
 
     return null;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Space, Popconfirm, message, Card } from 'antd';
 import {
     PlusOutlined,
@@ -10,6 +10,8 @@ import {
     SearchOutlined,
     DownloadOutlined,
 } from '@ant-design/icons';
+
+import { usePathname } from 'next/navigation';
 
 import {
     getVehicleCategories,
@@ -28,9 +30,16 @@ import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
 import { getTodayForFileName } from '../../util/FormatDate';
 
+import { MADE_IN_FROM_MAP } from '../../util/ConverMadeIn';
+import vi from '../../locales/vi.json';
+import en from '../../locales/en.json';
+
+const locales = { vi, en };
 const { Option } = Select;
 
 const VehicleCategoryPage = () => {
+    const pathname = usePathname() || '/';
+
     const [loading, setLoading] = useState(false);
     const [data, setData] = useState([]);
     const [pagination, setPagination] = useState({
@@ -49,7 +58,7 @@ const VehicleCategoryPage = () => {
 
     const [mifOptions, setMifOptions] = useState([]); // xuất xứ
     const [manufacturerOptions, setManufacturerOptions] = useState([]); // hãng xe
-    const [deviceTypeOptions, setDeviceTypeOptions] = useState([]); // dòng thiết bị (device category)
+    const [deviceTypeOptions, setDeviceTypeOptions] = useState([]); // dòng thiết bị
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
@@ -63,10 +72,45 @@ const VehicleCategoryPage = () => {
     const isDistributor = role === 'distributor';
     const isCustomer = role === 'customer';
 
-    // helper label
+    // ===== LANG =====
+    const [isEn, setIsEn] = useState(false);
+
+    const isEnFromPath = useMemo(() => {
+        const segments = pathname.split('/').filter(Boolean);
+        const last = segments[segments.length - 1];
+        return last === 'en';
+    }, [pathname]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        if (isEnFromPath) {
+            setIsEn(true);
+            localStorage.setItem('iky_lang', 'en');
+        } else {
+            const saved = localStorage.getItem('iky_lang');
+            setIsEn(saved === 'en');
+        }
+    }, [isEnFromPath]);
+
+    const t = isEn ? locales.en.vehicleCategory : locales.vi.vehicleCategory;
+
+    // helper label: Xuất xứ
     const getMifLabel = (value) => {
-        const found = mifOptions.find((opt) => String(opt.value) === String(value));
-        return found ? found.label : value || '';
+        if (!value && value !== 0) return '';
+
+        const key = String(value);
+        const cfg = MADE_IN_FROM_MAP?.[key];
+
+        if (cfg) {
+            return isEn ? cfg.en : cfg.vi;
+        }
+
+        // fallback: API label
+        const found = mifOptions.find((opt) => String(opt.value) === key);
+        if (found?.label) return found.label;
+
+        return key;
     };
 
     const getManufacturerLabel = (value) => {
@@ -130,7 +174,7 @@ const VehicleCategoryPage = () => {
 
     const fetchList = async (page = 1, pageSize = 20, extraFilter = {}) => {
         if (!token) {
-            message.error('Thiếu token, vui lòng đăng nhập lại');
+            message.error(t.missingToken);
             return;
         }
 
@@ -160,7 +204,7 @@ const VehicleCategoryPage = () => {
             });
         } catch (err) {
             console.error('Load vehicle categories error:', err);
-            message.error('Không tải được danh sách dòng xe');
+            message.error(t.loadError);
         } finally {
             setLoading(false);
         }
@@ -179,7 +223,7 @@ const VehicleCategoryPage = () => {
 
     const openCreateModal = () => {
         if (!isAdmin) {
-            message.warning('Bạn không có quyền tạo dòng xe');
+            message.warning(t.noPermissionCreate);
             return;
         }
         setEditingItem(null);
@@ -189,7 +233,7 @@ const VehicleCategoryPage = () => {
 
     const openEditModal = (record) => {
         if (!isAdmin) {
-            message.warning('Bạn không có quyền chỉnh sửa dòng xe');
+            message.warning(t.noPermissionEdit);
             return;
         }
         setEditingItem(record);
@@ -206,24 +250,24 @@ const VehicleCategoryPage = () => {
 
     const handleDelete = async (record) => {
         if (!isAdmin) {
-            message.warning('Bạn không có quyền xoá dòng xe');
+            message.warning(t.noPermissionDelete);
             return;
         }
         if (!token) return;
 
         try {
             await deleteVehicleCategory(token, record._id);
-            message.success('Xoá dòng xe thành công');
+            message.success(t.deleteSuccess);
             fetchList(pagination.current, pagination.pageSize);
         } catch (err) {
             console.error('Delete vehicle category error:', err);
-            message.error('Xoá dòng xe thất bại');
+            message.error(t.deleteFailed);
         }
     };
 
     const handleModalOk = async () => {
         if (!isAdmin) {
-            message.warning('Bạn không có quyền thao tác');
+            message.warning(t.noPermissionAction);
             return;
         }
         if (!token) return;
@@ -245,10 +289,10 @@ const VehicleCategoryPage = () => {
 
             if (editingItem) {
                 await updateVehicleCategory(token, editingItem._id, payload);
-                message.success('Cập nhật dòng xe thành công');
+                message.success(t.updateSuccess);
             } else {
                 await createVehicleCategory(token, payload);
-                message.success('Tạo dòng xe thành công');
+                message.success(t.createSuccess);
             }
 
             setIsModalOpen(false);
@@ -268,7 +312,7 @@ const VehicleCategoryPage = () => {
                 apiData?.message ||
                 (typeof apiData === 'string' ? apiData : null) ||
                 err?.message ||
-                'Lưu dữ liệu thất bại';
+                t.saveFailed;
 
             message.error(msg);
         }
@@ -300,25 +344,25 @@ const VehicleCategoryPage = () => {
     ========================= */
     const exportExcel = () => {
         if (!data.length) {
-            message.warning('Không có dữ liệu để xuất');
+            message.warning(t.noDataToExport);
             return;
         }
 
         try {
             const excelData = data.map((item) => ({
-                'Tên dòng xe': item.name || '',
-                'Hãng xe': getManufacturerLabel(item.manufacturer),
+                [t.columns.name]: item.name || '',
+                [t.columns.manufacturer]: getManufacturerLabel(item.manufacturer),
                 Năm: item.year || '',
-                'Phiên bản / Model': item.model || '',
-                'Xuất xứ': getMifLabel(item.madeInFrom),
-                'Dòng thiết bị': getDeviceTypeLabel(item.deviceTypeId || item.deviceType_id),
+                [t.columns.model]: item.model || '',
+                [t.columns.origin]: getMifLabel(item.madeInFrom),
+                [t.columns.deviceType]: getDeviceTypeLabel(item.deviceTypeId || item.deviceType_id),
             }));
 
             const ws = XLSX.utils.json_to_sheet(excelData, { origin: 'A2' });
             const headers = Object.keys(excelData[0]);
 
             // Title
-            const title = 'Báo cáo danh sách dòng xe';
+            const title = t.exportTitle;
             ws['A1'] = { v: title, t: 's' };
             ws['!merges'] = [
                 {
@@ -399,10 +443,10 @@ const VehicleCategoryPage = () => {
             });
 
             saveAs(new Blob([excelBuffer]), `DanhSachDongXe_${getTodayForFileName()}.xlsx`);
-            message.success('Xuất Excel thành công');
+            message.success(t.exportSuccess);
         } catch (err) {
             console.error('Export excel vehicle category error:', err);
-            message.error('Xuất Excel thất bại');
+            message.error(t.exportFailed);
         }
     };
 
@@ -411,40 +455,40 @@ const VehicleCategoryPage = () => {
     ========================= */
     const columns = [
         {
-            title: 'Tên dòng xe',
+            title: t.columns.name,
             dataIndex: 'name',
             key: 'name',
             sorter: (a, b) => (a.name || '').localeCompare(b.name || ''),
         },
         {
-            title: 'Hãng xe',
+            title: t.columns.manufacturer,
             dataIndex: 'manufacturer',
             key: 'manufacturer',
             sorter: (a, b) => getManufacturerLabel(a.manufacturer).localeCompare(getManufacturerLabel(b.manufacturer)),
             render: (value) => getManufacturerLabel(value) || '-',
         },
         {
-            title: 'Năm',
+            title: t.columns.year,
             dataIndex: 'year',
             key: 'year',
             width: 100,
             sorter: (a, b) => Number(a.year || 0) - Number(b.year || 0),
         },
         {
-            title: 'Phiên bản / Model',
+            title: t.columns.model,
             dataIndex: 'model',
             key: 'model',
             sorter: (a, b) => (a.model || '').localeCompare(b.model || ''),
         },
         {
-            title: 'Xuất xứ',
+            title: t.columns.origin,
             dataIndex: 'madeInFrom',
             key: 'madeInFrom',
             sorter: (a, b) => getMifLabel(a.madeInFrom).localeCompare(getMifLabel(b.madeInFrom)),
             render: (value) => getMifLabel(value) || '-',
         },
         {
-            title: 'Dòng thiết bị',
+            title: t.columns.deviceType,
             dataIndex: 'deviceTypeId',
             key: 'deviceTypeId',
             sorter: (a, b) =>
@@ -457,24 +501,24 @@ const VehicleCategoryPage = () => {
             },
         },
         {
-            title: 'Hành động',
+            title: t.columns.actions,
             key: 'actions',
             width: 160,
             render: (_, record) =>
                 isAdmin ? (
                     <Space>
                         <Button size="small" icon={<EditOutlined />} onClick={() => openEditModal(record)}>
-                            Sửa
+                            {t.actions.edit}
                         </Button>
                         <Popconfirm
-                            title="Xoá dòng xe?"
-                            description="Bạn có chắc chắn muốn xoá?"
+                            title={t.actions.deleteConfirmTitle}
+                            description={t.actions.deleteConfirmDesc}
                             onConfirm={() => handleDelete(record)}
-                            okText="Xoá"
-                            cancelText="Huỷ"
+                            okText={t.actions.deleteOk}
+                            cancelText={t.actions.deleteCancel}
                         >
                             <Button size="small" danger icon={<DeleteOutlined />}>
-                                Xoá
+                                {t.actions.delete}
                             </Button>
                         </Popconfirm>
                     </Space>
@@ -486,7 +530,7 @@ const VehicleCategoryPage = () => {
     if (isCustomer) {
         return (
             <div className="vc-page">
-                <Card className="vc-card" title="Quản lý dòng xe (Vehicle Category)">
+                <Card className="vc-card" title={t.title}>
                     <p
                         style={{
                             color: '#ef4444',
@@ -494,7 +538,7 @@ const VehicleCategoryPage = () => {
                             margin: 0,
                         }}
                     >
-                        Bạn không có quyền truy cập chức năng này.
+                        {t.noPermissionPage}
                     </p>
                 </Card>
             </div>
@@ -505,21 +549,21 @@ const VehicleCategoryPage = () => {
         <div className="vc-page">
             <Card
                 className="vc-card"
-                title="Quản lý dòng xe (Vehicle Category)"
+                title={t.title}
                 extra={
                     <Space className="vc-card__actions">
                         <Button
                             icon={<ReloadOutlined />}
                             onClick={() => fetchList(pagination.current, pagination.pageSize)}
                         >
-                            Refresh
+                            {t.refresh}
                         </Button>
                         <Button icon={<DownloadOutlined />} onClick={exportExcel} disabled={!data.length}>
-                            Xuất Excel
+                            {t.exportExcel}
                         </Button>
                         {isAdmin && (
                             <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
-                                Thêm mới
+                                {t.addNew}
                             </Button>
                         )}
                     </Space>
@@ -530,7 +574,7 @@ const VehicleCategoryPage = () => {
                     <Input
                         allowClear
                         prefix={<SearchOutlined />}
-                        placeholder="Tìm theo tên dòng xe"
+                        placeholder={t.filters.name}
                         value={filters.name}
                         onChange={(e) =>
                             setFilters((prev) => ({
@@ -541,7 +585,7 @@ const VehicleCategoryPage = () => {
                     />
                     <Select
                         allowClear
-                        placeholder="Hãng xe"
+                        placeholder={t.filters.manufacturer}
                         value={filters.manufacturer || undefined}
                         onChange={(value) =>
                             setFilters((prev) => ({
@@ -559,7 +603,7 @@ const VehicleCategoryPage = () => {
                     </Select>
                     <Input
                         allowClear
-                        placeholder="Năm (vd: 2025)"
+                        placeholder={t.filters.year}
                         value={filters.year}
                         onChange={(e) =>
                             setFilters((prev) => ({
@@ -570,7 +614,7 @@ const VehicleCategoryPage = () => {
                     />
                     <Input
                         allowClear
-                        placeholder="Phiên bản / Model"
+                        placeholder={t.filters.model}
                         value={filters.model}
                         onChange={(e) =>
                             setFilters((prev) => ({
@@ -581,7 +625,7 @@ const VehicleCategoryPage = () => {
                     />
                     <Select
                         allowClear
-                        placeholder="Xuất xứ"
+                        placeholder={t.filters.origin}
                         value={filters.madeInFrom || undefined}
                         onChange={(value) =>
                             setFilters((prev) => ({
@@ -593,16 +637,16 @@ const VehicleCategoryPage = () => {
                     >
                         {mifOptions.map((opt) => (
                             <Option key={opt.value} value={opt.value}>
-                                {opt.label}
+                                {getMifLabel(opt.value)}
                             </Option>
                         ))}
                     </Select>
 
                     <Space className="vc-filter__actions">
                         <Button type="primary" onClick={handleSearch}>
-                            Tìm kiếm
+                            {t.search}
                         </Button>
-                        <Button onClick={handleResetFilter}>Xoá lọc</Button>
+                        <Button onClick={handleResetFilter}>{t.resetFilter}</Button>
                     </Space>
                 </div>
 
@@ -623,25 +667,25 @@ const VehicleCategoryPage = () => {
             {/* Modal thêm / sửa */}
             <Modal
                 open={isModalOpen}
-                title={editingItem ? 'Cập nhật dòng xe' : 'Thêm dòng xe'}
+                title={editingItem ? t.modal.editTitle : t.modal.createTitle}
                 onOk={handleModalOk}
                 onCancel={() => {
                     setIsModalOpen(false);
                     form.resetFields();
                 }}
-                okText="Lưu"
-                cancelText="Huỷ"
+                okText={t.modal.okText}
+                cancelText={t.modal.cancelText}
                 wrapClassName="vc-modal"
                 destroyOnHidden
             >
                 <Form form={form} layout="vertical">
                     <Form.Item
-                        label="Tên dòng xe"
+                        label={t.form.nameLabel}
                         name="name"
                         rules={[
                             {
                                 required: true,
-                                message: 'Nhập tên dòng xe',
+                                message: t.form.nameRequired,
                             },
                         ]}
                     >
@@ -649,11 +693,11 @@ const VehicleCategoryPage = () => {
                     </Form.Item>
 
                     <Form.Item
-                        label="Hãng xe (manufacturer)"
+                        label={t.form.manufacturerLabel}
                         name="manufacturer"
-                        rules={[{ required: true, message: 'Chọn hãng xe' }]}
+                        rules={[{ required: true, message: t.form.manufacturerRequired }]}
                     >
-                        <Select placeholder="Chọn hãng xe">
+                        <Select placeholder={t.form.manufacturerLabel}>
                             {manufacturerOptions.map((opt) => (
                                 <Option key={opt.value} value={opt.value}>
                                     {opt.label}
@@ -663,12 +707,12 @@ const VehicleCategoryPage = () => {
                     </Form.Item>
 
                     <Form.Item
-                        label="Năm"
+                        label={t.form.yearLabel}
                         name="year"
                         rules={[
                             {
                                 required: true,
-                                message: 'Nhập năm (vd: 2025)',
+                                message: t.form.yearRequired,
                             },
                         ]}
                     >
@@ -676,12 +720,12 @@ const VehicleCategoryPage = () => {
                     </Form.Item>
 
                     <Form.Item
-                        label="Phiên bản / Model"
+                        label={t.form.modelLabel}
                         name="model"
                         rules={[
                             {
                                 required: true,
-                                message: 'Nhập phiên bản / model',
+                                message: t.form.modelRequired,
                             },
                         ]}
                     >
@@ -689,21 +733,21 @@ const VehicleCategoryPage = () => {
                     </Form.Item>
 
                     <Form.Item
-                        label="Xuất xứ (madeInFrom)"
+                        label={t.form.originLabel}
                         name="madeInFrom"
-                        rules={[{ required: true, message: 'Chọn xuất xứ' }]}
+                        rules={[{ required: true, message: t.form.originRequired }]}
                     >
-                        <Select placeholder="Chọn xuất xứ">
+                        <Select placeholder={t.form.originPlaceholder}>
                             {mifOptions.map((opt) => (
                                 <Option key={opt.value} value={opt.value}>
-                                    {opt.label}
+                                    {getMifLabel(opt.value)}
                                 </Option>
                             ))}
                         </Select>
                     </Form.Item>
 
-                    <Form.Item label="Dòng thiết bị (deviceTypeId)" name="deviceTypeId">
-                        <Select allowClear placeholder="Chọn dòng thiết bị (không bắt buộc)">
+                    <Form.Item label={t.form.deviceTypeLabel} name="deviceTypeId">
+                        <Select allowClear placeholder={t.form.deviceTypePlaceholder}>
                             {deviceTypeOptions.map((opt) => (
                                 <Option key={opt.value} value={opt.value}>
                                     {opt.label}

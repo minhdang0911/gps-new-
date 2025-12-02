@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import mqtt from 'mqtt';
 
-export default function MqttConnector({ imei, onMessage }) {
+export default function MqttConnector({ imei, onMessage, onClientReady }) {
     const clientRef = useRef(null);
 
     useEffect(() => {
@@ -28,6 +28,9 @@ export default function MqttConnector({ imei, onMessage }) {
 
         client.on('connect', () => {
             console.log('✅ MQTT Connected!');
+            // báo cho parent biết client đã sẵn sàng
+            onClientReady?.(client);
+
             client.subscribe(topic, (err) => {
                 if (err) console.error('❌ Subscribe error:', err);
                 else console.log(`📡 Subscribed → ${topic}`);
@@ -60,9 +63,10 @@ export default function MqttConnector({ imei, onMessage }) {
 
         return () => {
             console.log('🔌 MQTT Disconnected');
+            onClientReady?.(null); // clear client ở parent
             client.end(true);
         };
-    }, [imei]);
+    }, [imei, onMessage, onClientReady]);
 
     return null;
 }

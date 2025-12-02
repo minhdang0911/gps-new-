@@ -1,0 +1,456 @@
+{
+    "sidebar": {
+        "title": "Quản lý tài khoản",
+        "devices": "Quản lý thiết bị",
+        "deviceCategory": "Quản lý danh mục thiết bị",
+        "vehicleCategory": "Quản lý loại xe",
+        "deviceCustomer": "Quản lý thiết bị khách hàng",
+        "user": "Quản lý người dùng"
+    },
+    "statusbar": {
+        "home": "Trang chủ",
+        "monitor": "Giám sát",
+        "cruise": "Hành trình",
+        "report": "Báo cáo",
+        "manage": "Quản lý",
+        "support": "Hỗ trợ",
+        "stopped": "Xe dừng",
+        "running": "Xe đang chạy",
+        "over50": "Xe quá 50km/h",
+        "over80": "Xe quá 80km/h",
+        "notify": "Thông báo"
+    },
+    "support": {
+        "badge": "Trung tâm hỗ trợ IKY",
+
+        "title": "Hỗ trợ khách hàng",
+        "desc": "Nếu bạn có bất kỳ thắc mắc nào về sản phẩm IKY, vui lòng liên hệ theo thông tin dưới đây hoặc gửi form hỗ trợ. Đội ngũ kỹ thuật sẽ phản hồi trong thời gian sớm nhất.",
+
+        "introTitle": "Giới thiệu",
+        "descIntro": "Công ty Cổ phần Công nghệ Tiện Ích Thông Minh chuyên nghiên cứu, sản xuất các sản phẩm tiêu dùng công nghệ cao:",
+        "introList": [
+            "Thiết bị khóa chống trộm xe máy: IKY Bike, IKY Plus, IKY Bike GPS, IKY Bike Found…",
+            "Hệ thống cảnh báo an ninh: IKY SmartHome",
+            "Bài giảng vệ tinh thông minh",
+            "Hệ thống cảnh báo và nút gọi khẩn cấp",
+            "Sản xuất các sản phẩm điện tử theo đơn đặt hàng"
+        ],
+
+        "contactTitle": "Liên hệ",
+        "companyName": "CÔNG TY CỔ PHẦN CÔNG NGHỆ TIỆN ÍCH THÔNG MINH",
+
+        "hcmBranch": "Trụ sở HCM",
+        "hcmAddress": "Số 38-40 Đường 21A, P. An Lạc, TP. Hồ Chí Minh",
+
+        "hnBranch": "CN Hà Nội",
+        "hnAddress": "Số 2, ngõ 18 đường Nguyễn Cơ Thạch, Phường Từ Liêm, Thành phố Hà Nội",
+
+        "emailLabel": "Email",
+        "workTime": "Giờ làm việc: 8h00 – 18h00 (Thứ 2 – Thứ 7)",
+
+        "areaHotlineTitle": "Hotline theo khu vực",
+        "hcmHotline": "TP. Hồ Chí Minh: 08 628 01 999",
+        "hnHotline": "Hà Nội: 0982 032 887",
+
+        "feedbackTitle": "Gửi phản hồi cho chúng tôi",
+        "feedbackNote": "Thông tin của bạn sẽ được bảo mật",
+
+        "formFullName": "Họ tên",
+        "formEmail": "Email",
+        "formSubject": "Tiêu đề",
+        "formContent": "Mô tả",
+        "formSend": "Gửi yêu cầu",
+
+        "mapTitle": "Bản đồ trụ sở IKY",
+        "mapGuide": "Vui lòng phóng to bản đồ để xem chỉ đường chi tiết.",
+
+        "mapHCM": "Hồ Chí Minh",
+        "mapHN": "Hà Nội"
+    },
+    "report": {
+        "title": "Báo cáo hệ thống",
+        "usage": "Báo cáo sử dụng",
+        "usageShort": "Sử dụng",
+        "charging": "Báo cáo sạc",
+        "chargingShort": "Sạc",
+        "trip": "Báo cáo hành trình",
+        "tripShort": "Hành trình"
+    },
+    "manageDevices": {
+        "title": "Quản lý thiết bị",
+        "exportExcel": "Xuất Excel",
+        "addDevice": "Thêm thiết bị",
+        "search": "Tìm kiếm",
+        "deviceList": "Danh sách thiết bị",
+        "noData": "Không có dữ liệu",
+        "loadError": "Không tải được danh sách thiết bị",
+        "configLoadError": "Không tải dữ liệu cấu hình",
+        "createSuccess": "Tạo thiết bị thành công",
+        "updateSuccess": "Cập nhật thiết bị thành công",
+        "deleteSuccess": "Xóa thành công",
+        "deleteConfirm": "Xóa thiết bị này?",
+        "noPermissionAdd": "Bạn không có quyền thêm thiết bị",
+        "noPermissionEdit": "Bạn không có quyền sửa thiết bị",
+        "noPermissionDelete": "Bạn không có quyền xóa thiết bị",
+        "noPermissionDetail": "Bạn không có quyền xem chi tiết",
+        "detailTitle": "Thông tin chi tiết thiết bị",
+        "back": "Quay lại",
+        "deviceInfo": "Thông tin thiết bị",
+        "ownerInfo": "Chủ sở hữu & Đại lý",
+        "mapTitle": "Bản đồ thiết bị",
+        "imei": "IMEI",
+        "phone": "Số điện thoại",
+        "plate": "Biển số",
+        "driver": "Lái xe",
+        "deviceType": "Loại thiết bị",
+        "firmware": "Firmware",
+        "battery": "Pin",
+        "speed": "Vận tốc",
+        "acc": "ACC",
+        "running": "Đang chạy",
+        "stopped": "Tắt máy",
+        "position": "Vị trí",
+        "customer": "Khách hàng",
+        "notAssigned": "Chưa gán",
+        "distributor": "Đại lý",
+        "createdDate": "Ngày tạo",
+        "edit": "Sửa",
+        "delete": "Xóa",
+        "view": "Xem",
+        "save": "Lưu",
+
+        "filters": {
+            "phone": "Số điện thoại",
+            "plate": "Biển số",
+            "imei": "IMEI",
+            "driver": "Lái xe"
+        },
+
+        "modal": {
+            "addTitle": "Thêm thiết bị",
+            "editTitle": "Sửa thiết bị",
+            "selectDeviceType": "Chọn dòng thiết bị",
+            "selectVehicleType": "Chọn dòng xe",
+            "selectCustomer": "Chọn khách hàng",
+            "selectDistributor": "Chọn đại lý"
+        }
+    },
+
+    "deviceCategory": {
+        "title": "Quản lý dòng thiết bị (Device Category)",
+        "noPermissionPage": "Bạn không có quyền truy cập chức năng này.",
+        "missingToken": "Thiếu token, vui lòng đăng nhập lại",
+        "loadError": "Không tải được danh sách dòng thiết bị",
+        "noPermissionCreate": "Bạn không có quyền tạo dòng thiết bị",
+        "noPermissionEdit": "Bạn không có quyền chỉnh sửa dòng thiết bị",
+        "noPermissionDelete": "Bạn không có quyền xoá dòng thiết bị",
+        "noPermissionAction": "Bạn không có quyền thao tác",
+        "createSuccess": "Tạo dòng thiết bị thành công",
+        "updateSuccess": "Cập nhật dòng thiết bị thành công",
+        "deleteSuccess": "Xoá dòng thiết bị thành công",
+        "deleteFailed": "Xoá dòng thiết bị thất bại",
+        "saveFailed": "Lưu dữ liệu thất bại",
+        "noDataToExport": "Không có dữ liệu để xuất",
+        "exportTitle": "Báo cáo danh sách dòng thiết bị",
+        "exportSuccess": "Xuất Excel thành công",
+        "exportFailed": "Xuất Excel thất bại",
+        "filters": {
+            "name": "Tìm theo tên",
+            "code": "Mã dòng",
+            "year": "Năm (vd: 2025)",
+            "model": "Model",
+            "origin": "Xuất xứ"
+        },
+        "search": "Tìm kiếm",
+        "resetFilter": "Xoá lọc",
+        "refresh": "Refresh",
+        "exportExcel": "Xuất Excel",
+        "addNew": "Thêm mới",
+        "columns": {
+            "code": "Mã dòng",
+            "name": "Tên dòng thiết bị",
+            "year": "Năm",
+            "model": "Model",
+            "origin": "Xuất xứ",
+            "description": "Mô tả",
+            "actions": "Hành động"
+        },
+        "actions": {
+            "edit": "Sửa",
+            "delete": "Xoá",
+            "deleteConfirmTitle": "Xoá dòng thiết bị?",
+            "deleteConfirmDesc": "Bạn có chắc chắn muốn xoá?",
+            "deleteOk": "Xoá",
+            "deleteCancel": "Huỷ"
+        },
+        "modal": {
+            "createTitle": "Thêm dòng thiết bị",
+            "editTitle": "Cập nhật dòng thiết bị",
+            "okText": "Lưu",
+            "cancelText": "Huỷ"
+        },
+        "form": {
+            "codeLabel": "Mã dòng",
+            "codeRequired": "Nhập mã dòng thiết bị",
+            "nameLabel": "Tên dòng thiết bị",
+            "nameRequired": "Nhập tên dòng thiết bị",
+            "yearLabel": "Năm",
+            "yearRequired": "Nhập năm (vd: 2025)",
+            "modelLabel": "Model",
+            "modelRequired": "Nhập model",
+            "originLabel": "Xuất xứ (madeInFrom)",
+            "originRequired": "Chọn xuất xứ",
+            "originPlaceholder": "Chọn xuất xứ",
+            "descLabel": "Mô tả"
+        }
+    },
+    "vehicleCategory": {
+        "title": "Quản lý dòng xe (Vehicle Category)",
+        "noPermissionPage": "Bạn không có quyền truy cập chức năng này.",
+        "missingToken": "Thiếu token, vui lòng đăng nhập lại",
+        "loadError": "Không tải được danh sách dòng xe",
+        "noPermissionCreate": "Bạn không có quyền tạo dòng xe",
+        "noPermissionEdit": "Bạn không có quyền chỉnh sửa dòng xe",
+        "noPermissionDelete": "Bạn không có quyền xoá dòng xe",
+        "noPermissionAction": "Bạn không có quyền thao tác",
+        "createSuccess": "Tạo dòng xe thành công",
+        "updateSuccess": "Cập nhật dòng xe thành công",
+        "deleteSuccess": "Xoá dòng xe thành công",
+        "deleteFailed": "Xoá dòng xe thất bại",
+        "saveFailed": "Lưu dữ liệu thất bại",
+        "noDataToExport": "Không có dữ liệu để xuất",
+        "exportTitle": "Báo cáo danh sách dòng xe",
+        "exportSuccess": "Xuất Excel thành công",
+        "exportFailed": "Xuất Excel thất bại",
+        "filters": {
+            "name": "Tìm theo tên dòng xe",
+            "manufacturer": "Hãng xe",
+            "year": "Năm (vd: 2025)",
+            "model": "Phiên bản / Model",
+            "origin": "Xuất xứ"
+        },
+        "search": "Tìm kiếm",
+        "resetFilter": "Xoá lọc",
+        "refresh": "Refresh",
+        "exportExcel": "Xuất Excel",
+        "addNew": "Thêm mới",
+        "columns": {
+            "name": "Tên dòng xe",
+            "manufacturer": "Hãng xe",
+            "year": "Năm",
+            "model": "Phiên bản / Model",
+            "origin": "Xuất xứ",
+            "deviceType": "Dòng thiết bị",
+            "actions": "Hành động"
+        },
+        "actions": {
+            "edit": "Sửa",
+            "delete": "Xoá",
+            "deleteConfirmTitle": "Xoá dòng xe?",
+            "deleteConfirmDesc": "Bạn có chắc chắn muốn xoá?",
+            "deleteOk": "Xoá",
+            "deleteCancel": "Huỷ"
+        },
+        "modal": {
+            "createTitle": "Thêm dòng xe",
+            "editTitle": "Cập nhật dòng xe",
+            "okText": "Lưu",
+            "cancelText": "Huỷ"
+        },
+        "form": {
+            "nameLabel": "Tên dòng xe",
+            "nameRequired": "Nhập tên dòng xe",
+            "manufacturerLabel": "Hãng xe (manufacturer)",
+            "manufacturerRequired": "Chọn hãng xe",
+            "yearLabel": "Năm",
+            "yearRequired": "Nhập năm (vd: 2025)",
+            "modelLabel": "Phiên bản / Model",
+            "modelRequired": "Nhập phiên bản / model",
+            "originLabel": "Xuất xứ (madeInFrom)",
+            "originRequired": "Chọn xuất xứ",
+            "originPlaceholder": "Chọn xuất xứ",
+            "deviceTypeLabel": "Dòng thiết bị (deviceTypeId)",
+            "deviceTypePlaceholder": "Chọn dòng thiết bị (không bắt buộc)"
+        }
+    },
+    "deviceCustomer": {
+        "title": "Quản lý thiết bị khách hàng",
+        "noPermissionTitle": "Bạn không có quyền truy cập trang này",
+        "noPermissionDesc": "Vui lòng liên hệ quản trị viên hoặc đại lý để được cấp quyền.",
+        "loadCustomersError": "Không tải được danh sách khách hàng",
+        "loadDevicesError": "Không tải được danh sách thiết bị của khách hàng",
+        "loadAllDevicesError": "Không tải được danh sách thiết bị",
+        "missingTokenOrCustomer": "Thiếu token hoặc khách hàng",
+        "addSuccess": "Thêm thiết bị cho khách hàng thành công",
+        "addFailed": "Thêm thiết bị thất bại",
+        "removeSuccess": "Gỡ thiết bị khỏi khách hàng thành công",
+        "removeFailed": "Gỡ thiết bị thất bại",
+        "exportNeedCustomer": "Chọn khách hàng trước khi xuất Excel",
+        "exportNoDevices": "Khách hàng này chưa có thiết bị để xuất",
+        "exportSuccess": "Xuất Excel thành công",
+        "exportFailed": "Xuất Excel thất bại",
+        "customerFallback": "Khách hàng",
+        "columns": {
+            "imei": "IMEI",
+            "plate": "Biển số",
+            "deviceCategory": "Dòng thiết bị",
+            "status": "Trạng thái",
+            "actions": "Hành động"
+        },
+        "status": {
+            "online": "Online",
+            "offline": "Offline"
+        },
+        "actions": {
+            "removeTitle": "Gỡ thiết bị khỏi khách hàng?",
+            "removeDesc": "Bạn có chắc chắn muốn gỡ thiết bị này?",
+            "removeOk": "Gỡ",
+            "removeCancel": "Huỷ",
+            "remove": "Gỡ"
+        },
+        "filter": {
+            "selectCustomerPlaceholder": "Chọn khách hàng"
+        },
+        "buttons": {
+            "refresh": "Refresh",
+            "export": "Xuất Excel",
+            "addDevice": "Thêm thiết bị"
+        },
+        "emptyTip": "Chọn một khách hàng để xem danh sách thiết bị.",
+        "modal": {
+            "title": "Thêm thiết bị vào khách hàng",
+            "okText": "Lưu",
+            "cancelText": "Huỷ",
+            "imeiLabel": "Thiết bị (IMEI)",
+            "imeiRequired": "Chọn thiết bị (IMEI)",
+            "imeiPlaceholder": "Chọn thiết bị"
+        },
+        "excel": {
+            "title": "Báo cáo thiết bị theo khách hàng",
+            "customerPrefix": "Khách hàng: ",
+            "colPlate": "Biển số",
+            "colDeviceCategory": "Dòng thiết bị",
+            "colStatus": "Trạng thái"
+        }
+    },
+    "manageUser": {
+        "title": "Quản lý người dùng",
+        "search": {
+            "placeholder": "Tìm kiếm theo username / email / phone"
+        },
+        "buttons": {
+            "export": "Xuất Excel",
+            "add": "Thêm người dùng"
+        },
+        "table": {
+            "username": "Tên đăng nhập",
+            "name": "Họ tên",
+            "email": "Email",
+            "phone": "Số điện thoại",
+            "role": "Vai trò",
+            "actions": "Thao tác"
+        },
+        "actions": {
+            "edit": "Sửa",
+            "delete": "Xóa",
+            "view": "Xem"
+        },
+        "form": {
+            "username": "Tên đăng nhập",
+            "password": "Mật khẩu",
+            "passwordEdit": "Mật khẩu mới (tùy chọn)",
+            "passwordPlaceholder": "Nhập mật khẩu",
+            "passwordEditPlaceholder": "Để trống nếu không đổi",
+            "name": "Họ tên",
+            "email": "Email",
+            "phone": "Số điện thoại",
+            "address": "Địa chỉ",
+            "role": "Vai trò",
+            "distributor": "Thuộc đại lý",
+            "distributorPlaceholder": "Chọn đại lý"
+        },
+        "modal": {
+            "createTitle": "Tạo người dùng",
+            "editTitle": "Sửa người dùng",
+            "okText": "Lưu",
+            "cancelText": "Đóng"
+        },
+        "view": {
+            "title": "Thông tin người dùng",
+            "close": "Đóng",
+            "loading": "Đang tải...",
+            "fields": {
+                "username": "Username",
+                "name": "Tên",
+                "email": "Email",
+                "phone": "Số điện thoại",
+                "role": "Vai trò",
+                "distributor": "Distributor",
+                "createdAt": "Ngày tạo"
+            }
+        },
+        "messages": {
+            "loadUsersError": "Không tải được danh sách người dùng",
+            "loadDistributorsError": "Không tải được danh sách đại lý",
+            "viewUserError": "Không tải được thông tin người dùng",
+            "updateSuccess": "Cập nhật người dùng thành công",
+            "createSuccess": "Tạo người dùng thành công",
+            "saveFailedFallback": "Lưu người dùng thất bại",
+            "deleteConfirmTitle": "Xóa người dùng?",
+            "deleteConfirmContentPrefix": "Bạn có chắc muốn xóa ",
+            "deleteSuccess": "Xóa người dùng thành công",
+            "deleteFailed": "Xóa người dùng thất bại",
+            "exportNoData": "Không có dữ liệu để xuất",
+            "exportSuccess": "Xuất Excel thành công",
+            "exportFailed": "Xuất Excel thất bại"
+        },
+        "excel": {
+            "title": "Báo cáo danh sách người dùng",
+            "columns": {
+                "username": "Tên đăng nhập",
+                "name": "Họ tên",
+                "email": "Email",
+                "phone": "Số điện thoại",
+                "role": "Vai trò",
+                "distributor": "Thuộc đại lý",
+                "createdAt": "Ngày tạo"
+            }
+        }
+    },
+    "usageSessionReport": {
+        "title": "Báo cáo sử dụng (Usage Session)",
+        "subtitle": "Lọc theo session, thiết bị, pin, mã usage, khoảng thời gian...",
+        "filter": {
+            "title": "Bộ lọc",
+            "sessionId": "Mã phiên (Session ID)",
+            "sessionIdPlaceholder": "Nhập mã phiên",
+            "batteryId": "Mã pin (Battery ID)",
+            "batteryIdPlaceholder": "Nhập mã pin",
+            "usageCode": "Mã usage",
+            "usageCodePlaceholder": "Nhập mã usage",
+            "deviceId": "Mã thiết bị (Device ID)",
+            "deviceIdPlaceholder": "Nhập mã thiết bị",
+            "soh": "SOH",
+            "sohPlaceholder": "VD: 80",
+            "timeRange": "Khoảng thời gian",
+            "search": "Tìm kiếm",
+            "reset": "Xoá lọc"
+        },
+        "table": {
+            "title": "Danh sách Usage Session",
+            "total": "Tổng: {total} bản ghi",
+            "index": "#",
+            "sessionId": "Mã phiên",
+            "deviceId": "Mã thiết bị",
+            "batteryId": "Mã pin",
+            "usageCode": "Mã usage",
+            "soh": "SOH",
+            "startTime": "Thời gian bắt đầu",
+            "endTime": "Thời gian kết thúc",
+            "showTotal": "Tổng {total} bản ghi"
+        },
+        "messages": {
+            "loadError": "Không tải được danh sách phiên sử dụng"
+        }
+    }
+}

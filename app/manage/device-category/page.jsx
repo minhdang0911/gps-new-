@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Table, Button, Modal, Form, Input, Select, Space, Popconfirm, message, Card } from 'antd';
 import {
     PlusOutlined,
@@ -11,6 +11,8 @@ import {
     DownloadOutlined,
 } from '@ant-design/icons';
 
+import { usePathname } from 'next/navigation';
+
 import {
     getDeviceCategories,
     createDeviceCategory,
@@ -18,6 +20,7 @@ import {
     deleteDeviceCategory,
     getMadeInFromOptions,
 } from '../../lib/api/deviceCategory';
+import { MADE_IN_FROM_MAP } from '../../util/ConverMadeIn';
 
 import './DeviceCategoryPage.css';
 
@@ -27,9 +30,15 @@ import { getTodayForFileName } from '../../util/FormatDate';
 import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
 
+import vi from '../../locales/vi.json';
+import en from '../../locales/en.json';
+
+const locales = { vi, en };
 const { Option } = Select;
 
 const DeviceCategoryPage = () => {
+    const pathname = usePathname() || '/';
+
     const [loading, setLoading] = useState(false);
     const [data, setData] = useState([]);
     const [pagination, setPagination] = useState({
@@ -60,10 +69,46 @@ const DeviceCategoryPage = () => {
     const isDistributor = role === 'distributor';
     const isCustomer = role === 'customer';
 
+    // ===== LANG =====
+    const [isEn, setIsEn] = useState(false);
+
+    const isEnFromPath = useMemo(() => {
+        const segments = pathname.split('/').filter(Boolean);
+        const last = segments[segments.length - 1];
+        return last === 'en';
+    }, [pathname]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        if (isEnFromPath) {
+            setIsEn(true);
+            localStorage.setItem('iky_lang', 'en');
+        } else {
+            const saved = localStorage.getItem('iky_lang');
+            setIsEn(saved === 'en');
+        }
+    }, [isEnFromPath]);
+
+    const t = isEn ? locales.en.deviceCategory : locales.vi.deviceCategory;
+
     // helper lấy label xuất xứ
     const getMadeInFromLabel = (value) => {
-        const found = mifOptions.find((opt) => String(opt.value) === String(value));
-        return found ? found.label : value || '';
+        if (!value && value !== 0) return '';
+
+        const key = String(value);
+        const cfg = MADE_IN_FROM_MAP[key];
+
+        // Nếu mình có map thì ưu tiên dùng
+        if (cfg) {
+            return isEn ? cfg.en : cfg.vi;
+        }
+
+        // fallback: lấy label từ API (trong mifOptions), nếu API sau này thêm nước mới
+        const found = mifOptions.find((opt) => String(opt.value) === key);
+        if (found?.label) return found.label;
+
+        return key;
     };
 
     // Lấy role từ localStorage
@@ -95,7 +140,7 @@ const DeviceCategoryPage = () => {
 
     const fetchList = async (page = 1, pageSize = 20, extraFilter = {}) => {
         if (!token) {
-            message.error('Thiếu token, vui lòng đăng nhập lại');
+            message.error(t.missingToken);
             return;
         }
 
@@ -125,7 +170,7 @@ const DeviceCategoryPage = () => {
             });
         } catch (err) {
             console.error('Load device categories error:', err);
-            message.error('Không tải được danh sách dòng thiết bị');
+            message.error(t.loadError);
         } finally {
             setLoading(false);
         }
@@ -144,7 +189,7 @@ const DeviceCategoryPage = () => {
 
     const openCreateModal = () => {
         if (!isAdmin) {
-            message.warning('Bạn không có quyền tạo dòng thiết bị');
+            message.warning(t.noPermissionCreate);
             return;
         }
         setEditingItem(null);
@@ -154,7 +199,7 @@ const DeviceCategoryPage = () => {
 
     const openEditModal = (record) => {
         if (!isAdmin) {
-            message.warning('Bạn không có quyền chỉnh sửa dòng thiết bị');
+            message.warning(t.noPermissionEdit);
             return;
         }
         setEditingItem(record);
@@ -171,24 +216,24 @@ const DeviceCategoryPage = () => {
 
     const handleDelete = async (record) => {
         if (!isAdmin) {
-            message.warning('Bạn không có quyền xoá dòng thiết bị');
+            message.warning(t.noPermissionDelete);
             return;
         }
         if (!token) return;
 
         try {
             await deleteDeviceCategory(token, record._id);
-            message.success('Xoá dòng thiết bị thành công');
+            message.success(t.deleteSuccess);
             fetchList(pagination.current, pagination.pageSize);
         } catch (err) {
             console.error('Delete device category error:', err);
-            message.error('Xoá dòng thiết bị thất bại');
+            message.error(t.deleteFailed);
         }
     };
 
     const handleModalOk = async () => {
         if (!isAdmin) {
-            message.warning('Bạn không có quyền thao tác');
+            message.warning(t.noPermissionAction);
             return;
         }
         if (!token) return;
@@ -206,10 +251,10 @@ const DeviceCategoryPage = () => {
 
             if (editingItem) {
                 await updateDeviceCategory(token, editingItem._id, payload);
-                message.success('Cập nhật dòng thiết bị thành công');
+                message.success(t.updateSuccess);
             } else {
                 await createDeviceCategory(token, payload);
-                message.success('Tạo dòng thiết bị thành công');
+                message.success(t.createSuccess);
             }
 
             setIsModalOpen(false);
@@ -229,7 +274,7 @@ const DeviceCategoryPage = () => {
                 apiData?.message ||
                 (typeof apiData === 'string' ? apiData : null) ||
                 err?.message ||
-                'Lưu dữ liệu thất bại';
+                t.saveFailed;
 
             message.error(msg);
         }
@@ -261,19 +306,19 @@ const DeviceCategoryPage = () => {
     ========================= */
     const exportExcel = () => {
         if (!data.length) {
-            message.warning('Không có dữ liệu để xuất');
+            message.warning(t.noDataToExport);
             return;
         }
 
         try {
             // 1. Chuẩn bị data
             const excelData = data.map((item) => ({
-                'Mã dòng': item.code || '',
-                'Tên dòng thiết bị': item.name || '',
+                [t.columns.code]: item.code || '',
+                [t.columns.name]: item.name || '',
                 Năm: item.year || '',
                 Model: item.model || '',
-                'Xuất xứ': getMadeInFromLabel(item.madeInFrom),
-                'Mô tả': item.description || '',
+                [t.columns.origin]: getMadeInFromLabel(item.madeInFrom),
+                [t.columns.description]: item.description || '',
             }));
 
             // 2. Tạo sheet, chừa dòng 1 cho title
@@ -281,7 +326,7 @@ const DeviceCategoryPage = () => {
             const headers = Object.keys(excelData[0]);
 
             // 3. Title dòng 1
-            const title = 'Báo cáo danh sách dòng thiết bị';
+            const title = t.exportTitle;
             ws['A1'] = { v: title, t: 's' };
             ws['!merges'] = [
                 {
@@ -363,10 +408,10 @@ const DeviceCategoryPage = () => {
             });
 
             saveAs(new Blob([excelBuffer]), `DanhSachDongThietBi_${getTodayForFileName()}.xlsx`);
-            message.success('Xuất Excel thành công');
+            message.success(t.exportSuccess);
         } catch (err) {
             console.error('Export excel error:', err);
-            message.error('Xuất Excel thất bại');
+            message.error(t.exportFailed);
         }
     };
 
@@ -375,62 +420,63 @@ const DeviceCategoryPage = () => {
     ========================= */
     const columns = [
         {
-            title: 'Mã dòng',
+            title: t.columns.code,
             dataIndex: 'code',
             key: 'code',
             sorter: (a, b) => (a.code || '').localeCompare(b.code || ''),
         },
         {
-            title: 'Tên dòng thiết bị',
+            title: t.columns.name,
             dataIndex: 'name',
             key: 'name',
             sorter: (a, b) => (a.name || '').localeCompare(b.name || ''),
         },
         {
-            title: 'Năm',
+            title: t.columns.year,
             dataIndex: 'year',
             key: 'year',
             width: 100,
             sorter: (a, b) => Number(a.year || 0) - Number(b.year || 0),
         },
         {
-            title: 'Model',
+            title: t.columns.model,
             dataIndex: 'model',
             key: 'model',
             sorter: (a, b) => (a.model || '').localeCompare(b.model || ''),
         },
         {
-            title: 'Xuất xứ',
+            title: t.columns.origin,
             dataIndex: 'madeInFrom',
             key: 'madeInFrom',
             sorter: (a, b) => getMadeInFromLabel(a.madeInFrom).localeCompare(getMadeInFromLabel(b.madeInFrom)),
             render: (value) => getMadeInFromLabel(value) || '-',
         },
+
         {
-            title: 'Mô tả',
+            title: t.columns.description,
             dataIndex: 'description',
             key: 'description',
             ellipsis: true,
         },
         {
-            title: 'Hành động',
+            title: t.columns.actions,
             key: 'actions',
             width: 150,
             render: (_, record) =>
                 isAdmin ? (
                     <Space>
                         <Button size="small" icon={<EditOutlined />} onClick={() => openEditModal(record)}>
-                            Sửa
+                            {t.actions.edit}
                         </Button>
                         <Popconfirm
-                            title="Xoá dòng thiết bị?"
-                            description="Bạn có chắc chắn muốn xoá?"
+                            title={t.actions.deleteConfirmTitle}
+                            description={t.actions.deleteConfirmDesc}
                             onConfirm={() => handleDelete(record)}
-                            okText="Xoá"
-                            cancelText="Huỷ"
+                            okText={t.actions.deleteOk}
+                            cancelText={t.actions.deleteCancel}
                         >
                             <Button size="small" danger icon={<DeleteOutlined />}>
-                                Xoá
+                                {t.actions.delete}
                             </Button>
                         </Popconfirm>
                     </Space>
@@ -442,7 +488,7 @@ const DeviceCategoryPage = () => {
     if (isCustomer) {
         return (
             <div className="dc-page">
-                <Card className="dc-card" title="Quản lý dòng thiết bị (Device Category)">
+                <Card className="dc-card" title={t.title}>
                     <p
                         style={{
                             color: '#ef4444',
@@ -450,7 +496,7 @@ const DeviceCategoryPage = () => {
                             margin: 0,
                         }}
                     >
-                        Bạn không có quyền truy cập chức năng này.
+                        {t.noPermissionPage}
                     </p>
                 </Card>
             </div>
@@ -461,21 +507,21 @@ const DeviceCategoryPage = () => {
         <div className="dc-page">
             <Card
                 className="dc-card"
-                title="Quản lý dòng thiết bị (Device Category)"
+                title={t.title}
                 extra={
                     <Space className="dc-card__actions">
                         <Button
                             icon={<ReloadOutlined />}
                             onClick={() => fetchList(pagination.current, pagination.pageSize)}
                         >
-                            Refresh
+                            {t.refresh}
                         </Button>
                         <Button icon={<DownloadOutlined />} onClick={exportExcel}>
-                            Xuất Excel
+                            {t.exportExcel}
                         </Button>
                         {isAdmin && (
                             <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
-                                Thêm mới
+                                {t.addNew}
                             </Button>
                         )}
                     </Space>
@@ -486,7 +532,7 @@ const DeviceCategoryPage = () => {
                     <Input
                         allowClear
                         prefix={<SearchOutlined />}
-                        placeholder="Tìm theo tên"
+                        placeholder={t.filters.name}
                         value={filters.name}
                         onChange={(e) =>
                             setFilters((prev) => ({
@@ -497,7 +543,7 @@ const DeviceCategoryPage = () => {
                     />
                     <Input
                         allowClear
-                        placeholder="Mã dòng"
+                        placeholder={t.filters.code}
                         value={filters.code}
                         onChange={(e) =>
                             setFilters((prev) => ({
@@ -508,7 +554,7 @@ const DeviceCategoryPage = () => {
                     />
                     <Input
                         allowClear
-                        placeholder="Năm (vd: 2025)"
+                        placeholder={t.filters.year}
                         value={filters.year}
                         onChange={(e) =>
                             setFilters((prev) => ({
@@ -519,7 +565,7 @@ const DeviceCategoryPage = () => {
                     />
                     <Input
                         allowClear
-                        placeholder="Model"
+                        placeholder={t.filters.model}
                         value={filters.model}
                         onChange={(e) =>
                             setFilters((prev) => ({
@@ -530,7 +576,7 @@ const DeviceCategoryPage = () => {
                     />
                     <Select
                         allowClear
-                        placeholder="Xuất xứ"
+                        placeholder={t.filters.origin}
                         value={filters.madeInFrom || undefined}
                         onChange={(value) =>
                             setFilters((prev) => ({
@@ -542,16 +588,16 @@ const DeviceCategoryPage = () => {
                     >
                         {mifOptions.map((opt) => (
                             <Option key={opt.value} value={opt.value}>
-                                {opt.label}
+                                {getMadeInFromLabel(opt.value)}
                             </Option>
                         ))}
                     </Select>
 
                     <Space className="dc-filter__actions">
                         <Button type="primary" onClick={handleSearch}>
-                            Tìm kiếm
+                            {t.search}
                         </Button>
-                        <Button onClick={handleResetFilter}>Xoá lọc</Button>
+                        <Button onClick={handleResetFilter}>{t.resetFilter}</Button>
                     </Space>
                 </div>
 
@@ -572,33 +618,33 @@ const DeviceCategoryPage = () => {
             {/* Modal thêm / sửa */}
             <Modal
                 open={isModalOpen}
-                title={editingItem ? 'Cập nhật dòng thiết bị' : 'Thêm dòng thiết bị'}
+                title={editingItem ? t.modal.editTitle : t.modal.createTitle}
                 onOk={handleModalOk}
                 onCancel={() => {
                     setIsModalOpen(false);
                     form.resetFields();
                 }}
-                okText="Lưu"
-                cancelText="Huỷ"
+                okText={t.modal.okText}
+                cancelText={t.modal.cancelText}
                 wrapClassName="dc-modal"
                 destroyOnHidden
             >
                 <Form form={form} layout="vertical">
                     <Form.Item
-                        label="Mã dòng"
+                        label={t.form.codeLabel}
                         name="code"
-                        rules={[{ required: true, message: 'Nhập mã dòng thiết bị' }]}
+                        rules={[{ required: true, message: t.form.codeRequired }]}
                     >
                         <Input />
                     </Form.Item>
 
                     <Form.Item
-                        label="Tên dòng thiết bị"
+                        label={t.form.nameLabel}
                         name="name"
                         rules={[
                             {
                                 required: true,
-                                message: 'Nhập tên dòng thiết bị',
+                                message: t.form.nameRequired,
                             },
                         ]}
                     >
@@ -606,37 +652,41 @@ const DeviceCategoryPage = () => {
                     </Form.Item>
 
                     <Form.Item
-                        label="Năm"
+                        label={t.form.yearLabel}
                         name="year"
                         rules={[
                             {
                                 required: true,
-                                message: 'Nhập năm (vd: 2025)',
+                                message: t.form.yearRequired,
                             },
                         ]}
                     >
                         <Input />
                     </Form.Item>
 
-                    <Form.Item label="Model" name="model" rules={[{ required: true, message: 'Nhập model' }]}>
+                    <Form.Item
+                        label={t.form.modelLabel}
+                        name="model"
+                        rules={[{ required: true, message: t.form.modelRequired }]}
+                    >
                         <Input />
                     </Form.Item>
 
                     <Form.Item
-                        label="Xuất xứ (madeInFrom)"
+                        label={t.form.originLabel}
                         name="madeInFrom"
-                        rules={[{ required: true, message: 'Chọn xuất xứ' }]}
+                        rules={[{ required: true, message: t.form.originRequired }]}
                     >
-                        <Select placeholder="Chọn xuất xứ">
+                        <Select placeholder={t.form.originPlaceholder}>
                             {mifOptions.map((opt) => (
                                 <Option key={opt.value} value={opt.value}>
-                                    {opt.label}
+                                    {getMadeInFromLabel(opt.value)}
                                 </Option>
                             ))}
                         </Select>
                     </Form.Item>
 
-                    <Form.Item label="Mô tả" name="description">
+                    <Form.Item label={t.form.descLabel} name="description">
                         <Input.TextArea rows={3} />
                     </Form.Item>
                 </Form>

@@ -70,6 +70,7 @@ const MonitorPage = () => {
 
     // 🔥 dữ liệu realtime từ MQTT
     const [liveTelemetry, setLiveTelemetry] = useState(null);
+    const mqttClientRef = useRef(null);
 
     useEffect(() => {
         const loadLeaflet = async () => {
@@ -162,6 +163,30 @@ const MonitorPage = () => {
         fetchDevices();
     }, []);
 
+    // =============================
+    // 🔥 PARSE TIM (YYMMDDHHmmSS)
+    // =============================
+    const parseTimToDate = (tim) => {
+        if (!tim) return null;
+
+        const s = String(tim);
+        if (s.length !== 12) return null;
+
+        const yy = s.slice(0, 2);
+        const MM = s.slice(2, 4);
+        const dd = s.slice(4, 6);
+        const hh = s.slice(6, 8);
+        const mm = s.slice(8, 10);
+        const ss = s.slice(10, 12);
+
+        const yyyy = 2000 + Number(yy);
+
+        const date = new Date(`${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}`);
+
+        if (isNaN(date.getTime())) return null;
+        return date;
+    };
+
     useEffect(() => {
         if (deviceList.length > 0 && !selectedDevice) {
             handleSelectDevice(deviceList[0]);
@@ -211,6 +236,44 @@ const MonitorPage = () => {
             setAddressError('Không lấy được địa chỉ.');
         } finally {
             setLoadingAddress(false);
+        }
+    };
+
+    const publishControlCommand = (payload) => {
+        if (!selectedDevice || !selectedDevice.imei) {
+            const msgText = 'Chưa chọn thiết bị hoặc thiếu IMEI.';
+            setLockError(msgText);
+            message.error(msgText);
+            return;
+        }
+
+        const client = mqttClientRef.current;
+        if (!client) {
+            const msgText = 'Chưa kết nối MQTT đến thiết bị.';
+            setLockError(msgText);
+            message.error(msgText);
+            return;
+        }
+
+        const topic = `device/${selectedDevice.imei}/control`;
+
+        try {
+            client.publish(topic, JSON.stringify(payload), { qos: 1 }, (err) => {
+                if (err) {
+                    console.error('❌ Publish control error:', err);
+                    const msgText = 'Gửi lệnh điều khiển thất bại.';
+                    setLockError(msgText);
+                    message.error(msgText);
+                } else {
+                    console.log('📤 Đã gửi lệnh control:', topic, payload);
+                    setLockError(null);
+                }
+            });
+        } catch (e) {
+            console.error('❌ Publish exception:', e);
+            const msgText = 'Gửi lệnh điều khiển lỗi.';
+            setLockError(msgText);
+            message.error(msgText);
         }
     };
 
@@ -307,67 +370,20 @@ const MonitorPage = () => {
         }
     };
 
-    const handleLockDevice = async () => {
-        if (!selectedDevice) return;
-        const token = localStorage.getItem('accessToken');
-        if (!token) {
-            setLockError('Không tìm thấy accessToken, vui lòng đăng nhập lại.');
-            return;
-        }
-
-        try {
-            setLockLoading(true);
-            setLockError(null);
-
-            const res = await lockDevice(token, selectedDevice._id);
-
-            message.success('Khoá thiết bị thành công');
-
-            const updated = res?.device || selectedDevice;
-
-            setSelectedDevice((prev) => ({ ...prev, ...updated }));
-            setDeviceInfo((prev) => ({ ...(prev || {}), ...updated }));
-            setDeviceList((prev) => prev.map((d) => (d._id === updated._id ? { ...d, ...updated } : d)));
-        } catch (err) {
-            setLockError(err?.message || 'Khoá thiết bị thất bại.');
-            message.error(err?.message || 'Khoá thiết bị thất bại.');
-        } finally {
-            setLockLoading(false);
-        }
+    const handleLockDevice = () => {
+        // khoá = bật SOS
+        publishControlCommand({ sos: 1 });
+        message.success('Đã gửi lệnh khoá thiết bị (SOS bật).');
     };
 
-    const handleUnlockDevice = async () => {
-        if (!selectedDevice) return;
-        const token = localStorage.getItem('accessToken');
-        if (!token) {
-            setLockError('Không tìm thấy accessToken, vui lòng đăng nhập lại.');
-            return;
-        }
-
-        try {
-            setLockLoading(true);
-            setLockError(null);
-
-            const res = await unlockDevice(token, selectedDevice._id);
-
-            const msg = res?.message || 'Mở khoá thiết bị thành công.';
-            message.success(msg);
-
-            const updated = res?.device || selectedDevice;
-
-            setSelectedDevice((prev) => ({ ...prev, ...updated }));
-            setDeviceInfo((prev) => ({ ...(prev || {}), ...updated }));
-            setDeviceList((prev) => prev.map((d) => (d._id === updated._id ? { ...d, ...updated } : d)));
-        } catch (err) {
-            setLockError(err?.message || 'Mở khoá thiết bị thất bại.');
-            message.error(err?.message || 'Mở khoá thiết bị thất bại.');
-        } finally {
-            setLockLoading(false);
-        }
+    const handleUnlockDevice = () => {
+        // mở khoá = tắt SOS
+        publishControlCommand({ sos: 0 });
+        message.success('Đã gửi lệnh mở khoá thiết bị (SOS tắt).');
     };
 
     const handleConfirmLock = () => {
-        if (!selectedDevice || selectedDevice.status === 5) return;
+        if (!selectedDevice) return;
         const plate = selectedDevice.license_plate || selectedDevice.imei || 'thiết bị';
 
         confirm({
@@ -380,7 +396,7 @@ const MonitorPage = () => {
     };
 
     const handleConfirmUnlock = () => {
-        if (!selectedDevice || selectedDevice.status !== 5) return;
+        if (!selectedDevice) return;
         const plate = selectedDevice.license_plate || selectedDevice.imei || 'thiết bị';
 
         confirm({
@@ -392,10 +408,18 @@ const MonitorPage = () => {
         });
     };
 
-    const isLocked = selectedDevice?.status === 5;
-    const isConnected = selectedDevice?.status === 10;
+    const isLocked = Number(liveTelemetry?.sos) === 1;
 
-    // parse dòng sạc/xả
+    const isConnected = selectedDevice?.status === 10; // cái này vẫn theo backend nếu m muốn
+
+    // helper normalize number
+    const toNumberOrNull = (val) => {
+        if (val == null) return null;
+        const n = Number(val);
+        return Number.isNaN(n) ? null : n;
+    };
+
+    // parse dòng sạc/xả cũ (không dùng nữa nhưng để đây cũng không sao)
     const parseCurrentValue = (currentRaw) => {
         if (currentRaw == null) return { text: 'Dòng sạc/xả: --' };
 
@@ -415,163 +439,202 @@ const MonitorPage = () => {
 
     // 🔥 nhận MQTT → update liveTelemetry + map
     const handleMqttMessage = (topic, data) => {
-        const parts = topic.split('/');
-        const topicImei = parts[1];
+        if (!selectedDevice) return;
 
-        if (!selectedDevice || topicImei !== selectedDevice.imei) return;
-
-        if (typeof data === 'string') {
-            try {
-                data = JSON.parse(data);
-            } catch {
-                console.log('MQTT payload string, không parse được JSON');
-                return;
-            }
-        }
+        const arr = topic.split('/');
+        if (arr[1] !== selectedDevice.imei) return;
 
         if (!data || typeof data !== 'object') return;
 
+        // merge
         setLiveTelemetry((prev) => ({ ...(prev || {}), ...data }));
 
-        // lat/lon realtime
-        if (data.lat != null && data.lon != null && mapRef.current && markerRef.current && LMap) {
-            const newLatLng = LMap.latLng(data.lat, data.lon);
-            markerRef.current.setLatLng(newLatLng);
-            mapRef.current.setView(newLatLng, 16);
+        // realtime map move
+        if (data.lat != null && data.lon != null && LMap && mapRef.current && markerRef.current) {
+            const pos = LMap.latLng(data.lat, data.lon);
+            markerRef.current.setLatLng(pos);
+            mapRef.current.setView(pos, 16);
             fetchAddressFromGoong(data.lat, data.lon);
         }
-
-        // nếu muốn dùng tim/spd/dst cho lastCruise luôn:
-        setLastCruise((prev) => ({ ...(prev || {}), ...data }));
     };
+
+    const DEVICE_FIELDS = [
+        'tim',
+        'lat',
+        'lon',
+        'spd',
+        'dst',
+        'gps',
+        'sos',
+        'acc',
+        'mov',
+        'alm',
+        'pro',
+        'vib',
+        'mil',
+        'gic',
+        'onl',
+        'fwr',
+        'vgp', // thêm vgp để không show ở extra
+    ];
+
+    const BATTERY_FIELDS = ['soc', 'soh', 'tavg', 'tmax', 'tmin', 'vavg', 'vmax', 'vmin', 'cur', 'ckw', 'ckwh', 'an1'];
 
     // 🔋 dùng MQTT override batteryStatus
     const renderBatteryInfo = () => {
-        if (loadingBattery) return <div>Đang tải trạng thái pin...</div>;
-        if (!batteryStatus && !liveTelemetry) return <div>Không có dữ liệu pin cho thiết bị này.</div>;
-
-        // Ưu tiên MQTT
         const src = liveTelemetry || {};
         const bs = batteryStatus || {};
 
         const soc = src.soc ?? bs.soc;
         const soh = src.soh ?? bs.soh;
-        const voltage = src.vavg ?? src.vmax ?? bs.voltage;
+        const voltage = src.vavg ?? src.vmax ?? src.vmin ?? bs.voltage;
         const temp = src.tavg ?? src.tmax ?? bs.temperature;
-        const current = src.cur ?? bs.current;
+        const currentRaw = src.cur ?? bs.current;
 
-        // 🔥 LẤY TRẠNG THÁI (mode)
-        let mode = '';
-        if (current > 0) mode = 'Đang sạc';
-        else if (current < 0) mode = 'Đang xả';
-        else mode = 'Đang chờ';
-
-        // 🔥 LẤY “Cập nhật lúc”
-        // MQTT thì dùng “tim” → format lại
-        const parseTimToDate = (tim) => {
-            if (!tim || tim.length !== 12) return null;
-            const dd = tim.slice(0, 2);
-            const MM = tim.slice(2, 4);
-            const yy = tim.slice(4, 6);
-            const hh = tim.slice(6, 8);
-            const mm = tim.slice(8, 10);
-            const ss = tim.slice(10, 12);
-
-            const yyyy = Number(yy) + 2000;
-            return new Date(`${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}`);
+        // helper format A → 0,12A
+        const formatAmp = (val) => {
+            const n = toNumberOrNull(val);
+            if (n == null) return '--';
+            const abs = Math.abs(n);
+            const s = abs.toFixed(2).replace('.', ','); // 0.12 -> 0,12
+            return `${s}A`;
         };
-        let updatedAt = '--';
 
-        if (src.tim) {
-            const dt = parseTimToDate(src.tim);
-            if (dt) updatedAt = dt.toLocaleString();
-        } else if (bs.updatedAt) {
-            updatedAt = new Date(bs.updatedAt).toLocaleString();
+        let mode = 'Không xác định';
+        let currentLine = 'Dòng sạc/xả: --';
+
+        const cur = toNumberOrNull(currentRaw);
+
+        if (cur == null) {
+            mode = 'Không xác định';
+            currentLine = 'Dòng sạc/xả: --';
+        } else if (cur > 0) {
+            // dương → đang sạc
+            mode = 'Đang sạc';
+            currentLine = `Dòng sạc: ${formatAmp(cur)}`;
+        } else if (cur < 0) {
+            // âm → đang xả
+            mode = 'Đang xả';
+            currentLine = `Dòng xả: ${formatAmp(cur)}`;
+        } else {
+            // = 0 → đang chờ
+            mode = 'Đang chờ';
+            currentLine = 'Dòng sạc/xả: Đang chờ';
         }
+
+        const updatedAt = src.tim
+            ? parseTimToDate(src.tim)?.toLocaleString()
+            : bs.updatedAt
+            ? new Date(bs.updatedAt).toLocaleString()
+            : '--';
 
         return (
             <>
-                <div>IMEI: {bs.imei || selectedDevice?.imei}</div>
+                <div>IMEI: {selectedDevice?.imei}</div>
                 <div>Điện áp: {voltage ?? '--'} V</div>
-                <div>{parseCurrentValue(current).text}</div>
-                <div>Trạng thái: {mode}</div> {/* 🔥 TRẠNG THÁI → đã trả lại */}
+                <div>{currentLine}</div>
+                <div>Trạng thái: {mode}</div>
                 <div>Trạng thái sạc (SOC): {soc ?? '--'}%</div>
                 <div>Sức khỏe pin (SOH): {soh ?? '--'}%</div>
-                <div>Nhiệt độ TB: {temp ?? '--'}°C</div>
-                <div>Cập nhật lúc: {updatedAt}</div> {/* 🔥 CẬP NHẬT LÚC */}
+                <div>Nhiệt độ: {temp ?? '--'}°C</div>
+                <div>Cập nhật lúc: {updatedAt}</div>
             </>
         );
     };
 
     const renderStatusInfo = () => {
-        if (!selectedDevice) return <div>Vui lòng chọn xe bên trái.</div>;
-
-        if (loadingDeviceInfo || loadingCruise) {
-            return <div>Đang tải dữ liệu trạng thái...</div>;
-        }
+        if (!selectedDevice) return <>Vui lòng chọn xe.</>;
 
         const info = deviceInfo || selectedDevice;
+        const src = liveTelemetry || lastCruise || {};
+        const mqttSrc = liveTelemetry || {};
 
-        const plate = info?.license_plate || '---';
-        const vehicleType = info?.vehicle_category_id?.name || info?.vehicle_category_id?.model || '---';
-        const manufacturer = info?.device_category_id?.name || info?.device_category_id?.code || '---';
+        const speed = mqttSrc.spd;
+        const distance = mqttSrc.dst;
 
-        const parseTimToDate = (tim) => {
-            if (!tim || tim.length !== 12) return null;
+        const timeStr = src.tim ? parseTimToDate(src.tim)?.toLocaleString() : '--';
 
-            const yy = tim.slice(0, 2); // năm
-            const MM = tim.slice(2, 4); // tháng
-            const dd = tim.slice(4, 6); // ngày
-            const hh = tim.slice(6, 8); // giờ
-            const mm = tim.slice(8, 10); // phút
-            const ss = tim.slice(10, 12); // giây
+        const latVal = src.lat;
+        const lonVal = src.lon;
 
-            const yyyy = 2000 + Number(yy);
+        // ====== TRẠNG THÁI MÁY & TRẠNG THÁI XE (MQTT) ======
+        const accValNum = toNumberOrNull(mqttSrc.acc);
+        const spdNum = toNumberOrNull(mqttSrc.spd);
+        const vgpNum = toNumberOrNull(mqttSrc.vgp);
 
-            return new Date(`${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}`);
-        };
-
-        let timeStr = '--';
-        if (lastCruise?.tim) {
-            const parsed = parseTimToDate(lastCruise.tim);
-            if (parsed) timeStr = parsed.toLocaleString();
+        // Trạng thái máy:
+        // acc = 1 → tắt máy
+        // acc = 0 hoặc null → mở máy
+        let machineStatus = '--';
+        if (accValNum === 1) {
+            machineStatus = 'Tắt máy';
+        } else {
+            // 0 hoặc null → mở máy
+            machineStatus = 'Mở máy';
         }
 
-        // vị trí ưu tiên MQTT / rồi đến lastCruise
-        const src = liveTelemetry || lastCruise || {};
-        const latVal = src.lat ?? lastCruise?.lat;
-        const lonVal = src.lon ?? lastCruise?.lon;
+        // Trạng thái xe:
+        // - Nếu acc = 1 → đỗ xe
+        // - Nếu acc = 0 hoặc null → dùng speed, nếu không có thì dùng vgp:
+        //      > 0 → đang chạy X km/h
+        //      = 0 hoặc không có → đỗ xe / không xác định
+        let vehicleStatus = '--';
 
-        // 🔥 speed / distance CHỈ LẤY TỪ MQTT
-        const speed = liveTelemetry?.spd;
-        const distance = liveTelemetry?.dst;
+        if (accValNum === 1) {
+            vehicleStatus = 'Đỗ xe';
+        } else {
+            // acc = 0 hoặc null → check speed / vgp
+            let usedSpeed = null;
+            if (spdNum != null) {
+                usedSpeed = spdNum;
+            } else if (vgpNum != null) {
+                usedSpeed = vgpNum;
+            }
 
-        let addressText = '--';
-        if (loadingAddress) addressText = 'Đang lấy địa chỉ...';
-        else if (address) addressText = address;
-        else if (addressError) addressText = addressError;
+            if (usedSpeed == null) {
+                vehicleStatus = 'Không xác định';
+            } else if (usedSpeed > 0) {
+                vehicleStatus = `Đang chạy ${usedSpeed} km/h`;
+            } else {
+                vehicleStatus = 'Đỗ xe';
+            }
+        }
+
+        const extra = liveTelemetry
+            ? Object.entries(liveTelemetry).filter(
+                  ([k, v]) => v != null && !BATTERY_FIELDS.includes(k) && !DEVICE_FIELDS.includes(k),
+              )
+            : [];
 
         return (
             <>
-                <div>Biển số xe: {plate}</div>
-                <div>Loại xe: {vehicleType}</div>
-                <div>Dòng thiết bị: {manufacturer}</div>
+                <div>Biển số xe: {info.license_plate || '---'}</div>
+                <div>Loại xe: {info.vehicle_category_id?.name || '---'}</div>
+                <div>Dòng thiết bị: {info.device_category_id?.name || '---'}</div>
                 <div>Tại thời điểm: {timeStr}</div>
 
-                {/* 🔥 Chỉ hiện nếu có MQTT */}
-                {liveTelemetry && (
-                    <>
-                        {speed != null && <div>Tốc độ: {speed} km/h</div>}
-                        {distance != null && <div>Quãng đường: {distance} km</div>}
-                    </>
-                )}
+                <div>Trạng thái máy: {machineStatus}</div>
+                <div>Trạng thái xe: {vehicleStatus}</div>
 
-                <div>Vị trí hiện tại: {latVal != null && lonVal != null ? `${latVal}, ${lonVal}` : '--'}</div>
-                <div>Tọa độ: {latVal != null && lonVal != null ? `${latVal}, ${lonVal}` : '--'}</div>
+                {speed != null && <div>Tốc độ : {speed} km/h</div>}
+                {distance != null && <div>Quãng đường: {distance} km</div>}
 
-                <span className="iky-monitor__address-text">Địa chỉ hiện tại: {addressText}</span>
+                <div>Vị trí: {address || '--'}</div>
+                <div>Tọa độ: {latVal && lonVal ? `${latVal}, ${lonVal}` : '--'}</div>
+                {/* <div>Địa chỉ: {address || '--'}</div> */}
 
-                {cruiseError && <div className="iky-monitor__error">{cruiseError}</div>}
+                {/* dữ liệu khác từ mqtt tạm cmt lại sau này hiển thị sau chứ không bỏ */}
+
+                {/* {extra.length > 0 && (
+                    <div style={{ marginTop: 10 }}>
+                        <b>Dữ liệu khác:</b>
+                        {extra.map(([k, v]) => (
+                            <div key={k}>
+                                {k}: {String(v)}
+                            </div>
+                        ))}
+                    </div>
+                )} */}
             </>
         );
     };
@@ -624,13 +687,19 @@ const MonitorPage = () => {
     };
 
     const curStatus = selectedDevice?.status;
-    const deviceStatusText = STATUS_MAP[curStatus]?.text || 'Không rõ';
-    const deviceStatusClass = STATUS_MAP[curStatus]?.class || 'iky-monitor__tag-gray';
+    const deviceStatusText = isLocked ? 'Đã khoá' : 'Đang hoạt động';
+    const deviceStatusClass = isLocked ? 'iky-monitor__tag-red' : 'iky-monitor__tag-green';
 
     return (
         <>
             {/* MQTT realtime cho xe đang chọn */}
-            <MqttConnector imei={selectedDevice?.imei} onMessage={handleMqttMessage} />
+            <MqttConnector
+                imei={selectedDevice?.imei}
+                onMessage={handleMqttMessage}
+                onClientReady={(client) => {
+                    mqttClientRef.current = client;
+                }}
+            />
 
             <div className="iky-monitor">
                 {/* LEFT */}
@@ -859,7 +928,7 @@ const MonitorPage = () => {
                                                 <div className="iky-monitor__control-row">
                                                     <span>Trạng thái thiết bị</span>
 
-                                                    <div className={`iky-status-badge ${isLocked ? 'off' : 'on'}`}>
+                                                    <div className="iky-status-badge">
                                                         {isLocked ? (
                                                             <LockFilled className="iky-status-icon" />
                                                         ) : (
@@ -872,28 +941,20 @@ const MonitorPage = () => {
                                                 <div className="iky-monitor__control-row">
                                                     <span>Khoá thiết bị</span>
                                                     <button
-                                                        className={
-                                                            'iky-monitor__secondary-btn' +
-                                                            (isLocked ? ' iky-monitor__secondary-btn--disabled' : '')
-                                                        }
+                                                        className="iky-monitor__secondary-btn"
                                                         onClick={handleConfirmLock}
-                                                        disabled={isLocked}
                                                     >
-                                                        {lockLoading ? 'Đang xử lý...' : 'Khoá'}
+                                                        Khoá
                                                     </button>
                                                 </div>
 
                                                 <div className="iky-monitor__control-row">
                                                     <span>Mở khoá thiết bị</span>
                                                     <button
-                                                        className={
-                                                            'iky-monitor__secondary-btn' +
-                                                            (!isLocked ? ' iky-monitor__secondary-btn--disabled' : '')
-                                                        }
+                                                        className="iky-monitor__secondary-btn"
                                                         onClick={handleConfirmUnlock}
-                                                        disabled={!isLocked}
                                                     >
-                                                        {lockLoading ? 'Đang xử lý...' : 'Mở khoá'}
+                                                        Mở khoá
                                                     </button>
                                                 </div>
 

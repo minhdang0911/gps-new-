@@ -1,11 +1,17 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Row, Col, Card, Typography, Space, Form, Input, Button, Divider, message, Segmented } from 'antd';
 import { PhoneOutlined, MailOutlined, EnvironmentOutlined, SendOutlined } from '@ant-design/icons';
+import { usePathname } from 'next/navigation';
 import './SupportPage.css';
 
+import vi from '../locales/vi.json';
+import en from '../locales/en.json';
+
 const { Title, Text, Paragraph } = Typography;
+
+const locales = { vi, en };
 
 // Map embed cho từng chi nhánh
 const MAPS = {
@@ -17,9 +23,37 @@ const SupportPage = () => {
     const [form] = Form.useForm();
     const [mapLocation, setMapLocation] = useState('hcm');
 
+    const pathname = usePathname() || '/';
+    const [isEn, setIsEn] = useState(false);
+
+    // detect EN giống StatusBar: /xxx/en
+    const isEnFromPath = useMemo(() => {
+        const segments = pathname.split('/').filter(Boolean);
+        const last = segments[segments.length - 1];
+        return last === 'en';
+    }, [pathname]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        if (isEnFromPath) {
+            setIsEn(true);
+            localStorage.setItem('iky_lang', 'en');
+        } else {
+            const saved = localStorage.getItem('iky_lang');
+            setIsEn(saved === 'en');
+        }
+    }, [isEnFromPath]);
+
+    const t = isEn ? locales.en.support : locales.vi.support;
+
     const handleSubmit = (values) => {
         console.log('Support form values:', values);
-        message.success('Gửi yêu cầu hỗ trợ thành công. Chúng tôi sẽ liên hệ sớm nhất!');
+        message.success(
+            isEn
+                ? 'Support request sent successfully. We will contact you soon!'
+                : 'Gửi yêu cầu hỗ trợ thành công. Chúng tôi sẽ liên hệ sớm nhất!',
+        );
         form.resetFields();
     };
 
@@ -30,18 +64,15 @@ const SupportPage = () => {
                 <div className="support-page__header">
                     <div className="support-hero-badge">
                         <span className="support-hero-dot" />
-                        <span>Trung tâm hỗ trợ IKY</span>
+                        <span>{t.badge}</span>
                     </div>
 
                     <div className="support-page__header-main">
                         <div className="support-page__header-text">
                             <Title level={3} className="support-page__title">
-                                Hỗ trợ khách hàng
+                                {t.title}
                             </Title>
-                            <Text type="secondary">
-                                Có bất kỳ thắc mắc nào về sản phẩm IKY, mời bạn liên hệ theo thông tin dưới đây hoặc gửi
-                                form hỗ trợ. Đội ngũ kỹ thuật sẽ phản hồi trong thời gian sớm nhất.
-                            </Text>
+                            <Text type="secondary">{t.desc}</Text>
                         </div>
 
                         <div className="support-hero-actions">
@@ -63,20 +94,16 @@ const SupportPage = () => {
                     <Col xs={24} lg={8}>
                         <Card variant={false} className="support-card">
                             <Title level={4} className="support-card__title">
-                                Giới thiệu
+                                {t.introTitle}
                             </Title>
                             <Paragraph className="support-paragraph">
-                                Công ty Cổ phần Công nghệ Tiện Ích Thông Minh chuyên nghiên cứu, sản xuất các sản phẩm
-                                tiêu dùng công nghệ cao:
+                                {t.descIntro ||
+                                    'Công ty Cổ phần Công nghệ Tiện Ích Thông Minh chuyên nghiên cứu, sản xuất các sản phẩm tiêu dùng công nghệ cao:'}
                             </Paragraph>
                             <ul className="support-list">
-                                <li>
-                                    Thiết bị khóa chống trộm xe máy: IKY Bike, IKY Plus, IKY Bike GPS, IKY Bike Found…
-                                </li>
-                                <li>Hệ thống cảnh báo an ninh: IKY SmartHome</li>
-                                <li>Bài giảng vệ tinh thông minh</li>
-                                <li>Hệ thống cảnh báo và nút gọi khẩn cấp</li>
-                                <li>Sản xuất các sản phẩm điện tử theo đơn đặt hàng</li>
+                                {(t.introList || []).map((item, idx) => (
+                                    <li key={idx}>{item}</li>
+                                ))}
                             </ul>
                         </Card>
                     </Col>
@@ -85,21 +112,17 @@ const SupportPage = () => {
                     <Col xs={24} lg={8}>
                         <Card variant={false} className="support-card">
                             <Title level={4} className="support-card__title">
-                                Liên hệ
+                                {t.contactTitle}
                             </Title>
 
                             <Space orientation="vertical" size={6} className="support-info-block">
-                                <Text strong>CÔNG TY CỔ PHẦN CÔNG NGHỆ TIỆN ÍCH THÔNG MINH</Text>
+                                <Text strong>{t.companyName}</Text>
                                 <Space align="start">
                                     <EnvironmentOutlined className="support-icon" />
                                     <div>
-                                        <Text strong>Trụ sở HCM:</Text>{' '}
-                                        <Text>Số 38-40 Đường 21A, P. An Lạc, TP. Hồ Chí Minh</Text>
+                                        <Text strong>{t.hcmBranch}:</Text> <Text>{t.hcmAddress}</Text>
                                         <br />
-                                        <Text strong>CN Hà Nội:</Text>{' '}
-                                        <Text>
-                                            Số 2, ngõ 18 đường Nguyễn Cơ Thạch, Phường Từ Liêm, Thành phố Hà Nội
-                                        </Text>
+                                        <Text strong>{t.hnBranch}:</Text> <Text>{t.hnAddress}</Text>
                                     </div>
                                 </Space>
 
@@ -116,19 +139,18 @@ const SupportPage = () => {
                                     <Text type="secondary">
                                         Hỗ trợ kỹ thuật: 0938.859.085 &nbsp;•&nbsp; Kinh doanh: 0917.787.885
                                     </Text>
-                                    <Text type="secondary">Giờ làm việc: 8h00 – 18h00 (Thứ 2 – Thứ 7)</Text>
+                                    <Text type="secondary">{t.workTime}</Text>
                                 </Space>
                             </Space>
 
                             <Divider />
 
                             <Title level={5} style={{ marginBottom: 6 }}>
-                                Hotline theo khu vực
+                                {t.areaHotlineTitle}
                             </Title>
                             <ul className="support-list support-list--compact">
-                                <li>TP. Hồ Chí Minh: 08 628 01 999</li>
-                                <li>Hà Nội: 0982 032 887</li>
-                                {/* <li>Đà Nẵng: (sẽ cập nhật)</li> */}
+                                <li>{t.hcmHotline}</li>
+                                <li>{t.hnHotline}</li>
                             </ul>
                         </Card>
                     </Col>
@@ -138,16 +160,16 @@ const SupportPage = () => {
                         <Card
                             variant={false}
                             className="support-card"
-                            title="Gửi phản hồi cho chúng tôi"
-                            extra={
-                                <Text type="secondary" style={{ fontSize: 12 }}>
-                                    Thông tin của bạn sẽ được bảo mật
-                                </Text>
-                            }
+                            title={t.feedbackTitle}
+                            // extra={
+                            //     <Text type="secondary" style={{ fontSize: 12 }}>
+                            //         {t.feedbackNote}
+                            //     </Text>
+                            // }
                         >
                             <Form layout="vertical" form={form} onFinish={handleSubmit} requiredMark={false}>
                                 <Form.Item
-                                    label="Họ tên"
+                                    label={t.formFullName}
                                     name="fullName"
                                     rules={[{ required: true, message: 'Vui lòng nhập họ tên' }]}
                                 >
@@ -155,7 +177,7 @@ const SupportPage = () => {
                                 </Form.Item>
 
                                 <Form.Item
-                                    label="Email"
+                                    label={t.formEmail}
                                     name="email"
                                     rules={[
                                         { required: true, message: 'Vui lòng nhập email' },
@@ -166,7 +188,7 @@ const SupportPage = () => {
                                 </Form.Item>
 
                                 <Form.Item
-                                    label="Tiêu đề"
+                                    label={t.formSubject}
                                     name="subject"
                                     rules={[{ required: true, message: 'Vui lòng nhập tiêu đề' }]}
                                 >
@@ -174,7 +196,7 @@ const SupportPage = () => {
                                 </Form.Item>
 
                                 <Form.Item
-                                    label="Mô tả"
+                                    label={t.formContent}
                                     name="content"
                                     rules={[{ required: true, message: 'Vui lòng mô tả vấn đề' }]}
                                 >
@@ -187,7 +209,7 @@ const SupportPage = () => {
                                 <Form.Item style={{ marginBottom: 0 }}>
                                     <div className="support-form-actions">
                                         <Button type="primary" htmlType="submit" icon={<SendOutlined />}>
-                                            Gửi yêu cầu
+                                            {t.formSend}
                                         </Button>
                                     </div>
                                 </Form.Item>
@@ -205,7 +227,7 @@ const SupportPage = () => {
                             title={
                                 <Space>
                                     <EnvironmentOutlined />
-                                    <span>Bản đồ trụ sở IKY</span>
+                                    <span>{t.mapTitle}</span>
                                 </Space>
                             }
                         >
@@ -215,8 +237,8 @@ const SupportPage = () => {
                                     value={mapLocation}
                                     onChange={(val) => setMapLocation(val)}
                                     options={[
-                                        { label: 'Hồ Chí Minh', value: 'hcm' },
-                                        { label: 'Hà Nội', value: 'hanoi' },
+                                        { label: t.mapHCM, value: 'hcm' },
+                                        { label: t.mapHN, value: 'hanoi' },
                                     ]}
                                 />
                             </div>
@@ -242,7 +264,7 @@ const SupportPage = () => {
                             </div>
 
                             <Text type="secondary" style={{ fontSize: 12 }}>
-                                Vui lòng phóng to bản đồ để xem chỉ đường chi tiết.
+                                {t.mapGuide}
                             </Text>
                         </Card>
                     </Col>

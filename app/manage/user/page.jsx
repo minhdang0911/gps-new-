@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Card, Input, Button, Table, Space, Modal, Typography, Form, Select, Descriptions, message } from 'antd';
 import {
     PlusOutlined,
@@ -11,6 +11,8 @@ import {
     DownloadOutlined,
 } from '@ant-design/icons';
 
+import { usePathname } from 'next/navigation';
+
 import { createUser, updateUser, deleteUser, getUserInfo, getUserList } from '../../lib/api/user';
 
 import './ManageUserPage.css';
@@ -20,10 +22,17 @@ import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
 import { getTodayForFileName } from '../../util/FormatDate';
 
+import vi from '../../locales/vi.json';
+import en from '../../locales/en.json';
+
 const { Title, Text } = Typography;
 const { Option } = Select;
 
+const locales = { vi, en };
+
 export default function ManageUserPage() {
+    const pathname = usePathname() || '/';
+
     const [currentRole, setCurrentRole] = useState(null);
     const [users, setUsers] = useState([]);
     const [loadingUsers, setLoadingUsers] = useState(false);
@@ -47,6 +56,42 @@ export default function ManageUserPage() {
         distributor_id: null,
     });
 
+    // ===== LANG DETECT =====
+    const [isEn, setIsEn] = useState(false);
+
+    const isEnFromPath = useMemo(() => {
+        const segments = pathname.split('/').filter(Boolean);
+        const last = segments[segments.length - 1];
+        return last === 'en';
+    }, [pathname]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        if (isEnFromPath) {
+            setIsEn(true);
+            localStorage.setItem('iky_lang', 'en');
+        } else {
+            const saved = localStorage.getItem('iky_lang');
+            setIsEn(saved === 'en');
+        }
+    }, [isEnFromPath]);
+
+    const t = isEn ? locales.en.manageUser : locales.vi.manageUser;
+
+    const roleLabelMap = isEn
+        ? {
+              administrator: 'Admin',
+              distributor: 'Distributor',
+              customer: 'Customer',
+          }
+        : {
+              administrator: 'Quản trị',
+              distributor: 'Đại lý',
+              customer: 'Khách hàng',
+          };
+
+    // ===== INIT ROLE =====
     useEffect(() => {
         const role = localStorage.getItem('role');
         setCurrentRole(role);
@@ -72,7 +117,7 @@ export default function ManageUserPage() {
             setUsers(res?.items || []);
         } catch (err) {
             console.log('LOAD USER ERROR', err);
-            message.error('Không tải được danh sách người dùng');
+            message.error(t.messages.loadUsersError);
         } finally {
             setLoadingUsers(false);
         }
@@ -88,6 +133,7 @@ export default function ManageUserPage() {
             setDistributorOptions(res?.items || []);
         } catch (err) {
             console.log('LOAD DISTRIBUTOR ERROR', err);
+            message.error(t.messages.loadDistributorsError);
         }
     };
 
@@ -139,7 +185,7 @@ export default function ManageUserPage() {
             setViewUserModalVisible(true);
         } catch (err) {
             console.log(err);
-            message.error('Không tải được thông tin người dùng');
+            message.error(t.messages.viewUserError);
         }
     };
 
@@ -163,7 +209,7 @@ export default function ManageUserPage() {
                 }
 
                 await updateUser(editingUser._id, payload);
-                message.success('Cập nhật người dùng thành công');
+                message.success(t.messages.updateSuccess);
             } else {
                 const payload = { ...userFormData };
 
@@ -172,7 +218,7 @@ export default function ManageUserPage() {
                 }
 
                 await createUser(payload);
-                message.success('Tạo người dùng thành công');
+                message.success(t.messages.createSuccess);
             }
 
             setUserModalVisible(false);
@@ -185,24 +231,24 @@ export default function ManageUserPage() {
                 apiData?.message ||
                 (typeof apiData === 'string' ? apiData : null) ||
                 err?.message ||
-                'Lưu người dùng thất bại';
+                t.messages.saveFailedFallback;
             message.error(msg);
         }
     };
 
     const handleDeleteUser = (record) => {
         Modal.confirm({
-            title: 'Xóa người dùng?',
-            content: `Bạn có chắc muốn xóa ${record.username}?`,
+            title: t.messages.deleteConfirmTitle,
+            content: `${t.messages.deleteConfirmContentPrefix}${record.username}?`,
             okType: 'danger',
             onOk: async () => {
                 try {
                     await deleteUser(record._id);
-                    message.success('Xóa người dùng thành công');
+                    message.success(t.messages.deleteSuccess);
                     loadUsers();
                 } catch (err) {
                     console.log('DELETE USER ERROR', err);
-                    message.error('Xóa người dùng thất bại');
+                    message.error(t.messages.deleteFailed);
                 }
             },
         });
@@ -211,7 +257,7 @@ export default function ManageUserPage() {
     // ===== EXPORT EXCEL =====
     const exportExcel = () => {
         if (!users.length) {
-            message.warning('Không có dữ liệu để xuất');
+            message.warning(t.messages.exportNoData);
             return;
         }
 
@@ -219,7 +265,6 @@ export default function ManageUserPage() {
             const excelData = users.map((u) => {
                 let distributorText = '';
                 if (u.distributor_id) {
-                    // có thể là id string hoặc object
                     if (typeof u.distributor_id === 'string') {
                         distributorText = u.distributor_id;
                     } else {
@@ -228,13 +273,15 @@ export default function ManageUserPage() {
                 }
 
                 return {
-                    'Tên đăng nhập': u.username || '',
-                    'Họ tên': u.name || '',
-                    Email: u.email || '',
-                    'Số điện thoại': u.phone || '',
-                    'Vai trò': u.position || '',
-                    'Thuộc đại lý': distributorText,
-                    'Ngày tạo': u.createdAt ? new Date(u.createdAt).toLocaleString('vi-VN') : '',
+                    [t.excel.columns.username]: u.username || '',
+                    [t.excel.columns.name]: u.name || '',
+                    [t.excel.columns.email]: u.email || '',
+                    [t.excel.columns.phone]: u.phone || '',
+                    [t.excel.columns.role]: roleLabelMap[u.position] || u.position || '',
+                    [t.excel.columns.distributor]: distributorText,
+                    [t.excel.columns.createdAt]: u.createdAt
+                        ? new Date(u.createdAt).toLocaleString(isEn ? 'en-GB' : 'vi-VN')
+                        : '',
                 };
             });
 
@@ -242,7 +289,7 @@ export default function ManageUserPage() {
             const headers = Object.keys(excelData[0]);
 
             // Title dòng 1
-            const title = 'Báo cáo danh sách người dùng';
+            const title = t.excel.title;
             ws['A1'] = { v: title, t: 's' };
             ws['!merges'] = [
                 {
@@ -323,56 +370,57 @@ export default function ManageUserPage() {
             });
 
             saveAs(new Blob([excelBuffer]), `DanhSachNguoiDung_${getTodayForFileName()}.xlsx`);
-            message.success('Xuất Excel thành công');
+            message.success(t.messages.exportSuccess);
         } catch (err) {
             console.log('EXPORT EXCEL ERROR', err);
-            message.error('Xuất Excel thất bại');
+            message.error(t.messages.exportFailed);
         }
     };
 
     // ===== COLUMNS + SORTER =====
     const userColumns = [
         {
-            title: 'Tên đăng nhập',
+            title: t.table.username,
             dataIndex: 'username',
             sorter: (a, b) => (a.username || '').localeCompare(b.username || ''),
         },
         {
-            title: 'Họ tên',
+            title: t.table.name,
             dataIndex: 'name',
             sorter: (a, b) => (a.name || '').localeCompare(b.name || ''),
         },
         {
-            title: 'Email',
+            title: t.table.email,
             dataIndex: 'email',
             sorter: (a, b) => (a.email || '').localeCompare(b.email || ''),
         },
         {
-            title: 'Số điện thoại',
+            title: t.table.phone,
             dataIndex: 'phone',
             sorter: (a, b) => (a.phone || '').localeCompare(b.phone || ''),
         },
         {
-            title: 'Vai trò',
+            title: t.table.role,
             dataIndex: 'position',
             sorter: (a, b) => (a.position || '').localeCompare(b.position || ''),
+            render: (pos) => roleLabelMap[pos] || pos || '',
         },
         {
-            title: 'Thao tác',
+            title: t.table.actions,
             fixed: 'right',
             width: 220,
             render: (_, record) => (
                 <Space>
                     <Button size="small" icon={<EditOutlined />} onClick={() => handleOpenEditUser(record)}>
-                        Sửa
+                        {t.actions.edit}
                     </Button>
 
                     <Button danger size="small" icon={<DeleteOutlined />} onClick={() => handleDeleteUser(record)}>
-                        Xóa
+                        {t.actions.delete}
                     </Button>
 
                     <Button size="small" icon={<EyeOutlined />} onClick={() => handleViewUser(record)}>
-                        Xem
+                        {t.actions.view}
                     </Button>
                 </Space>
             ),
@@ -385,12 +433,12 @@ export default function ManageUserPage() {
                 {/* HEADER */}
                 <div className="user-page__header">
                     <Title level={4} className="user-page__title">
-                        Quản lý người dùng
+                        {t.title}
                     </Title>
 
                     <Space>
                         <Button icon={<DownloadOutlined />} onClick={exportExcel} disabled={!users.length}>
-                            Xuất Excel
+                            {t.buttons.export}
                         </Button>
 
                         <Button
@@ -399,7 +447,7 @@ export default function ManageUserPage() {
                             onClick={handleOpenAddUser}
                             className="user-page__add-btn"
                         >
-                            Thêm người dùng
+                            {t.buttons.add}
                         </Button>
                     </Space>
                 </div>
@@ -407,7 +455,7 @@ export default function ManageUserPage() {
                 {/* SEARCH */}
                 <div className="user-page__search">
                     <Input
-                        placeholder="Tìm kiếm theo username / email / phone"
+                        placeholder={t.search.placeholder}
                         prefix={<SearchOutlined />}
                         value={userSearch}
                         onChange={(e) => setUserSearch(e.target.value)}
@@ -428,17 +476,17 @@ export default function ManageUserPage() {
 
             {/* ADD/EDIT MODAL */}
             <Modal
-                title={editingUser ? 'Sửa người dùng' : 'Tạo người dùng'}
+                title={editingUser ? t.modal.editTitle : t.modal.createTitle}
                 open={userModalVisible}
                 onCancel={() => setUserModalVisible(false)}
                 onOk={handleSaveUser}
-                okText="Lưu"
-                cancelText="Đóng"
+                okText={t.modal.okText}
+                cancelText={t.modal.cancelText}
                 wrapClassName="user-modal"
                 destroyOnHidden
             >
                 <Form layout="vertical">
-                    <Form.Item label="Tên đăng nhập">
+                    <Form.Item label={t.form.username}>
                         <Input
                             value={userFormData.username}
                             onChange={(e) =>
@@ -451,7 +499,7 @@ export default function ManageUserPage() {
                         />
                     </Form.Item>
 
-                    <Form.Item label={editingUser ? 'Mật khẩu mới (tùy chọn)' : 'Mật khẩu'}>
+                    <Form.Item label={editingUser ? t.form.passwordEdit : t.form.password}>
                         <Input.Password
                             value={userFormData.password}
                             onChange={(e) =>
@@ -460,11 +508,11 @@ export default function ManageUserPage() {
                                     password: e.target.value,
                                 }))
                             }
-                            placeholder={editingUser ? 'Để trống nếu không đổi' : 'Nhập mật khẩu'}
+                            placeholder={editingUser ? t.form.passwordEditPlaceholder : t.form.passwordPlaceholder}
                         />
                     </Form.Item>
 
-                    <Form.Item label="Họ tên">
+                    <Form.Item label={t.form.name}>
                         <Input
                             value={userFormData.name}
                             onChange={(e) =>
@@ -476,7 +524,7 @@ export default function ManageUserPage() {
                         />
                     </Form.Item>
 
-                    <Form.Item label="Email">
+                    <Form.Item label={t.form.email}>
                         <Input
                             value={userFormData.email}
                             onChange={(e) =>
@@ -488,7 +536,7 @@ export default function ManageUserPage() {
                         />
                     </Form.Item>
 
-                    <Form.Item label="Số điện thoại">
+                    <Form.Item label={t.form.phone}>
                         <Input
                             value={userFormData.phone}
                             onChange={(e) =>
@@ -500,7 +548,7 @@ export default function ManageUserPage() {
                         />
                     </Form.Item>
 
-                    <Form.Item label="Địa chỉ">
+                    <Form.Item label={t.form.address}>
                         <Input
                             value={userFormData.address}
                             onChange={(e) =>
@@ -512,26 +560,26 @@ export default function ManageUserPage() {
                         />
                     </Form.Item>
 
-                    <Form.Item label="Vai trò">
+                    <Form.Item label={t.form.role}>
                         <Select
                             value={userFormData.position}
                             onChange={(v) => setUserFormData((f) => ({ ...f, position: v }))}
                         >
                             {currentRole === 'administrator' && (
                                 <>
-                                    <Option value="administrator">Admin</Option>
-                                    <Option value="distributor">Đại lý</Option>
+                                    <Option value="administrator">{roleLabelMap.administrator}</Option>
+                                    <Option value="distributor">{roleLabelMap.distributor}</Option>
                                 </>
                             )}
 
-                            <Option value="customer">Khách hàng</Option>
+                            <Option value="customer">{roleLabelMap.customer}</Option>
                         </Select>
                     </Form.Item>
 
                     {currentRole === 'administrator' && userFormData.position === 'customer' && (
-                        <Form.Item label="Thuộc đại lý">
+                        <Form.Item label={t.form.distributor}>
                             <Select
-                                placeholder="Chọn đại lý"
+                                placeholder={t.form.distributorPlaceholder}
                                 value={userFormData.distributor_id || undefined}
                                 onChange={(v) =>
                                     setUserFormData((f) => ({
@@ -553,33 +601,37 @@ export default function ManageUserPage() {
 
             {/* VIEW USER */}
             <Modal
-                title="Thông tin người dùng"
+                title={t.view.title}
                 open={viewUserModalVisible}
                 onCancel={() => setViewUserModalVisible(false)}
-                footer={<Button onClick={() => setViewUserModalVisible(false)}>Đóng</Button>}
+                footer={<Button onClick={() => setViewUserModalVisible(false)}>{t.view.close}</Button>}
                 wrapClassName="user-modal"
                 destroyOnHidden
             >
                 {viewUserData ? (
                     <Descriptions column={1} bordered>
-                        <Descriptions.Item label="Username">{viewUserData.username}</Descriptions.Item>
-                        <Descriptions.Item label="Tên">{viewUserData.name}</Descriptions.Item>
-                        <Descriptions.Item label="Email">{viewUserData.email}</Descriptions.Item>
-                        <Descriptions.Item label="Số điện thoại">{viewUserData.phone}</Descriptions.Item>
-                        <Descriptions.Item label="Vai trò">{viewUserData.position}</Descriptions.Item>
-                        <Descriptions.Item label="Distributor">
+                        <Descriptions.Item label={t.view.fields.username}>{viewUserData.username}</Descriptions.Item>
+                        <Descriptions.Item label={t.view.fields.name}>{viewUserData.name}</Descriptions.Item>
+                        <Descriptions.Item label={t.view.fields.email}>{viewUserData.email}</Descriptions.Item>
+                        <Descriptions.Item label={t.view.fields.phone}>{viewUserData.phone}</Descriptions.Item>
+                        <Descriptions.Item label={t.view.fields.role}>
+                            {roleLabelMap[viewUserData.position] || viewUserData.position || ''}
+                        </Descriptions.Item>
+                        <Descriptions.Item label={t.view.fields.distributor}>
                             {typeof viewUserData.distributor_id === 'string'
                                 ? viewUserData.distributor_id
                                 : viewUserData.distributor_id
                                 ? `${viewUserData.distributor_id.email} (${viewUserData.distributor_id.username})`
                                 : ''}
                         </Descriptions.Item>
-                        <Descriptions.Item label="Ngày tạo">
-                            {viewUserData.createdAt ? new Date(viewUserData.createdAt).toLocaleString('vi-VN') : ''}
+                        <Descriptions.Item label={t.view.fields.createdAt}>
+                            {viewUserData.createdAt
+                                ? new Date(viewUserData.createdAt).toLocaleString(isEn ? 'en-GB' : 'vi-VN')
+                                : ''}
                         </Descriptions.Item>
                     </Descriptions>
                 ) : (
-                    'Đang tải...'
+                    t.view.loading
                 )}
             </Modal>
         </div>

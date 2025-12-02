@@ -1,57 +1,97 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Layout, Menu, Typography, Grid } from 'antd';
 import { BarChartOutlined, ThunderboltOutlined, AimOutlined } from '@ant-design/icons';
 import './reportLayout.css';
 
+import vi from '../locales/vi.json';
+import en from '../locales/en.json';
+
 const { Sider, Content } = Layout;
 const { Title } = Typography;
 const { useBreakpoint } = Grid;
 
-const reportMenus = [
-    {
-        key: '/report/usage-session',
-        href: '/report/usage-session',
-        label: 'Báo cáo sử dụng',
-        short: 'Sử dụng',
-        icon: <BarChartOutlined />,
-    },
-    {
-        key: '/report/charging-session',
-        href: '/report/charging-session',
-        label: 'Báo cáo sạc',
-        short: 'Sạc',
-        icon: <ThunderboltOutlined />,
-    },
-    {
-        key: '/report/trip-session',
-        href: '/report/trip-session',
-        label: 'Báo cáo hành trình',
-        short: 'Hành trình',
-        icon: <AimOutlined />,
-    },
-];
+const locales = { vi, en };
 
 const ReportLayout = ({ children }) => {
     const pathname = usePathname();
     const screens = useBreakpoint();
     const isMobile = !screens.lg;
+    const [isEn, setIsEn] = useState(false);
+
+    // detect lang từ pathname /xxx/en hoặc localStorage
+    const isEnFromPath = useMemo(() => {
+        const parts = pathname.split('/').filter(Boolean);
+        return parts[parts.length - 1] === 'en';
+    }, [pathname]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        if (isEnFromPath) {
+            setIsEn(true);
+            localStorage.setItem('iky_lang', 'en');
+        } else {
+            const saved = localStorage.getItem('iky_lang');
+            setIsEn(saved === 'en');
+        }
+    }, [isEnFromPath]);
+
+    const t = isEn ? locales.en.report : locales.vi.report;
+
+    // Base menu config
+    const baseMenus = [
+        {
+            key: '/report/usage-session',
+            basePath: '/report/usage-session',
+            label: t.usage,
+            short: t.usageShort,
+            icon: <BarChartOutlined />,
+        },
+        {
+            key: '/report/charging-session',
+            basePath: '/report/charging-session',
+            label: t.charging,
+            short: t.chargingShort,
+            icon: <ThunderboltOutlined />,
+        },
+        {
+            key: '/report/trip-session',
+            basePath: '/report/trip-session',
+            label: t.trip,
+            short: t.tripShort,
+            icon: <AimOutlined />,
+        },
+    ];
+
+    // Add /en to href when using English
+    const reportMenus = useMemo(() => {
+        return baseMenus.map((menu) => ({
+            ...menu,
+            href: isEn ? `${menu.basePath}/en` : menu.basePath,
+        }));
+    }, [isEn]);
+
+    // Get current selected key (remove /en for comparison)
+    const currentKey = useMemo(() => {
+        return pathname.replace(/\/en$/, '');
+    }, [pathname]);
 
     if (isMobile) {
-        // ===== MOBILE: tab custom ngang =====
+        // ===== MOBILE =====
         return (
             <div className="report-layout-mobile">
                 <div className="report-topnav">
                     <Title level={5} className="report-topnav__title">
-                        Báo cáo hệ thống
+                        {t.title}
                     </Title>
 
                     <div className="report-topnav-tabs">
                         {reportMenus.map((item) => {
-                            const active = pathname === item.href;
+                            const active = currentKey === item.key;
                             return (
                                 <Link
                                     key={item.key}
@@ -71,7 +111,7 @@ const ReportLayout = ({ children }) => {
         );
     }
 
-    // ===== DESKTOP: sidebar trái =====
+    // ===== DESKTOP =====
     const menuItems = reportMenus.map((item) => ({
         key: item.key,
         icon: item.icon,
@@ -87,11 +127,11 @@ const ReportLayout = ({ children }) => {
             <Sider className="report-sider" width={240} theme="light">
                 <div className="report-logo">
                     <Title level={5} className="report-logo__title">
-                        Báo cáo hệ thống
+                        {t.title}
                     </Title>
                 </div>
 
-                <Menu theme="light" mode="inline" selectedKeys={[pathname]} items={menuItems} />
+                <Menu theme="light" mode="inline" selectedKeys={[currentKey]} items={menuItems} />
             </Sider>
 
             <Layout className="report-main">

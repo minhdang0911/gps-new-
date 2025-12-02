@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
     Card,
     Input,
@@ -27,7 +27,8 @@ import {
     DownloadOutlined,
 } from '@ant-design/icons';
 
-// DÙNG BẢN HỖ TRỢ STYLE
+import { usePathname } from 'next/navigation';
+
 import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
 
@@ -43,14 +44,47 @@ import { getUserList } from '../../lib/api/user';
 import { getLastCruise } from '../../lib/api/cruise';
 import { getBatteryStatusByImei } from '../../lib/api/batteryStatus';
 
+// locales
+import vi from '../../locales/vi.json';
+import en from '../../locales/en.json';
+
+const locales = { vi, en };
+
 const { Title, Text } = Typography;
 const { Option } = Select;
 
 export default function ManageDevicesPage() {
+    const pathname = usePathname() || '/';
+
     const [loading, setLoading] = useState(false);
     const [LMap, setLMap] = useState(null);
     const [token, setToken] = useState('');
     const [currentRole, setCurrentRole] = useState('');
+
+    // ===== LANG =====
+    const [isEn, setIsEn] = useState(false);
+
+    // detect /en ở cuối path: /manage/devices/en
+    const isEnFromPath = useMemo(() => {
+        const segments = pathname.split('/').filter(Boolean);
+        const last = segments[segments.length - 1];
+        return last === 'en';
+    }, [pathname]);
+
+    // sync lang theo URL + localStorage (same pattern Navbar/StatusBar)
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        if (isEnFromPath) {
+            setIsEn(true);
+            localStorage.setItem('iky_lang', 'en');
+        } else {
+            const saved = localStorage.getItem('iky_lang');
+            setIsEn(saved === 'en');
+        }
+    }, [isEnFromPath]);
+
+    const t = isEn ? locales.en.manageDevices : locales.vi.manageDevices;
 
     // API DATA
     const [devices, setDevices] = useState([]);
@@ -93,7 +127,7 @@ export default function ManageDevicesPage() {
             });
             setDevices(res?.devices || []);
         } catch (err) {
-            message.error('Không tải được danh sách thiết bị');
+            message.error(t.loadError);
         } finally {
             setLoading(false);
         }
@@ -113,7 +147,7 @@ export default function ManageDevicesPage() {
             const users = await getUserList({ limit: 3000 });
             setUserOptions(users.items || []);
         } catch (err) {
-            message.error('Không tải dữ liệu cấu hình');
+            message.error(t.configLoadError);
         }
     };
 
@@ -136,10 +170,10 @@ export default function ManageDevicesPage() {
     const exportExcel = () => {
         try {
             if (!devices.length) {
-                return message.warning('Không có dữ liệu');
+                return message.warning(t.noData);
             }
 
-            // 1. DATA EXPORT
+            // Giữ nguyên kiểu mapping VI cho file, cho chắc k hư rule cũ
             const excelData = devices.map((d) => ({
                 IMEI: d.imei,
                 'Loại thiết bị': d.device_category_id?.name || '-',
@@ -152,11 +186,9 @@ export default function ManageDevicesPage() {
                 Driver: d.driver || '-',
             }));
 
-            // Tạo sheet từ json, origin A2 để chừa dòng title
             const ws = XLSX.utils.json_to_sheet(excelData, { origin: 'A2' });
             const headers = Object.keys(excelData[0]);
 
-            // 2. TITLE DÒNG 1
             const title = 'Báo cáo danh sách thiết bị';
             ws['A1'] = { v: title, t: 's' };
             ws['!merges'] = [
@@ -172,13 +204,12 @@ export default function ManageDevicesPage() {
                 alignment: { horizontal: 'center', vertical: 'center' },
             };
 
-            // set height cho title + header
             ws['!rows'] = [
                 { hpt: 28 }, // row 1
                 { hpt: 22 }, // row 2
             ];
 
-            // 3. STYLE HEADER (ROW 2)
+            // HEADER ROW
             headers.forEach((h, idx) => {
                 const cellRef = XLSX.utils.encode_cell({ r: 1, c: idx }); // row index = 1 (dòng 2)
                 if (!ws[cellRef]) return;
@@ -196,7 +227,6 @@ export default function ManageDevicesPage() {
                 };
             });
 
-            // 4. STYLE DATA (CENTER + BORDER + MÀU)
             const range = XLSX.utils.decode_range(ws['!ref']);
             const activeCol = headers.indexOf('Active');
             const khCol = headers.indexOf('KháchHàng');
@@ -207,7 +237,6 @@ export default function ManageDevicesPage() {
                     const cell = ws[ref];
                     if (!cell) continue;
 
-                    // base style
                     cell.s = cell.s || {};
                     cell.s.alignment = { horizontal: 'center', vertical: 'center' };
                     cell.s.border = {
@@ -217,20 +246,16 @@ export default function ManageDevicesPage() {
                         right: { style: 'thin', color: { rgb: '000000' } },
                     };
 
-                    // data row (bỏ row title + header)
                     if (R > 1) {
-                        // zebra stripe cho đẹp
                         if (R % 2 === 0) {
                             cell.s.fill = cell.s.fill || {};
                             cell.s.fill.fgColor = cell.s.fill.fgColor || { rgb: 'F9F9F9' };
                         }
 
-                        // Active = Không -> đỏ
                         if (C === activeCol && String(cell.v).trim() === 'Không') {
                             cell.s.fill = { fgColor: { rgb: 'FFC7CE' } };
                         }
 
-                        // KháchHàng = Chưa gán -> vàng
                         if (C === khCol && String(cell.v).trim() === 'Chưa gán') {
                             cell.s.fill = { fgColor: { rgb: 'FFF2CC' } };
                         }
@@ -238,13 +263,11 @@ export default function ManageDevicesPage() {
                 }
             }
 
-            // 5. AUTO WIDTH
             ws['!cols'] = headers.map((key) => {
                 const maxLen = Math.max(key.length, ...excelData.map((row) => String(row[key] || '').length));
                 return { wch: maxLen + 4 };
             });
 
-            // 6. AUTO FILTER CHO HEADER (DÒNG 2)
             ws['!autofilter'] = {
                 ref: XLSX.utils.encode_range({
                     s: { r: 1, c: 0 },
@@ -252,7 +275,6 @@ export default function ManageDevicesPage() {
                 }),
             };
 
-            // 7. TẠO WORKBOOK & SAVE
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, 'Devices');
 
@@ -264,10 +286,10 @@ export default function ManageDevicesPage() {
 
             saveAs(new Blob([excelBuffer]), `DanhSachThietBi_${getTodayForFileName()}.xlsx`);
 
-            message.success('Xuất Excel thành công');
+            message.success(t.exportSuccess || 'Xuất Excel thành công');
         } catch (err) {
             console.error(err);
-            message.error('Xuất Excel thất bại');
+            message.error(t.exportFailed || 'Xuất Excel thất bại');
         }
     };
 
@@ -275,7 +297,7 @@ export default function ManageDevicesPage() {
         ADD
     ========================= */
     const openAdd = () => {
-        if (currentRole !== 'administrator') return message.warning('Bạn không có quyền thêm thiết bị');
+        if (currentRole !== 'administrator') return message.warning(t.noPermissionAdd);
 
         setModalMode('add');
         form.resetFields();
@@ -285,7 +307,7 @@ export default function ManageDevicesPage() {
         EDIT
     ========================= */
     const openEdit = (item) => {
-        if (currentRole !== 'administrator') return message.warning('Bạn không có quyền sửa thiết bị');
+        if (currentRole !== 'administrator') return message.warning(t.noPermissionEdit);
 
         setModalMode('edit');
         setSelectedDevice(item);
@@ -307,13 +329,13 @@ export default function ManageDevicesPage() {
     const extractErrorMsg = (err) => {
         const data = err?.response?.data;
 
-        if (!data) return 'Lỗi không xác định';
+        if (!data) return isEn ? 'Unknown error' : 'Lỗi không xác định';
 
         if (Array.isArray(data.errors)) return data.errors.join(', ');
         if (data.error) return data.error;
         if (data.message) return data.message;
 
-        return 'Lỗi không xác định';
+        return isEn ? 'Unknown error' : 'Lỗi không xác định';
     };
 
     /* =========================
@@ -341,7 +363,7 @@ export default function ManageDevicesPage() {
             const values = await form.validateFields();
 
             if (!validatePhone(values.phone_number)) {
-                return message.error('Số điện thoại không hợp lệ');
+                return message.error(t.invalidPhone || 'Số điện thoại không hợp lệ');
             }
 
             const payload = {
@@ -357,10 +379,10 @@ export default function ManageDevicesPage() {
 
             if (modalMode === 'add') {
                 await createDevice(token, payload);
-                message.success('Tạo thiết bị thành công');
+                message.success(t.createSuccess);
             } else {
                 await updateDevice(token, selectedDevice._id, payload);
-                message.success('Cập nhật thiết bị thành công');
+                message.success(t.updateSuccess);
             }
 
             setModalMode(null);
@@ -374,15 +396,15 @@ export default function ManageDevicesPage() {
         DELETE
     ========================= */
     const handleDelete = (id) => {
-        if (currentRole !== 'administrator') return message.warning('Bạn không có quyền xóa thiết bị');
+        if (currentRole !== 'administrator') return message.warning(t.noPermissionDelete);
 
         Modal.confirm({
-            title: 'Xóa thiết bị này?',
+            title: t.deleteConfirm,
             okType: 'danger',
             onOk: async () => {
                 try {
                     await deleteDevice(token, id);
-                    message.success('Xóa thành công');
+                    message.success(t.deleteSuccess);
                     loadDevices();
                 } catch (err) {
                     message.error(extractErrorMsg(err));
@@ -395,7 +417,7 @@ export default function ManageDevicesPage() {
         SELECT DEVICE
     ========================= */
     const handleSelectDevice = async (item) => {
-        if (currentRole === 'customer') return message.warning('Bạn không có quyền xem chi tiết');
+        if (currentRole === 'customer') return message.warning(t.noPermissionDetail);
 
         setSelectedDevice(item);
         setViewMode('detail');
@@ -407,7 +429,7 @@ export default function ManageDevicesPage() {
             setCruiseInfo(cruise);
             setBatteryInfo(battery?.batteryStatus || null);
         } catch (err) {
-            message.error('Không tải được dữ liệu hành trình / pin');
+            message.error(isEn ? 'Failed to load device data' : 'Không tải được dữ liệu hành trình / pin');
         }
     };
 
@@ -424,6 +446,7 @@ export default function ManageDevicesPage() {
     useEffect(() => {
         if (viewMode !== 'detail' || !selectedDevice) return;
         if (!cruiseInfo) return;
+        if (!LMap) return;
 
         if (mapRef.current) {
             mapRef.current.remove();
@@ -452,12 +475,12 @@ export default function ManageDevicesPage() {
 
         mk.bindPopup(
             `
-            <b>IMEI:</b> ${selectedDevice.imei}<br/>
-            <b>Biển số:</b> ${selectedDevice.license_plate || '-'}<br/>
-            <b>Loại:</b> ${selectedDevice.device_category_id?.name || '-'}<br/>
-            <b>Tốc độ:</b> ${cruiseInfo?.spd || 0} km/h<br/>
-            <b>ACC:</b> ${cruiseInfo?.acc === 1 ? 'Đang chạy' : 'Tắt máy'}<br/>
-            <b>Pin:</b> ${batteryInfo?.soc ?? '--'}%
+            <b>${t.imei}:</b> ${selectedDevice.imei}<br/>
+            <b>${t.plate}:</b> ${selectedDevice.license_plate || '-'}<br/>
+            <b>${t.deviceType}:</b> ${selectedDevice.device_category_id?.name || '-'}<br/>
+            <b>${t.speed}:</b> ${cruiseInfo?.spd || 0} km/h<br/>
+            <b>${t.acc}:</b> ${cruiseInfo?.acc === 1 ? t.running : t.stopped}<br/>
+            <b>${t.battery}:</b> ${batteryInfo?.soc ?? '--'}%
         `,
         );
 
@@ -484,59 +507,59 @@ export default function ManageDevicesPage() {
             ),
         },
         {
-            title: 'Loại thiết bị',
+            title: t.deviceType,
             dataIndex: 'device_category_id',
             sorter: (a, b) => (a.device_category_id?.name || '').localeCompare(b.device_category_id?.name || ''),
             render: (d) => d?.name || '-',
         },
         {
-            title: 'SĐT',
+            title: t.phone,
             dataIndex: 'phone_number',
             sorter: (a, b) => (a.phone_number || '').localeCompare(b.phone_number || ''),
         },
         {
-            title: 'Biển số',
+            title: t.plate,
             dataIndex: 'license_plate',
             sorter: (a, b) => (a.license_plate || '').localeCompare(b.license_plate || ''),
         },
         {
-            title: 'Lái xe',
+            title: t.driver,
             dataIndex: 'driver',
             sorter: (a, b) => (a.driver || '').localeCompare(b.driver || ''),
         },
         {
-            title: 'Khách hàng',
+            title: t.customer,
             dataIndex: 'user_id',
             sorter: (a, b) => (a.user_id?.email || '').localeCompare(b.user_id?.email || ''),
-            render: (u) => u?.email || 'Chưa gán',
+            render: (u) => u?.email || t.notAssigned,
         },
         {
-            title: 'Đại lý',
+            title: t.distributor,
             dataIndex: 'distributor_id',
             sorter: (a, b) => (a.distributor_id?.username || '').localeCompare(b.distributor_id?.username || ''),
             render: (u) => u?.username || '-',
         },
         {
-            title: 'Ngày tạo',
+            title: t.createdDate,
             dataIndex: 'createdAt',
             sorter: (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
-            render: (v) => new Date(v).toLocaleString(),
+            render: (v) => new Date(v).toLocaleString(isEn ? 'en-US' : 'vi-VN'),
         },
         {
-            title: 'Xem',
+            title: t.view,
             width: 60,
             render: (_, r) => <Button size="small" icon={<EyeOutlined />} onClick={() => handleSelectDevice(r)} />,
         },
         {
-            title: 'Hành động',
+            title: `${t.edit}/${t.delete}`,
             render: (_, r) =>
                 currentRole === 'administrator' && (
                     <Space>
                         <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>
-                            Sửa
+                            {t.edit}
                         </Button>
                         <Button danger size="small" icon={<DeleteOutlined />} onClick={() => handleDelete(r._id)}>
-                            Xóa
+                            {t.delete}
                         </Button>
                     </Space>
                 ),
@@ -550,17 +573,17 @@ export default function ManageDevicesPage() {
         <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
             <Row justify="space-between" align="middle">
                 <Col>
-                    <Title level={4}>Quản lý thiết bị</Title>
+                    <Title level={4}>{t.title}</Title>
                 </Col>
                 <Col>
                     <Space>
                         <Button icon={<DownloadOutlined />} onClick={exportExcel}>
-                            Xuất Excel
+                            {t.exportExcel}
                         </Button>
 
                         {currentRole === 'administrator' && (
                             <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
-                                Thêm thiết bị
+                                {t.addDevice}
                             </Button>
                         )}
                     </Space>
@@ -571,28 +594,28 @@ export default function ManageDevicesPage() {
                 <Row gutter={[12, 12]}>
                     <Col xs={24} md={6}>
                         <Input
-                            placeholder="Số điện thoại"
+                            placeholder={t.filters.phone}
                             value={filters.phone_number}
                             onChange={(e) => setFilters((f) => ({ ...f, phone_number: e.target.value }))}
                         />
                     </Col>
                     <Col xs={24} md={6}>
                         <Input
-                            placeholder="Biển số"
+                            placeholder={t.filters.plate}
                             value={filters.license_plate}
                             onChange={(e) => setFilters((f) => ({ ...f, license_plate: e.target.value }))}
                         />
                     </Col>
                     <Col xs={24} md={6}>
                         <Input
-                            placeholder="IMEI"
+                            placeholder={t.filters.imei}
                             value={filters.imei}
                             onChange={(e) => setFilters((f) => ({ ...f, imei: e.target.value }))}
                         />
                     </Col>
                     <Col xs={24} md={6}>
                         <Input
-                            placeholder="Lái xe"
+                            placeholder={t.filters.driver}
                             value={filters.driver}
                             onChange={(e) => setFilters((f) => ({ ...f, driver: e.target.value }))}
                         />
@@ -601,13 +624,15 @@ export default function ManageDevicesPage() {
 
                 <Row justify="end" style={{ marginTop: 12 }}>
                     <Button type="primary" icon={<SearchOutlined />} onClick={loadDevices}>
-                        Tìm kiếm
+                        {t.search}
                     </Button>
                 </Row>
             </Card>
 
             <Card>
-                <Text strong>Danh sách thiết bị ({devices.length})</Text>
+                <Text strong>
+                    {t.deviceList} ({devices.length})
+                </Text>
                 <Table
                     dataSource={devices}
                     columns={columns}
@@ -628,31 +653,29 @@ export default function ManageDevicesPage() {
         <Space orientation="vertical" style={{ width: '100%' }} size="middle">
             <Space wrap>
                 <Button icon={<ArrowLeftOutlined />} onClick={goBack}>
-                    Quay lại
+                    {t.back}
                 </Button>
-                <Title level={4}>Thông tin chi tiết thiết bị</Title>
+                <Title level={4}>{t.detailTitle}</Title>
             </Space>
 
             <Row gutter={[16, 16]}>
                 <Col xs={24} md={12}>
-                    <Card title="Thông tin thiết bị">
+                    <Card title={t.deviceInfo}>
                         <Descriptions column={1} bordered size="small">
-                            <Descriptions.Item label="IMEI">{selectedDevice.imei}</Descriptions.Item>
-                            <Descriptions.Item label="Số điện thoại">
-                                {selectedDevice.phone_number || '-'}
-                            </Descriptions.Item>
-                            <Descriptions.Item label="Biển số">{selectedDevice.license_plate || '-'}</Descriptions.Item>
-                            <Descriptions.Item label="Lái xe">{selectedDevice.driver || '-'}</Descriptions.Item>
-                            <Descriptions.Item label="Loại thiết bị">
+                            <Descriptions.Item label={t.imei}>{selectedDevice.imei}</Descriptions.Item>
+                            <Descriptions.Item label={t.phone}>{selectedDevice.phone_number || '-'}</Descriptions.Item>
+                            <Descriptions.Item label={t.plate}>{selectedDevice.license_plate || '-'}</Descriptions.Item>
+                            <Descriptions.Item label={t.driver}>{selectedDevice.driver || '-'}</Descriptions.Item>
+                            <Descriptions.Item label={t.deviceType}>
                                 {selectedDevice.device_category_id?.name}
                             </Descriptions.Item>
-                            <Descriptions.Item label="Firmware">{selectedDevice.version || '-'}</Descriptions.Item>
-                            <Descriptions.Item label="Pin">{batteryInfo?.soc ?? '--'}%</Descriptions.Item>
-                            <Descriptions.Item label="Vận tốc">{cruiseInfo?.spd || 0} km/h</Descriptions.Item>
-                            <Descriptions.Item label="ACC">
-                                {cruiseInfo?.acc === 1 ? 'Đang chạy' : 'Tắt máy'}
+                            <Descriptions.Item label={t.firmware}>{selectedDevice.version || '-'}</Descriptions.Item>
+                            <Descriptions.Item label={t.battery}>{batteryInfo?.soc ?? '--'}%</Descriptions.Item>
+                            <Descriptions.Item label={t.speed}>{cruiseInfo?.spd || 0} km/h</Descriptions.Item>
+                            <Descriptions.Item label={t.acc}>
+                                {cruiseInfo?.acc === 1 ? t.running : t.stopped}
                             </Descriptions.Item>
-                            <Descriptions.Item label="Vị trí">
+                            <Descriptions.Item label={t.position}>
                                 {cruiseInfo?.lat}, {cruiseInfo?.lon}
                             </Descriptions.Item>
                         </Descriptions>
@@ -660,19 +683,19 @@ export default function ManageDevicesPage() {
                 </Col>
 
                 <Col xs={24} md={12}>
-                    <Card title="Chủ sở hữu & Đại lý">
+                    <Card title={t.ownerInfo}>
                         <Descriptions column={1} bordered size="small">
-                            <Descriptions.Item label="Khách hàng">
-                                {selectedDevice.user_id ? selectedDevice.user_id.email : 'Chưa gán'}
+                            <Descriptions.Item label={t.customer}>
+                                {selectedDevice.user_id ? selectedDevice.user_id.email : t.notAssigned}
                             </Descriptions.Item>
 
-                            <Descriptions.Item label="Đại lý">
+                            <Descriptions.Item label={t.distributor}>
                                 {selectedDevice.distributor_id ? selectedDevice.distributor_id.username : '-'}
                             </Descriptions.Item>
                         </Descriptions>
                     </Card>
 
-                    <Card style={{ marginTop: 16 }} title="Bản đồ thiết bị">
+                    <Card style={{ marginTop: 16 }} title={t.mapTitle}>
                         <div id="iky-device-map" style={{ height: 260 }} />
                     </Card>
                 </Col>
@@ -685,11 +708,11 @@ export default function ManageDevicesPage() {
             {viewMode === 'list' ? renderList() : renderDetail()}
 
             <Modal
-                title={modalMode === 'add' ? 'Thêm thiết bị' : 'Sửa thiết bị'}
+                title={modalMode === 'add' ? t.modal.addTitle : t.modal.editTitle}
                 open={!!modalMode}
                 onCancel={() => setModalMode(null)}
                 onOk={handleSave}
-                okText="Lưu"
+                okText={t.save}
                 width={600}
             >
                 <Form form={form} layout="vertical">
@@ -697,20 +720,20 @@ export default function ManageDevicesPage() {
                         <Input />
                     </Form.Item>
 
-                    <Form.Item name="phone_number" label="Số điện thoại">
+                    <Form.Item name="phone_number" label={t.phone}>
                         <Input />
                     </Form.Item>
 
-                    <Form.Item name="license_plate" label="Biển số">
+                    <Form.Item name="license_plate" label={t.plate}>
                         <Input />
                     </Form.Item>
 
-                    <Form.Item name="driver" label="Tên lái xe">
+                    <Form.Item name="driver" label={t.driver}>
                         <Input />
                     </Form.Item>
 
-                    <Form.Item name="device_category_id" label="Dòng thiết bị" rules={[{ required: true }]}>
-                        <Select placeholder="Chọn dòng thiết bị">
+                    <Form.Item name="device_category_id" label={t.deviceType} rules={[{ required: true }]}>
+                        <Select placeholder={t.modal.selectDeviceType}>
                             {deviceCategories.map((d) => (
                                 <Option key={d._id} value={d._id}>
                                     {d.name}
@@ -719,8 +742,8 @@ export default function ManageDevicesPage() {
                         </Select>
                     </Form.Item>
 
-                    <Form.Item name="vehicle_category_id" label="Dòng xe">
-                        <Select placeholder="Chọn dòng xe">
+                    <Form.Item name="vehicle_category_id" label={t.modal.selectVehicleType}>
+                        <Select placeholder={t.modal.selectVehicleType}>
                             {vehicleCategories.map((v) => (
                                 <Option key={v._id} value={v._id}>
                                     {v.name}
@@ -729,8 +752,8 @@ export default function ManageDevicesPage() {
                         </Select>
                     </Form.Item>
 
-                    <Form.Item name="user_id" label="Khách hàng">
-                        <Select allowClear placeholder="Chọn khách hàng">
+                    <Form.Item name="user_id" label={t.customer}>
+                        <Select allowClear placeholder={t.modal.selectCustomer}>
                             {userOptions
                                 .filter((u) => u.position === 'customer')
                                 .map((u) => (
@@ -741,8 +764,8 @@ export default function ManageDevicesPage() {
                         </Select>
                     </Form.Item>
 
-                    <Form.Item name="distributor_id" label="Đại lý">
-                        <Select allowClear placeholder="Chọn đại lý">
+                    <Form.Item name="distributor_id" label={t.distributor}>
+                        <Select allowClear placeholder={t.modal.selectDistributor}>
                             {userOptions
                                 .filter((u) => u.position === 'distributor')
                                 .map((u) => (

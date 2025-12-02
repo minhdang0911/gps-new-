@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Card, Table, Button, Modal, Form, Select, Space, message, Tag, Typography, Popconfirm } from 'antd';
 import { PlusOutlined, ReloadOutlined, DeleteOutlined, UserOutlined, DownloadOutlined } from '@ant-design/icons';
+import { usePathname } from 'next/navigation';
 
 import { getUserList } from '@/app/lib/api/user';
 import { getDevices } from '@/app/lib/api/devices';
@@ -15,10 +16,16 @@ import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
 import { getTodayForFileName } from '@/app/util/FormatDate';
 
+import vi from '../../locales/vi.json';
+import en from '../../locales/en.json';
+
+const locales = { vi, en };
 const { Option } = Select;
 const { Text, Title } = Typography;
 
 export default function DeviceCustomerPage() {
+    const pathname = usePathname() || '/';
+
     const [role, setRole] = useState('');
     const [token, setToken] = useState('');
 
@@ -34,12 +41,35 @@ export default function DeviceCustomerPage() {
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [form] = Form.useForm();
 
+    // ===== LANG =====
+    const [isEn, setIsEn] = useState(false);
+
+    const isEnFromPath = useMemo(() => {
+        const segments = pathname.split('/').filter(Boolean);
+        const last = segments[segments.length - 1];
+        return last === 'en';
+    }, [pathname]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        if (isEnFromPath) {
+            setIsEn(true);
+            localStorage.setItem('iky_lang', 'en');
+        } else {
+            const saved = localStorage.getItem('iky_lang');
+            setIsEn(saved === 'en');
+        }
+    }, [isEnFromPath]);
+
+    const t = isEn ? locales.en.deviceCustomer : locales.vi.deviceCustomer;
+
     // ==== INIT TOKEN + ROLE ====
     useEffect(() => {
         if (typeof window === 'undefined') return;
-        const t = localStorage.getItem('accessToken') || '';
+        const tkn = localStorage.getItem('accessToken') || '';
         const r = localStorage.getItem('role') || '';
-        setToken(t);
+        setToken(tkn);
         setRole(r);
     }, []);
 
@@ -64,20 +94,20 @@ export default function DeviceCustomerPage() {
                 }
             } catch (err) {
                 console.error('Load customers error:', err);
-                message.error('Không tải được danh sách khách hàng');
+                message.error(t.loadCustomersError);
             }
         };
 
         fetchCustomers();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token]);
+    }, [token, isEn]); // đổi lang vẫn xài được message mới
 
     // ==== LOAD DEVICES CỦA CUSTOMER ĐANG CHỌN ====
     useEffect(() => {
         if (!selectedCustomer) return;
         fetchDevices(selectedCustomer);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedCustomer]);
+    }, [selectedCustomer, isEn]);
 
     const fetchDevices = async (customerId) => {
         if (!token || !customerId) return;
@@ -92,7 +122,7 @@ export default function DeviceCustomerPage() {
             setDevices(res.devices || []);
         } catch (err) {
             console.error('Load device of customer error:', err);
-            message.error('Không tải được danh sách thiết bị của khách hàng');
+            message.error(t.loadDevicesError);
         } finally {
             setLoadingDevices(false);
         }
@@ -112,7 +142,7 @@ export default function DeviceCustomerPage() {
                 setAllDevices(res.devices || res.items || []);
             } catch (err) {
                 console.error('Load all devices error:', err);
-                message.error('Không tải được danh sách thiết bị');
+                message.error(t.loadAllDevicesError);
             } finally {
                 setLoadingAllDevices(false);
             }
@@ -120,12 +150,12 @@ export default function DeviceCustomerPage() {
 
         fetchAllDevices();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token]);
+    }, [token, isEn]);
 
     // ==== THÊM THIẾT BỊ VÀO CUSTOMER ====
     const handleAddDevice = async () => {
         if (!token || !selectedCustomer) {
-            message.error('Thiếu token hoặc khách hàng');
+            message.error(t.missingTokenOrCustomer);
             return;
         }
 
@@ -137,7 +167,7 @@ export default function DeviceCustomerPage() {
                 customerId: selectedCustomer,
             });
 
-            message.success('Thêm thiết bị cho khách hàng thành công');
+            message.success(t.addSuccess);
             setIsAddModalOpen(false);
             form.resetFields();
             fetchDevices(selectedCustomer);
@@ -151,7 +181,7 @@ export default function DeviceCustomerPage() {
                 apiData?.message ||
                 (typeof apiData === 'string' ? apiData : null) ||
                 err?.message ||
-                'Thêm thiết bị thất bại';
+                t.addFailed;
 
             message.error(msg);
         }
@@ -167,7 +197,7 @@ export default function DeviceCustomerPage() {
                 customerId: selectedCustomer,
             });
 
-            message.success('Gỡ thiết bị khỏi khách hàng thành công');
+            message.success(t.removeSuccess);
             fetchDevices(selectedCustomer);
         } catch (err) {
             console.error('Remove device error:', err);
@@ -179,7 +209,7 @@ export default function DeviceCustomerPage() {
                 apiData?.message ||
                 (typeof apiData === 'string' ? apiData : null) ||
                 err?.message ||
-                'Gỡ thiết bị thất bại';
+                t.removeFailed;
 
             message.error(msg);
         }
@@ -188,25 +218,25 @@ export default function DeviceCustomerPage() {
     // ==== EXPORT EXCEL DANH SÁCH THIẾT BỊ CỦA CUSTOMER ====
     const exportExcel = () => {
         if (!selectedCustomer) {
-            message.warning('Chọn khách hàng trước khi xuất Excel');
+            message.warning(t.exportNeedCustomer);
             return;
         }
         if (!devices.length) {
-            message.warning('Khách hàng này chưa có thiết bị để xuất');
+            message.warning(t.exportNoDevices);
             return;
         }
 
         try {
             const customer = customers.find((c) => c._id === selectedCustomer);
             const customerLabel =
-                customer?.username || customer?.phone || customer?.email || customer?._id || 'Khách hàng';
+                customer?.username || customer?.phone || customer?.email || customer?._id || t.customerFallback;
 
             // 1. Chuẩn bị data
             const excelData = devices.map((item) => ({
-                IMEI: item.imei || '',
-                'Biển số': item.license_plate || '',
-                'Dòng thiết bị': item.device_category_id?.name || item.device_category_id?.code || '',
-                'Trạng thái': item.status === 10 ? 'Online' : 'Offline',
+                [t.columns.imei]: item.imei || '',
+                [t.excel.colPlate]: item.license_plate || '',
+                [t.excel.colDeviceCategory]: item.device_category_id?.name || item.device_category_id?.code || '',
+                [t.excel.colStatus]: item.status === 10 ? t.status.online : t.status.offline,
             }));
 
             // 2. Tạo sheet, chừa dòng 1 cho title + dòng 2 cho info khách hàng
@@ -214,7 +244,7 @@ export default function DeviceCustomerPage() {
             const headers = Object.keys(excelData[0]);
 
             // 3. Title dòng 1
-            const title = 'Báo cáo thiết bị theo khách hàng';
+            const title = t.excel.title;
             ws['A1'] = { v: title, t: 's' };
             ws['!merges'] = ws['!merges'] || [];
             ws['!merges'].push({
@@ -228,7 +258,7 @@ export default function DeviceCustomerPage() {
             };
 
             // 4. Dòng 2: thông tin khách hàng
-            const infoText = `Khách hàng: ${customerLabel}`;
+            const infoText = `${t.excel.customerPrefix}${customerLabel}`;
             ws['A2'] = { v: infoText, t: 's' };
             ws['!merges'].push({
                 s: { r: 1, c: 0 },
@@ -283,8 +313,8 @@ export default function DeviceCustomerPage() {
 
                     // Trạng thái online -> xanh nhạt
                     if (R > 2) {
-                        const statusColIndex = headers.indexOf('Trạng thái');
-                        if (C === statusColIndex && String(cell.v).trim() === 'Online') {
+                        const statusColIndex = headers.indexOf(t.excel.colStatus);
+                        if (C === statusColIndex && String(cell.v).trim() === t.status.online) {
                             cell.s.fill = { fgColor: { rgb: 'E2F0D9' } };
                         }
                     }
@@ -316,30 +346,30 @@ export default function DeviceCustomerPage() {
             });
 
             saveAs(new Blob([excelBuffer]), `ThietBiKhachHang_${getTodayForFileName()}.xlsx`);
-            message.success('Xuất Excel thành công');
+            message.success(t.exportSuccess);
         } catch (err) {
             console.error('Export excel error:', err);
-            message.error('Xuất Excel thất bại');
+            message.error(t.exportFailed);
         }
     };
 
     // ==== CỘT BẢNG (THÊM SORTER) ====
     const columns = [
         {
-            title: 'IMEI',
+            title: t.columns.imei,
             dataIndex: 'imei',
             key: 'imei',
             sorter: (a, b) => (a.imei || '').localeCompare(b.imei || ''),
         },
         {
-            title: 'Biển số',
+            title: t.columns.plate,
             dataIndex: 'license_plate',
             key: 'license_plate',
             sorter: (a, b) => (a.license_plate || '').localeCompare(b.license_plate || ''),
             render: (v) => v || '-',
         },
         {
-            title: 'Dòng thiết bị',
+            title: t.columns.deviceCategory,
             key: 'device_category',
             sorter: (a, b) => {
                 const aLabel = a.device_category_id?.name || a.device_category_id?.code || '';
@@ -349,28 +379,28 @@ export default function DeviceCustomerPage() {
             render: (_, record) => record.device_category_id?.name || record.device_category_id?.code || '-',
         },
         {
-            title: 'Trạng thái',
+            title: t.columns.status,
             dataIndex: 'status',
             key: 'status',
             sorter: (a, b) => (a.status || 0) - (b.status || 0),
             render: (status) => (
-                <Tag color={status === 10 ? 'green' : 'red'}>{status === 10 ? 'Online' : 'Offline'}</Tag>
+                <Tag color={status === 10 ? 'green' : 'red'}>{status === 10 ? t.status.online : t.status.offline}</Tag>
             ),
         },
         {
-            title: 'Hành động',
+            title: t.columns.actions,
             key: 'actions',
             width: 120,
             render: (_, record) => (
                 <Popconfirm
-                    title="Gỡ thiết bị khỏi khách hàng?"
-                    description="Bạn có chắc chắn muốn gỡ thiết bị này?"
+                    title={t.actions.removeTitle}
+                    description={t.actions.removeDesc}
                     onConfirm={() => handleRemoveDevice(record)}
-                    okText="Gỡ"
-                    cancelText="Huỷ"
+                    okText={t.actions.removeOk}
+                    cancelText={t.actions.removeCancel}
                 >
                     <Button size="small" danger icon={<DeleteOutlined />}>
-                        Gỡ
+                        {t.actions.remove}
                     </Button>
                 </Popconfirm>
             ),
@@ -384,9 +414,9 @@ export default function DeviceCustomerPage() {
                 <Card className="dcustomer-card-denied">
                     <UserOutlined style={{ fontSize: 32, color: '#ff4d4f' }} />
                     <Title level={4} style={{ marginTop: 16 }}>
-                        Bạn không có quyền truy cập trang này
+                        {t.noPermissionTitle}
                     </Title>
-                    <Text type="secondary">Vui lòng liên hệ quản trị viên hoặc đại lý để được cấp quyền.</Text>
+                    <Text type="secondary">{t.noPermissionDesc}</Text>
                 </Card>
             </div>
         );
@@ -396,12 +426,12 @@ export default function DeviceCustomerPage() {
         <div className="dcustomer-page">
             <Card
                 className="dcustomer-card"
-                title="Quản lý thiết bị khách hàng"
+                title={t.title}
                 extra={
                     <Space>
                         <Select
                             className="dcustomer-customer-select"
-                            placeholder="Chọn khách hàng"
+                            placeholder={t.filter.selectCustomerPlaceholder}
                             value={selectedCustomer || undefined}
                             onChange={(val) => setSelectedCustomer(val)}
                             showSearch
@@ -421,7 +451,7 @@ export default function DeviceCustomerPage() {
                             icon={<ReloadOutlined />}
                             onClick={() => selectedCustomer && fetchDevices(selectedCustomer)}
                         >
-                            Refresh
+                            {t.buttons.refresh}
                         </Button>
 
                         <Button
@@ -429,7 +459,7 @@ export default function DeviceCustomerPage() {
                             onClick={exportExcel}
                             disabled={!selectedCustomer || !devices.length}
                         >
-                            Xuất Excel
+                            {t.buttons.export}
                         </Button>
 
                         <Button
@@ -438,7 +468,7 @@ export default function DeviceCustomerPage() {
                             onClick={() => setIsAddModalOpen(true)}
                             disabled={!selectedCustomer}
                         >
-                            Thêm thiết bị
+                            {t.buttons.addDevice}
                         </Button>
                     </Space>
                 }
@@ -452,33 +482,31 @@ export default function DeviceCustomerPage() {
                     scroll={{ x: 800 }}
                 />
 
-                {!selectedCustomer && (
-                    <div className="dcustomer-empty-tip">Chọn một khách hàng để xem danh sách thiết bị.</div>
-                )}
+                {!selectedCustomer && <div className="dcustomer-empty-tip">{t.emptyTip}</div>}
             </Card>
 
             {/* MODAL THÊM THIẾT BỊ */}
             <Modal
                 open={isAddModalOpen}
-                title="Thêm thiết bị vào khách hàng"
+                title={t.modal.title}
                 onOk={handleAddDevice}
                 onCancel={() => {
                     setIsAddModalOpen(false);
                     form.resetFields();
                 }}
-                okText="Lưu"
-                cancelText="Huỷ"
+                okText={t.modal.okText}
+                cancelText={t.modal.cancelText}
                 destroyOnHidden
             >
                 <Form form={form} layout="vertical">
                     <Form.Item
-                        label="Thiết bị (IMEI)"
+                        label={t.modal.imeiLabel}
                         name="imei"
-                        rules={[{ required: true, message: 'Chọn thiết bị (IMEI)' }]}
+                        rules={[{ required: true, message: t.modal.imeiRequired }]}
                     >
                         <Select
                             showSearch
-                            placeholder="Chọn thiết bị"
+                            placeholder={t.modal.imeiPlaceholder}
                             loading={loadingAllDevices}
                             optionFilterProp="children"
                             filterOption={(input, option) =>

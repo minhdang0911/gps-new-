@@ -1,0 +1,456 @@
+{
+    "sidebar": {
+        "title": "Account management",
+        "devices": "Device management",
+        "deviceCategory": "Device category management",
+        "vehicleCategory": "Vehicle type management",
+        "deviceCustomer": "Customer device management",
+        "user": "User management"
+    },
+    "statusbar": {
+        "home": "Home",
+        "monitor": "Monitor",
+        "cruise": "Cruise",
+        "report": "Report",
+        "manage": "Manage",
+        "support": "Support",
+        "stopped": "Stopped",
+        "running": "Running",
+        "over50": "Over 50 km/h",
+        "over80": "Over 80 km/h",
+        "notify": "Notification"
+    },
+
+    "support": {
+        "badge": "IKY Support Center",
+
+        "title": "Customer Support",
+        "desc": "If you have any questions about IKY products, please contact us using the information below or send a support request. Our technical team will respond as soon as possible.",
+
+        "introTitle": "Introduction",
+        "descIntro": "Smart Utility Technology JSC specializes in researching and manufacturing high-tech consumer products:",
+        "introList": [
+            "Motorcycle anti-theft devices: IKY Bike, IKY Plus, IKY Bike GPS, IKY Bike Found…",
+            "Security alert systems: IKY SmartHome",
+            "Smart satellite lessons",
+            "Emergency alert and call systems",
+            "Manufacturing electronic products on request"
+        ],
+
+        "contactTitle": "Contact",
+        "companyName": "SMART UTILITY TECHNOLOGY JOINT STOCK COMPANY",
+
+        "hcmBranch": "HCM Headquarters",
+        "hcmAddress": "No. 38-40, Street 21A, An Lac Ward, Ho Chi Minh City",
+
+        "hnBranch": "Hanoi Branch",
+        "hnAddress": "No. 2, Alley 18, Nguyen Co Thach Street, Tu Liem District, Hanoi City",
+
+        "emailLabel": "Email",
+        "workTime": "Working hours: 8:00 – 18:00 (Mon – Sat)",
+
+        "areaHotlineTitle": "Area hotlines",
+        "hcmHotline": "Ho Chi Minh City: 08 628 01 999",
+        "hnHotline": "Hanoi: 0982 032 887",
+
+        "feedbackTitle": "Send us your feedback",
+        "feedbackNote": "Your information will be kept confidential",
+
+        "formFullName": "Full name",
+        "formEmail": "Email",
+        "formSubject": "Subject",
+        "formContent": "Description",
+        "formSend": "Send request",
+
+        "mapTitle": "IKY Headquarters Map",
+        "mapGuide": "Please zoom in to view detailed directions.",
+
+        "mapHCM": "Ho Chi Minh City",
+        "mapHN": "Hanoi"
+    },
+    "report": {
+        "title": "System Reports",
+        "usage": "Usage Report",
+        "usageShort": "Usage",
+        "charging": "Charging Report",
+        "chargingShort": "Charging",
+        "trip": "Trip Report",
+        "tripShort": "Trip"
+    },
+    "manageDevices": {
+        "title": "Device Management",
+        "exportExcel": "Export Excel",
+        "addDevice": "Add Device",
+        "search": "Search",
+        "deviceList": "Device List",
+        "noData": "No data available",
+        "loadError": "Failed to load device list",
+        "configLoadError": "Failed to load configuration data",
+        "createSuccess": "Device created successfully",
+        "updateSuccess": "Device updated successfully",
+        "deleteSuccess": "Deleted successfully",
+        "deleteConfirm": "Delete this device?",
+        "noPermissionAdd": "You do not have permission to add devices",
+        "noPermissionEdit": "You do not have permission to edit devices",
+        "noPermissionDelete": "You do not have permission to delete devices",
+        "noPermissionDetail": "You do not have permission to view details",
+        "detailTitle": "Device Details",
+        "back": "Back",
+        "deviceInfo": "Device Information",
+        "ownerInfo": "Owner & Distributor",
+        "mapTitle": "Device Map",
+        "imei": "IMEI",
+        "phone": "Phone Number",
+        "plate": "License Plate",
+        "driver": "Driver",
+        "deviceType": "Device Type",
+        "firmware": "Firmware",
+        "battery": "Battery",
+        "speed": "Speed",
+        "acc": "ACC",
+        "running": "Running",
+        "stopped": "Stopped",
+        "position": "Location",
+        "customer": "Customer",
+        "notAssigned": "Unassigned",
+        "distributor": "Distributor",
+        "createdDate": "Created At",
+        "edit": "Edit",
+        "delete": "Delete",
+        "view": "View",
+        "save": "Save",
+
+        "filters": {
+            "phone": "Phone Number",
+            "plate": "License Plate",
+            "imei": "IMEI",
+            "driver": "Driver"
+        },
+
+        "modal": {
+            "addTitle": "Add Device",
+            "editTitle": "Edit Device",
+            "selectDeviceType": "Select device type",
+            "selectVehicleType": "Select vehicle type",
+            "selectCustomer": "Select customer",
+            "selectDistributor": "Select distributor"
+        }
+    },
+    "deviceCategory": {
+        "title": "Device Category Management",
+        "noPermissionPage": "You do not have permission to access this feature.",
+        "missingToken": "Missing token, please log in again",
+        "loadError": "Failed to load device category list",
+        "noPermissionCreate": "You do not have permission to create device categories",
+        "noPermissionEdit": "You do not have permission to edit device categories",
+        "noPermissionDelete": "You do not have permission to delete device categories",
+        "noPermissionAction": "You do not have permission to perform this action",
+        "createSuccess": "Device category created successfully",
+        "updateSuccess": "Device category updated successfully",
+        "deleteSuccess": "Device category deleted successfully",
+        "deleteFailed": "Failed to delete device category",
+        "saveFailed": "Failed to save data",
+        "noDataToExport": "No data to export",
+        "exportTitle": "Device Category List Report",
+        "exportSuccess": "Export Excel successfully",
+        "exportFailed": "Export Excel failed",
+        "filters": {
+            "name": "Search by name",
+            "code": "Category code",
+            "year": "Year (e.g. 2025)",
+            "model": "Model",
+            "origin": "Origin"
+        },
+        "search": "Search",
+        "resetFilter": "Clear filter",
+        "refresh": "Refresh",
+        "exportExcel": "Export Excel",
+        "addNew": "Add new",
+        "columns": {
+            "code": "Code",
+            "name": "Device category name",
+            "year": "Year",
+            "model": "Model",
+            "origin": "Origin",
+            "description": "Description",
+            "actions": "Actions"
+        },
+        "actions": {
+            "edit": "Edit",
+            "delete": "Delete",
+            "deleteConfirmTitle": "Delete this device category?",
+            "deleteConfirmDesc": "Are you sure you want to delete?",
+            "deleteOk": "Delete",
+            "deleteCancel": "Cancel"
+        },
+        "modal": {
+            "createTitle": "Add device category",
+            "editTitle": "Update device category",
+            "okText": "Save",
+            "cancelText": "Cancel"
+        },
+        "form": {
+            "codeLabel": "Category code",
+            "codeRequired": "Please enter category code",
+            "nameLabel": "Device category name",
+            "nameRequired": "Please enter device category name",
+            "yearLabel": "Year",
+            "yearRequired": "Please enter year (e.g. 2025)",
+            "modelLabel": "Model",
+            "modelRequired": "Please enter model",
+            "originLabel": "Origin (madeInFrom)",
+            "originRequired": "Please select origin",
+            "originPlaceholder": "Select origin",
+            "descLabel": "Description"
+        }
+    },
+    "vehicleCategory": {
+        "title": "Vehicle Category Management",
+        "noPermissionPage": "You do not have permission to access this feature.",
+        "missingToken": "Missing token, please log in again",
+        "loadError": "Failed to load vehicle category list",
+        "noPermissionCreate": "You do not have permission to create vehicle categories",
+        "noPermissionEdit": "You do not have permission to edit vehicle categories",
+        "noPermissionDelete": "You do not have permission to delete vehicle categories",
+        "noPermissionAction": "You do not have permission to perform this action",
+        "createSuccess": "Vehicle category created successfully",
+        "updateSuccess": "Vehicle category updated successfully",
+        "deleteSuccess": "Vehicle category deleted successfully",
+        "deleteFailed": "Failed to delete vehicle category",
+        "saveFailed": "Failed to save data",
+        "noDataToExport": "No data to export",
+        "exportTitle": "Vehicle Category List Report",
+        "exportSuccess": "Export Excel successfully",
+        "exportFailed": "Export Excel failed",
+        "filters": {
+            "name": "Search by vehicle category name",
+            "manufacturer": "Manufacturer",
+            "year": "Year (e.g. 2025)",
+            "model": "Version / Model",
+            "origin": "Origin"
+        },
+        "search": "Search",
+        "resetFilter": "Clear filter",
+        "refresh": "Refresh",
+        "exportExcel": "Export Excel",
+        "addNew": "Add new",
+        "columns": {
+            "name": "Vehicle category name",
+            "manufacturer": "Manufacturer",
+            "year": "Year",
+            "model": "Version / Model",
+            "origin": "Origin",
+            "deviceType": "Device type",
+            "actions": "Actions"
+        },
+        "actions": {
+            "edit": "Edit",
+            "delete": "Delete",
+            "deleteConfirmTitle": "Delete this vehicle category?",
+            "deleteConfirmDesc": "Are you sure you want to delete?",
+            "deleteOk": "Delete",
+            "deleteCancel": "Cancel"
+        },
+        "modal": {
+            "createTitle": "Add vehicle category",
+            "editTitle": "Update vehicle category",
+            "okText": "Save",
+            "cancelText": "Cancel"
+        },
+        "form": {
+            "nameLabel": "Vehicle category name",
+            "nameRequired": "Please enter vehicle category name",
+            "manufacturerLabel": "Manufacturer",
+            "manufacturerRequired": "Please select manufacturer",
+            "yearLabel": "Year",
+            "yearRequired": "Please enter year (e.g. 2025)",
+            "modelLabel": "Version / Model",
+            "modelRequired": "Please enter version / model",
+            "originLabel": "Origin (madeInFrom)",
+            "originRequired": "Please select origin",
+            "originPlaceholder": "Select origin",
+            "deviceTypeLabel": "Device type (deviceTypeId)",
+            "deviceTypePlaceholder": "Select device type (optional)"
+        }
+    },
+    "deviceCustomer": {
+        "title": "Customer device management",
+        "noPermissionTitle": "You do not have permission to access this page",
+        "noPermissionDesc": "Please contact the administrator or distributor to request access.",
+        "loadCustomersError": "Failed to load customer list",
+        "loadDevicesError": "Failed to load customer's device list",
+        "loadAllDevicesError": "Failed to load device list",
+        "missingTokenOrCustomer": "Missing token or customer",
+        "addSuccess": "Successfully assigned device to customer",
+        "addFailed": "Failed to assign device to customer",
+        "removeSuccess": "Successfully removed device from customer",
+        "removeFailed": "Failed to remove device from customer",
+        "exportNeedCustomer": "Please select a customer before exporting Excel",
+        "exportNoDevices": "This customer has no devices to export",
+        "exportSuccess": "Export Excel successfully",
+        "exportFailed": "Export Excel failed",
+        "customerFallback": "Customer",
+        "columns": {
+            "imei": "IMEI",
+            "plate": "License plate",
+            "deviceCategory": "Device category",
+            "status": "Status",
+            "actions": "Actions"
+        },
+        "status": {
+            "online": "Online",
+            "offline": "Offline"
+        },
+        "actions": {
+            "removeTitle": "Remove device from customer?",
+            "removeDesc": "Are you sure you want to remove this device?",
+            "removeOk": "Remove",
+            "removeCancel": "Cancel",
+            "remove": "Remove"
+        },
+        "filter": {
+            "selectCustomerPlaceholder": "Select customer"
+        },
+        "buttons": {
+            "refresh": "Refresh",
+            "export": "Export Excel",
+            "addDevice": "Add device"
+        },
+        "emptyTip": "Select a customer to view the device list.",
+        "modal": {
+            "title": "Add device to customer",
+            "okText": "Save",
+            "cancelText": "Cancel",
+            "imeiLabel": "Device (IMEI)",
+            "imeiRequired": "Please select a device (IMEI)",
+            "imeiPlaceholder": "Select device"
+        },
+        "excel": {
+            "title": "Device report by customer",
+            "customerPrefix": "Customer: ",
+            "colPlate": "License plate",
+            "colDeviceCategory": "Device category",
+            "colStatus": "Status"
+        }
+    },
+    "manageUser": {
+        "title": "User management",
+        "search": {
+            "placeholder": "Search by username / email / phone"
+        },
+        "buttons": {
+            "export": "Export Excel",
+            "add": "Add user"
+        },
+        "table": {
+            "username": "Username",
+            "name": "Full name",
+            "email": "Email",
+            "phone": "Phone number",
+            "role": "Role",
+            "actions": "Actions"
+        },
+        "actions": {
+            "edit": "Edit",
+            "delete": "Delete",
+            "view": "View"
+        },
+        "form": {
+            "username": "Username",
+            "password": "Password",
+            "passwordEdit": "New password (optional)",
+            "passwordPlaceholder": "Enter password",
+            "passwordEditPlaceholder": "Leave blank if unchanged",
+            "name": "Full name",
+            "email": "Email",
+            "phone": "Phone number",
+            "address": "Address",
+            "role": "Role",
+            "distributor": "Distributor",
+            "distributorPlaceholder": "Select distributor"
+        },
+        "modal": {
+            "createTitle": "Create user",
+            "editTitle": "Edit user",
+            "okText": "Save",
+            "cancelText": "Close"
+        },
+        "view": {
+            "title": "User information",
+            "close": "Close",
+            "loading": "Loading...",
+            "fields": {
+                "username": "Username",
+                "name": "Name",
+                "email": "Email",
+                "phone": "Phone number",
+                "role": "Role",
+                "distributor": "Distributor",
+                "createdAt": "Created at"
+            }
+        },
+        "messages": {
+            "loadUsersError": "Failed to load user list",
+            "loadDistributorsError": "Failed to load distributor list",
+            "viewUserError": "Failed to load user information",
+            "updateSuccess": "User updated successfully",
+            "createSuccess": "User created successfully",
+            "saveFailedFallback": "Failed to save user",
+            "deleteConfirmTitle": "Delete user?",
+            "deleteConfirmContentPrefix": "Are you sure you want to delete ",
+            "deleteSuccess": "User deleted successfully",
+            "deleteFailed": "Failed to delete user",
+            "exportNoData": "No data to export",
+            "exportSuccess": "Export Excel successfully",
+            "exportFailed": "Export Excel failed"
+        },
+        "excel": {
+            "title": "User list report",
+            "columns": {
+                "username": "Username",
+                "name": "Full name",
+                "email": "Email",
+                "phone": "Phone number",
+                "role": "Role",
+                "distributor": "Distributor",
+                "createdAt": "Created at"
+            }
+        }
+    },
+    "usageSessionReport": {
+        "title": "Usage session report",
+        "subtitle": "Filter by session, device, battery, usage code, time range...",
+        "filter": {
+            "title": "Filters",
+            "sessionId": "Session ID",
+            "sessionIdPlaceholder": "Enter session ID",
+            "batteryId": "Battery ID",
+            "batteryIdPlaceholder": "Enter battery ID",
+            "usageCode": "Usage code",
+            "usageCodePlaceholder": "Enter usage code",
+            "deviceId": "Device ID",
+            "deviceIdPlaceholder": "Enter device ID",
+            "soh": "SOH",
+            "sohPlaceholder": "Ex: 80",
+            "timeRange": "Time range",
+            "search": "Search",
+            "reset": "Clear filters"
+        },
+        "table": {
+            "title": "Usage sessions",
+            "total": "Total: {total} records",
+            "index": "#",
+            "sessionId": "Session ID",
+            "deviceId": "Device ID",
+            "batteryId": "Battery ID",
+            "usageCode": "Usage code",
+            "soh": "SOH",
+            "startTime": "Start time",
+            "endTime": "End time",
+            "showTotal": "Total {total} records"
+        },
+        "messages": {
+            "loadError": "Failed to load usage sessions"
+        }
+    }
+}
