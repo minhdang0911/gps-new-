@@ -1,13 +1,20 @@
+// app/report/trip-session/page.jsx
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography } from 'antd';
 import { SearchOutlined, ReloadOutlined } from '@ant-design/icons';
 import { getTripSessions } from '../../lib/api/tripSession';
 import '../usage-session/usageSession.css'; // xài chung style
 
+import { usePathname } from 'next/navigation';
+import vi from '../../locales/vi.json';
+import en from '../../locales/en.json';
+
 const { RangePicker } = DatePicker;
 const { Title, Text } = Typography;
+
+const locales = { vi, en };
 
 const TripSessionReportPage = () => {
     const [form] = Form.useForm();
@@ -19,6 +26,31 @@ const TripSessionReportPage = () => {
         total: 0,
     });
 
+    // ===== LANG DETECT =====
+    const pathname = usePathname() || '/';
+    const [isEn, setIsEn] = useState(false);
+
+    const isEnFromPath = useMemo(() => {
+        const segments = pathname.split('/').filter(Boolean);
+        const last = segments[segments.length - 1];
+        return last === 'en';
+    }, [pathname]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        if (isEnFromPath) {
+            setIsEn(true);
+            localStorage.setItem('iky_lang', 'en');
+        } else {
+            const saved = localStorage.getItem('iky_lang');
+            setIsEn(saved === 'en');
+        }
+    }, [isEnFromPath]);
+
+    const t = isEn ? locales.en.tripSessionReport : locales.vi.tripSessionReport;
+
+    // ===== API PARAMS =====
     const buildParams = (values, page, limit) => {
         const params = {
             page,
@@ -81,48 +113,48 @@ const TripSessionReportPage = () => {
 
     const columns = [
         {
-            title: '#',
+            title: t.table.index,
             dataIndex: 'index',
             width: 60,
             render: (text, record, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
         },
         {
-            title: 'Session ID',
+            title: t.table.sessionId,
             dataIndex: 'sessionId',
             ellipsis: true,
         },
         {
-            title: 'Trip code',
+            title: t.table.tripCode,
             dataIndex: 'tripCode',
             ellipsis: true,
         },
         {
-            title: 'Device ID',
+            title: t.table.deviceId,
             dataIndex: 'deviceId',
             ellipsis: true,
         },
         {
-            title: 'IMEI',
+            title: t.table.imei,
             dataIndex: 'imei',
             ellipsis: true,
         },
         {
-            title: 'Battery ID',
+            title: t.table.batteryId,
             dataIndex: 'batteryId',
             ellipsis: true,
         },
         {
-            title: 'SOH',
+            title: t.table.soh,
             dataIndex: 'soh',
             width: 80,
         },
         {
-            title: 'Start time',
+            title: t.table.startTime,
             dataIndex: 'startTime',
             ellipsis: true,
         },
         {
-            title: 'End time',
+            title: t.table.endTime,
             dataIndex: 'endTime',
             ellipsis: true,
         },
@@ -133,41 +165,41 @@ const TripSessionReportPage = () => {
         <div className="usage-report-page">
             <div className="usage-report-header">
                 <Title level={4} style={{ margin: 0 }}>
-                    Báo cáo hành trình (Trip Session)
+                    {t.title}
                 </Title>
-                <Text type="secondary">Lọc theo session, mã trip, thiết bị, IMEI, pin, SOH, khoảng thời gian...</Text>
+                <Text type="secondary">{t.subtitle}</Text>
             </div>
 
             <Row gutter={[16, 16]} className="usage-report-row">
                 {/* FILTER */}
                 <Col xs={24} lg={7}>
-                    <Card className="usage-filter-card" title="Bộ lọc" size="small">
+                    <Card className="usage-filter-card" title={t.filter.title} size="small">
                         <Form form={form} layout="vertical" onFinish={onFinish}>
-                            <Form.Item label="Session ID" name="sessionId">
-                                <Input placeholder="Nhập sessionId" allowClear />
+                            <Form.Item label={t.filter.sessionId} name="sessionId">
+                                <Input placeholder={t.filter.sessionIdPlaceholder} allowClear />
                             </Form.Item>
 
-                            <Form.Item label="Trip code" name="tripCode">
-                                <Input placeholder="Nhập tripCode" allowClear />
+                            <Form.Item label={t.filter.tripCode} name="tripCode">
+                                <Input placeholder={t.filter.tripCodePlaceholder} allowClear />
                             </Form.Item>
 
-                            <Form.Item label="Battery ID" name="batteryId">
-                                <Input placeholder="Nhập batteryId" allowClear />
+                            <Form.Item label={t.filter.batteryId} name="batteryId">
+                                <Input placeholder={t.filter.batteryIdPlaceholder} allowClear />
                             </Form.Item>
 
-                            <Form.Item label="Device ID" name="deviceId">
-                                <Input placeholder="Nhập deviceId" allowClear />
+                            <Form.Item label={t.filter.deviceId} name="deviceId">
+                                <Input placeholder={t.filter.deviceIdPlaceholder} allowClear />
                             </Form.Item>
 
-                            <Form.Item label="IMEI" name="imei">
-                                <Input placeholder="Nhập IMEI" allowClear />
+                            <Form.Item label={t.filter.imei} name="imei">
+                                <Input placeholder={t.filter.imeiPlaceholder} allowClear />
                             </Form.Item>
 
-                            <Form.Item label="SOH" name="soh">
-                                <Input placeholder="VD: 80" allowClear />
+                            <Form.Item label={t.filter.soh} name="soh">
+                                <Input placeholder={t.filter.sohPlaceholder} allowClear />
                             </Form.Item>
 
-                            <Form.Item label="Khoảng thời gian" name="timeRange">
+                            <Form.Item label={t.filter.timeRange} name="timeRange">
                                 <RangePicker showTime style={{ width: '100%' }} format="YYYY-MM-DD HH:mm:ss" />
                             </Form.Item>
 
@@ -184,10 +216,10 @@ const TripSessionReportPage = () => {
                                         icon={<SearchOutlined />}
                                         loading={loading}
                                     >
-                                        Tìm kiếm
+                                        {t.filter.search}
                                     </Button>
                                     <Button icon={<ReloadOutlined />} onClick={onReset} disabled={loading}>
-                                        Xoá lọc
+                                        {t.filter.reset}
                                     </Button>
                                 </Space>
                             </Form.Item>
@@ -200,10 +232,10 @@ const TripSessionReportPage = () => {
                     <Card
                         className="usage-table-card"
                         size="small"
-                        title="Danh sách Trip Session"
+                        title={t.table.title}
                         extra={
                             <Text type="secondary" style={{ fontSize: 12 }}>
-                                Tổng: {pagination.total} bản ghi
+                                {t.table.total.replace('{total}', String(pagination.total))}
                             </Text>
                         }
                     >
@@ -218,7 +250,7 @@ const TripSessionReportPage = () => {
                                 total: pagination.total,
                                 showSizeChanger: true,
                                 pageSizeOptions: ['10', '20', '50', '100'],
-                                showTotal: (total) => `Tổng ${total} bản ghi`,
+                                showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
                             }}
                             onChange={handleTableChange}
                             scroll={{ x: 800 }}

@@ -62,6 +62,7 @@ const MonitorPage = () => {
     const [lockError, setLockError] = useState(null);
 
     const [address, setAddress] = useState('');
+    const [addressOld, setAddressOld] = useState(''); // 🔥 địa chỉ trước sáp nhập
     const [loadingAddress, setLoadingAddress] = useState(false);
     const [addressError, setAddressError] = useState(null);
 
@@ -221,74 +222,84 @@ const MonitorPage = () => {
         setLoadingAddress(true);
         setAddressError(null);
 
-        // nhỏ gọn: chuẩn hoá lat/lon thành string
         const lat = Number(latVal);
         const lon = Number(lonVal);
 
-        // ===== 1) Thử Goong trước (nếu có API key) =====
-        const tryGoong = async () => {
-            if (!GOONG_API_KEY) return '';
+        const tryGoongV2 = async () => {
+            if (!GOONG_API_KEY) return null;
 
-            const res = await fetch(`https://rsapi.goong.io/Geocode?latlng=${lat},${lon}&api_key=${GOONG_API_KEY}`);
+            const url = `https://rsapi.goong.io/v2/geocode/street?api_key=${GOONG_API_KEY}&latlng=${lat},${lon}&has_deprecated_administrative_unit=true`;
 
-            if (!res.ok) {
-                // ví dụ 4xx/5xx, hết quota, key die, v.v...
-                throw new Error('Goong API error');
-            }
+            const res = await fetch(url);
 
-            const data = await res.json();
-            const addr = data?.results?.[0]?.formatted_address || '';
-            return addr;
+            if (!res.ok) throw new Error('Goong V2 API error');
+
+            const json = await res.json();
+            const first = json?.results?.[0];
+            if (!first) return null;
+
+            // địa chỉ hiện tại
+            const addr = first.formatted_address || first.address || first.name || '';
+
+            // địa chỉ trước sáp nhập
+            const oldAddr =
+                first.deprecated_description ||
+                (() => {
+                    const c = first.deprecated_compound;
+                    if (!c) return '';
+                    return [c.commune, c.district, c.province].filter(Boolean).join(', ');
+                })();
+
+            return { addr, oldAddr };
         };
 
-        // ===== 2) Fallback Nominatim (OpenStreetMap) =====
+        // fallback OSM giữ nguyên
         const tryNominatim = async () => {
-            // chú ý: Nominatim rate limit chặt, m đừng spam quá
             const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`;
-
-            const res = await fetch(url, {
-                // header User-Agent custom thì browser không cho set,
-                // nên thôi để default, vẫn dùng được.
-            });
-
-            if (!res.ok) {
-                throw new Error('Nominatim error');
-            }
-
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('Nominatim error');
             const data = await res.json();
-            // dùng display_name cho nhanh, sau này muốn format address có thể xử lý thêm
-            const addr = data?.display_name || '';
-            return addr;
+            return { addr: data?.display_name || '', oldAddr: '' };
         };
 
         try {
             let addr = '';
+            let oldAddr = '';
 
-            // 1. ưu tiên Goong
+            // thử Goong mới trước
             try {
-                addr = await tryGoong();
+                const data = await tryGoongV2();
+                if (data?.addr) {
+                    addr = data.addr;
+                    oldAddr = data.oldAddr;
+                }
             } catch (e) {
-                console.error('Goong failed, fallback Nominatim:', e);
+                console.error('Goong V2 không chạy, thử OSM:', e);
             }
 
-            // 2. nếu Goong fail / không có key thì fallback OSM
             if (!addr) {
+                // fallback
                 try {
-                    addr = await tryNominatim();
+                    const data2 = await tryNominatim();
+                    addr = data2.addr;
+                    oldAddr = '';
                 } catch (e2) {
-                    console.error('Nominatim failed:', e2);
+                    console.error('Nominatim fail:', e2);
                 }
             }
 
             if (addr) {
                 setAddress(addr);
+                setAddressOld(oldAddr || '');
             } else {
                 setAddress('');
+                setAddressOld('');
                 setAddressError('Không lấy được địa chỉ.');
             }
         } catch (err) {
-            console.error('Fetch address error (all providers):', err);
+            console.error('Address fetch error:', err);
             setAddress('');
+            setAddressOld('');
             setAddressError('Không lấy được địa chỉ.');
         } finally {
             setLoadingAddress(false);
@@ -374,6 +385,7 @@ const MonitorPage = () => {
         setLastCruise(null);
         setCruiseError(null);
         setAddress('');
+        setAddressOld(''); // 🔥 reset địa chỉ cũ
         setAddressError(null);
 
         try {
@@ -530,7 +542,7 @@ const MonitorPage = () => {
         'gic',
         'onl',
         'fwr',
-        'vgp', // thêm vgp để không show ở extra
+        'vgp',
     ];
 
     const BATTERY_FIELDS = ['soc', 'soh', 'tavg', 'tmax', 'tmin', 'vavg', 'vmax', 'vmin', 'cur', 'ckw', 'ckwh', 'an1'];
@@ -546,12 +558,11 @@ const MonitorPage = () => {
         const temp = src.tavg ?? src.tmax ?? bs.temperature;
         const currentRaw = src.cur ?? bs.current;
 
-        // helper format A → 0,12A
         const formatAmp = (val) => {
             const n = toNumberOrNull(val);
             if (n == null) return '--';
             const abs = Math.abs(n);
-            const s = abs.toFixed(2).replace('.', ','); // 0.12 -> 0,12
+            const s = abs.toFixed(2).replace('.', ',');
             return `${s}A`;
         };
 
@@ -564,15 +575,12 @@ const MonitorPage = () => {
             mode = 'Không xác định';
             currentLine = 'Dòng sạc/xả: --';
         } else if (cur > 0) {
-            // dương → đang sạc
             mode = 'Đang sạc';
             currentLine = `Dòng sạc: ${formatAmp(cur)}`;
         } else if (cur < 0) {
-            // âm → đang xả
             mode = 'Đang xả';
             currentLine = `Dòng xả: ${formatAmp(cur)}`;
         } else {
-            // = 0 → đang chờ
             mode = 'Đang chờ';
             currentLine = 'Dòng sạc/xả: Đang chờ';
         }
@@ -612,33 +620,22 @@ const MonitorPage = () => {
         const latVal = src.lat;
         const lonVal = src.lon;
 
-        // ====== TRẠNG THÁI MÁY & TRẠNG THÁI XE (MQTT) ======
         const accValNum = toNumberOrNull(mqttSrc.acc);
         const spdNum = toNumberOrNull(mqttSrc.spd);
         const vgpNum = toNumberOrNull(mqttSrc.vgp);
 
-        // Trạng thái máy:
-        // acc = 1 → tắt máy
-        // acc = 0 hoặc null → mở máy
         let machineStatus = '--';
         if (accValNum === 1) {
             machineStatus = 'Tắt máy';
         } else {
-            // 0 hoặc null → mở máy
             machineStatus = 'Mở máy';
         }
 
-        // Trạng thái xe:
-        // - Nếu acc = 1 → đỗ xe
-        // - Nếu acc = 0 hoặc null → dùng speed, nếu không có thì dùng vgp:
-        //      > 0 → đang chạy X km/h
-        //      = 0 hoặc không có → đỗ xe / không xác định
         let vehicleStatus = '--';
 
         if (accValNum === 1) {
             vehicleStatus = 'Đỗ xe';
         } else {
-            // acc = 0 hoặc null → check speed / vgp
             let usedSpeed = null;
             if (spdNum != null) {
                 usedSpeed = spdNum;
@@ -647,8 +644,7 @@ const MonitorPage = () => {
             }
 
             if (usedSpeed == null) {
-                vehicleStatus = 'Đổ xe';
-                // vehicleStatus = 'Không xác định';
+                vehicleStatus = 'Đỗ xe';
             } else if (usedSpeed > 0) {
                 vehicleStatus = `Đang chạy ${usedSpeed} km/h`;
             } else {
@@ -675,8 +671,10 @@ const MonitorPage = () => {
                 {speed != null && <div>Tốc độ : {speed} km/h</div>}
                 {distance != null && <div>Quãng đường: {distance} km</div>}
 
-                <div>Vị trí: {address || '--'}</div>
+                <div>Vị trí (hiện tại): {address || '--'}</div>
+                {addressOld && <div>Vị trí (trước sáp nhập): {addressOld}</div>}
                 <div>Tọa độ: {latVal && lonVal ? `${latVal}, ${lonVal}` : '--'}</div>
+
                 {/* <div>Địa chỉ: {address || '--'}</div> */}
 
                 {/* dữ liệu khác từ mqtt tạm cmt lại sau này hiển thị sau chứ không bỏ */}
@@ -1034,7 +1032,7 @@ const MonitorPage = () => {
 
                 {showPopup && detailTab === 'battery' && (
                     <aside className="iky-monitor__right">
-                        <h4 className="iky-monitor__right-title">Thông tin hiển thị</h4>\
+                        <h4 className="iky-monitor__right-title">Thông tin hiển thị</h4>
                         <div className="iky-monitor__battery-box">{renderBatteryInfo()}</div>
                     </aside>
                 )}

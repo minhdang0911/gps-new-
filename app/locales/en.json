@@ -452,5 +452,71 @@
         "messages": {
             "loadError": "Failed to load usage sessions"
         }
+    },
+    "chargingSessionReport": {
+        "title": "Charging session report",
+        "subtitle": "Filter by session, battery, charge code, SOH, time range...",
+        "filter": {
+            "title": "Filters",
+            "sessionId": "Session ID",
+            "sessionIdPlaceholder": "Enter session ID",
+            "batteryId": "Battery ID",
+            "batteryIdPlaceholder": "Enter battery ID",
+            "chargeCode": "Charge code",
+            "chargeCodePlaceholder": "Enter charge code",
+            "soh": "SOH",
+            "sohPlaceholder": "Ex: 80",
+            "timeRange": "Time range",
+            "search": "Search",
+            "reset": "Clear filters"
+        },
+        "table": {
+            "title": "Charging sessions",
+            "total": "Total: {total} records",
+            "index": "#",
+            "sessionId": "Session ID",
+            "batteryId": "Battery ID",
+            "chargeCode": "Charge code",
+            "soh": "SOH",
+            "startTime": "Start time",
+            "endTime": "End time",
+            "showTotal": "Total {total} records"
+        }
+    },
+    "tripSessionReport": {
+        "title": "Trip session report",
+        "subtitle": "Filter by session, trip code, device, IMEI, battery, SOH, time range...",
+        "filter": {
+            "title": "Filters",
+            "sessionId": "Session ID",
+            "sessionIdPlaceholder": "Enter session ID",
+            "tripCode": "Trip code",
+            "tripCodePlaceholder": "Enter trip code",
+            "batteryId": "Battery ID",
+            "batteryIdPlaceholder": "Enter battery ID",
+            "deviceId": "Device ID",
+            "deviceIdPlaceholder": "Enter device ID",
+            "imei": "IMEI",
+            "imeiPlaceholder": "Enter IMEI",
+            "soh": "SOH",
+            "sohPlaceholder": "Ex: 80",
+            "timeRange": "Time range",
+            "search": "Search",
+            "reset": "Clear filters"
+        },
+        "table": {
+            "title": "Trip sessions",
+            "total": "Total: {total} records",
+            "index": "#",
+            "sessionId": "Session ID",
+            "tripCode": "Trip code",
+            "deviceId": "Device ID",
+            "imei": "IMEI",
+            "batteryId": "Battery ID",
+            "soh": "SOH",
+            "startTime": "Start time",
+            "endTime": "End time",
+            "showTotal": "Total {total} records"
+        }
     }
 }

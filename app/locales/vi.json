@@ -452,5 +452,71 @@
         "messages": {
             "loadError": "Không tải được danh sách phiên sử dụng"
         }
+    },
+    "chargingSessionReport": {
+        "title": "Báo cáo sạc (Charging Session)",
+        "subtitle": "Lọc theo session, pin, mã sạc, SOH, khoảng thời gian...",
+        "filter": {
+            "title": "Bộ lọc",
+            "sessionId": "Mã phiên (Session ID)",
+            "sessionIdPlaceholder": "Nhập mã phiên",
+            "batteryId": "Mã pin (Battery ID)",
+            "batteryIdPlaceholder": "Nhập mã pin",
+            "chargeCode": "Mã sạc (Charge code)",
+            "chargeCodePlaceholder": "Nhập mã sạc",
+            "soh": "SOH",
+            "sohPlaceholder": "VD: 80",
+            "timeRange": "Khoảng thời gian",
+            "search": "Tìm kiếm",
+            "reset": "Xoá lọc"
+        },
+        "table": {
+            "title": "Danh sách Charging Session",
+            "total": "Tổng: {total} bản ghi",
+            "index": "#",
+            "sessionId": "Mã phiên",
+            "batteryId": "Mã pin",
+            "chargeCode": "Mã sạc",
+            "soh": "SOH",
+            "startTime": "Thời gian bắt đầu",
+            "endTime": "Thời gian kết thúc",
+            "showTotal": "Tổng {total} bản ghi"
+        }
+    },
+    "tripSessionReport": {
+        "title": "Báo cáo hành trình (Trip Session)",
+        "subtitle": "Lọc theo session, mã trip, thiết bị, IMEI, pin, SOH, khoảng thời gian...",
+        "filter": {
+            "title": "Bộ lọc",
+            "sessionId": "Mã phiên (Session ID)",
+            "sessionIdPlaceholder": "Nhập mã phiên",
+            "tripCode": "Mã chuyến (Trip code)",
+            "tripCodePlaceholder": "Nhập mã chuyến",
+            "batteryId": "Mã pin (Battery ID)",
+            "batteryIdPlaceholder": "Nhập mã pin",
+            "deviceId": "Mã thiết bị (Device ID)",
+            "deviceIdPlaceholder": "Nhập mã thiết bị",
+            "imei": "IMEI",
+            "imeiPlaceholder": "Nhập IMEI",
+            "soh": "SOH",
+            "sohPlaceholder": "VD: 80",
+            "timeRange": "Khoảng thời gian",
+            "search": "Tìm kiếm",
+            "reset": "Xoá lọc"
+        },
+        "table": {
+            "title": "Danh sách Trip Session",
+            "total": "Tổng: {total} bản ghi",
+            "index": "#",
+            "sessionId": "Mã phiên",
+            "tripCode": "Mã chuyến",
+            "deviceId": "Mã thiết bị",
+            "imei": "IMEI",
+            "batteryId": "Mã pin",
+            "soh": "SOH",
+            "startTime": "Thời gian bắt đầu",
+            "endTime": "Thời gian kết thúc",
+            "showTotal": "Tổng {total} bản ghi"
+        }
     }
 }

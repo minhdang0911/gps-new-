@@ -1,14 +1,20 @@
 // app/report/charging-session/page.jsx
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography } from 'antd';
 import { SearchOutlined, ReloadOutlined } from '@ant-design/icons';
 import { getChargingSessions } from '../../lib/api/chargingSession';
 import '../usage-session/usageSession.css'; // xài chung style với usage
 
+import { usePathname } from 'next/navigation';
+import vi from '../../locales/vi.json';
+import en from '../../locales/en.json';
+
 const { RangePicker } = DatePicker;
 const { Title, Text } = Typography;
+
+const locales = { vi, en };
 
 const ChargingSessionReportPage = () => {
     const [form] = Form.useForm();
@@ -19,6 +25,30 @@ const ChargingSessionReportPage = () => {
         pageSize: 20,
         total: 0,
     });
+
+    const pathname = usePathname() || '/';
+    const [isEn, setIsEn] = useState(false);
+
+    // detect /en ở cuối URL
+    const isEnFromPath = useMemo(() => {
+        const segments = pathname.split('/').filter(Boolean);
+        const last = segments[segments.length - 1];
+        return last === 'en';
+    }, [pathname]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        if (isEnFromPath) {
+            setIsEn(true);
+            localStorage.setItem('iky_lang', 'en');
+        } else {
+            const saved = localStorage.getItem('iky_lang');
+            setIsEn(saved === 'en');
+        }
+    }, [isEnFromPath]);
+
+    const t = isEn ? locales.en.chargingSessionReport : locales.vi.chargingSessionReport;
 
     const buildPayload = (values, page, limit) => {
         const payload = {
@@ -80,38 +110,38 @@ const ChargingSessionReportPage = () => {
 
     const columns = [
         {
-            title: '#',
+            title: t.table.index,
             dataIndex: 'index',
             width: 60,
             render: (text, record, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
         },
         {
-            title: 'Session ID',
+            title: t.table.sessionId,
             dataIndex: 'sessionId',
             ellipsis: true,
         },
         {
-            title: 'Battery ID',
+            title: t.table.batteryId,
             dataIndex: 'batteryId',
             ellipsis: true,
         },
         {
-            title: 'Charge code',
+            title: t.table.chargeCode,
             dataIndex: 'chargeCode',
             ellipsis: true,
         },
         {
-            title: 'SOH',
+            title: t.table.soh,
             dataIndex: 'soh',
             width: 80,
         },
         {
-            title: 'Start time',
+            title: t.table.startTime,
             dataIndex: 'start',
             ellipsis: true,
         },
         {
-            title: 'End time',
+            title: t.table.endTime,
             dataIndex: 'end',
             ellipsis: true,
         },
@@ -121,33 +151,33 @@ const ChargingSessionReportPage = () => {
         <div className="usage-report-page">
             <div className="usage-report-header">
                 <Title level={4} style={{ margin: 0 }}>
-                    Báo cáo sạc (Charging Session)
+                    {t.title}
                 </Title>
-                <Text type="secondary">Lọc theo session, pin, mã sạc, SOH, khoảng thời gian...</Text>
+                <Text type="secondary">{t.subtitle}</Text>
             </div>
 
             <Row gutter={[16, 16]} className="usage-report-row">
                 {/* FILTER */}
                 <Col xs={24} lg={7}>
-                    <Card className="usage-filter-card" title="Bộ lọc" size="small">
+                    <Card className="usage-filter-card" title={t.filter.title} size="small">
                         <Form form={form} layout="vertical" onFinish={onFinish}>
-                            <Form.Item label="Session ID" name="sessionId">
-                                <Input placeholder="Nhập sessionId" allowClear />
+                            <Form.Item label={t.filter.sessionId} name="sessionId">
+                                <Input placeholder={t.filter.sessionIdPlaceholder} allowClear />
                             </Form.Item>
 
-                            <Form.Item label="Battery ID" name="batteryId">
-                                <Input placeholder="Nhập batteryId" allowClear />
+                            <Form.Item label={t.filter.batteryId} name="batteryId">
+                                <Input placeholder={t.filter.batteryIdPlaceholder} allowClear />
                             </Form.Item>
 
-                            <Form.Item label="Charge code" name="chargeCode">
-                                <Input placeholder="Nhập chargeCode" allowClear />
+                            <Form.Item label={t.filter.chargeCode} name="chargeCode">
+                                <Input placeholder={t.filter.chargeCodePlaceholder} allowClear />
                             </Form.Item>
 
-                            <Form.Item label="SOH" name="soh">
-                                <Input placeholder="VD: 80" allowClear />
+                            <Form.Item label={t.filter.soh} name="soh">
+                                <Input placeholder={t.filter.sohPlaceholder} allowClear />
                             </Form.Item>
 
-                            <Form.Item label="Khoảng thời gian" name="timeRange">
+                            <Form.Item label={t.filter.timeRange} name="timeRange">
                                 <RangePicker showTime style={{ width: '100%' }} format="YYYY-MM-DD HH:mm:ss" />
                             </Form.Item>
 
@@ -164,10 +194,10 @@ const ChargingSessionReportPage = () => {
                                         icon={<SearchOutlined />}
                                         loading={loading}
                                     >
-                                        Tìm kiếm
+                                        {t.filter.search}
                                     </Button>
                                     <Button icon={<ReloadOutlined />} onClick={onReset} disabled={loading}>
-                                        Xoá lọc
+                                        {t.filter.reset}
                                     </Button>
                                 </Space>
                             </Form.Item>
@@ -180,10 +210,10 @@ const ChargingSessionReportPage = () => {
                     <Card
                         className="usage-table-card"
                         size="small"
-                        title="Danh sách Charging Session"
+                        title={t.table.title}
                         extra={
                             <Text type="secondary" style={{ fontSize: 12 }}>
-                                Tổng: {pagination.total} bản ghi
+                                {t.table.total.replace('{total}', String(pagination.total))}
                             </Text>
                         }
                     >
@@ -198,7 +228,7 @@ const ChargingSessionReportPage = () => {
                                 total: pagination.total,
                                 showSizeChanger: true,
                                 pageSizeOptions: ['10', '20', '50', '100'],
-                                showTotal: (total) => `Tổng {total} bản ghi`,
+                                showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
                             }}
                             onChange={handleTableChange}
                             scroll={{ x: 800 }}
