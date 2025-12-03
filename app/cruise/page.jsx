@@ -8,23 +8,60 @@ import markerIconImg from '../assets/marker-red.png';
 import { getCruiseHistory } from '../lib/api/cruise';
 import { getDevices } from '../lib/api/devices';
 
+// 🔥 i18n giống Monitor / StatusBar
+import vi from '../locales/vi.json';
+import en from '../locales/en.json';
+import { usePathname } from 'next/navigation';
+
+const locales = { vi, en };
+
 const GOONG_API_KEY = process.env.NEXT_PUBLIC_GOONG_API_KEY;
 
-const buildPopupHtml = (p) => `
+// thêm t vào để popup dùng đa ngôn ngữ
+const buildPopupHtml = (p, t) => `
     <div class="iky-cruise-popup">
-        <div><strong>Biển số xe:</strong> ${p.licensePlate || '--'}</div>
-        <div><strong>Loại xe:</strong> ${p.vehicleName || '--'}</div>
-        <div><strong>Hãng:</strong> ${p.manufacturer || '--'}</div>
-        <div><strong>Thời điểm:</strong> ${p.dateTime || '--'}</div>
-        <div><strong>Vị trí hiện tại:</strong> ${p.address || '--'}</div>
-        <div><strong>Tọa độ:</strong> ${p.lat}, ${p.lon}</div>
-        <div><strong>Trạng thái máy:</strong> ${p.machineStatus || '--'}</div>
-        <div><strong>Trạng thái xe:</strong> ${p.vehicleStatus || '--'}</div>
-        <div><strong>Vận tốc:</strong> ${p.velocity || '--'}</div>
+        <div><strong>${t.popup.licensePlate}:</strong> ${p.licensePlate || '--'}</div>
+        <div><strong>${t.popup.vehicleType}:</strong> ${p.vehicleName || '--'}</div>
+        <div><strong>${t.popup.manufacturer}:</strong> ${p.manufacturer || '--'}</div>
+        <div><strong>${t.popup.time}:</strong> ${p.dateTime || '--'}</div>
+        <div><strong>${t.popup.currentLocation}:</strong> ${p.address || '--'}</div>
+        <div><strong>${t.popup.coordinate}:</strong> ${p.lat}, ${p.lon}</div>
+        <div><strong>${t.popup.machineStatus}:</strong> ${p.machineStatus || '--'}</div>
+        <div><strong>${t.popup.vehicleStatus}:</strong> ${p.vehicleStatus || '--'}</div>
+        <div><strong>${t.popup.speed}:</strong> ${p.velocity || '--'}</div>
     </div>
 `;
 
+// format Date -> "YYYY-MM-DDTHH:mm" cho input datetime-local (giữ đúng giờ local)
+const toInputDateTime = (date) => {
+    const tzOffset = date.getTimezoneOffset() * 60000; // ms
+    const localISO = new Date(date.getTime() - tzOffset).toISOString();
+    return localISO.slice(0, 16); // "YYYY-MM-DDTHH:mm"
+};
+
 const CruisePage = () => {
+    // 🔥 LANG giống MonitorPage
+    const pathname = usePathname() || '/';
+    const [isEn, setIsEn] = useState(false);
+
+    useEffect(() => {
+        const segments = pathname.split('/').filter(Boolean);
+        const last = segments[segments.length - 1];
+        const isEnFromPath = last === 'en';
+
+        if (typeof window === 'undefined') return;
+
+        if (isEnFromPath) {
+            setIsEn(true);
+            localStorage.setItem('iky_lang', 'en');
+        } else {
+            const saved = localStorage.getItem('iky_lang');
+            setIsEn(saved === 'en');
+        }
+    }, [pathname]);
+
+    const t = isEn ? locales.en.cruise : locales.vi.cruise;
+
     const [routeData, setRouteData] = useState([]);
     const [activeIndex, setActiveIndex] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
@@ -45,11 +82,18 @@ const CruisePage = () => {
     const [loadingAddress, setLoadingAddress] = useState(false);
     const [addressError, setAddressError] = useState(null);
 
+    // leaflet refs
     const mapRef = useRef(null);
     const polylineRef = useRef(null);
     const movingMarkerRef = useRef(null);
-    const pointMarkersRef = useRef([]);
+    const pointMarkersRef = useRef([]); // index = index của routeData
     const animationFrameRef = useRef(null);
+    const popupRef = useRef(null);
+
+    const highlightedMarkerRef = useRef(null);
+
+    // list refs
+    const itemRefs = useRef([]);
 
     const animStateRef = useRef({
         segmentIndex: 0,
@@ -58,6 +102,7 @@ const CruisePage = () => {
 
     const isPlayingRef = useRef(false);
 
+    // ===== LOAD LEAFLET =====
     useEffect(() => {
         const loadLeaflet = async () => {
             const L = await import('leaflet');
@@ -67,7 +112,7 @@ const CruisePage = () => {
         loadLeaflet();
     }, []);
 
-    // Format datetime-local -> "YYYY-MM-DD HH:mm:ss"
+    // Format datetime-local -> "YYYY-MM-DD HH:mm:ss" cho API
     const toApiDateTime = (value) => {
         if (!value) return '';
 
@@ -81,6 +126,68 @@ const CruisePage = () => {
         }
 
         return `${date} ${time}`;
+    };
+
+    // handler cho 3 nút nhanh: 1 giờ / 8 giờ / 24 giờ
+    const handlePresetRange = (hours) => {
+        const now = new Date();
+        const startDate = new Date(now.getTime() - hours * 60 * 60 * 1000);
+
+        setEnd(toInputDateTime(now));
+        setStart(toInputDateTime(startDate));
+    };
+
+    // mở popup thông tin tại point p (dùng popupRef chung)
+    const openInfoPopup = (p) => {
+        if (!LMap || !mapRef.current) return;
+        if (!p || p.lat == null || p.lon == null) return;
+
+        if (!popupRef.current) {
+            popupRef.current = LMap.popup({
+                closeButton: true,
+                autoPan: true,
+            });
+        }
+
+        popupRef.current.setLatLng([p.lat, p.lon]).setContent(buildPopupHtml(p, t)).openOn(mapRef.current);
+    };
+
+    // highlight marker đang chọn
+    const highlightMarker = (idx) => {
+        if (!pointMarkersRef.current.length) return;
+
+        // bỏ highlight cũ
+        if (highlightedMarkerRef.current) {
+            highlightedMarkerRef.current.setStyle({
+                radius: 6,
+                weight: 2,
+                color: '#22c55e',
+                fillColor: '#22c55e',
+            });
+        }
+
+        const mk = pointMarkersRef.current[idx];
+        if (!mk) return;
+
+        mk.setStyle({
+            radius: 10,
+            weight: 4,
+            color: '#facc15',
+            fillColor: '#facc15',
+        });
+
+        highlightedMarkerRef.current = mk;
+    };
+
+    // scroll list bên trái tới item index (dùng scrollIntoView cho chắc)
+    const smoothScrollToItem = (idx) => {
+        const item = itemRefs.current[idx];
+        if (!item) return;
+
+        item.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+        });
     };
 
     // 🔥 reverse geocode cho 1 point trong routeData (index)
@@ -138,7 +245,7 @@ const CruisePage = () => {
             }
 
             if (!addr) {
-                setAddressError('Không lấy được địa chỉ.');
+                setAddressError(t.error.addressFailed);
                 return;
             }
 
@@ -151,13 +258,13 @@ const CruisePage = () => {
             });
         } catch (err) {
             console.error('Fetch address error (cruise):', err);
-            setAddressError('Không lấy được địa chỉ.');
+            setAddressError(t.error.addressFailed);
         } finally {
             setLoadingAddress(false);
         }
     };
 
-    // Handle point selection from list/slider/map
+    // chọn 1 point (từ list/slider/map), không di chuyển marker đỏ
     const handleSelectPoint = (idx) => {
         if (!routeData.length) return;
 
@@ -187,17 +294,27 @@ const CruisePage = () => {
         if (mapRef.current) {
             mapRef.current.panTo([p.lat, p.lon]);
         }
+    };
 
-        if (movingMarkerRef.current) {
-            movingMarkerRef.current.setLatLng([p.lat, p.lon]);
-            movingMarkerRef.current.setPopupContent(buildPopupHtml(p));
-            movingMarkerRef.current.openPopup();
+    // click point (từ list / map / slider)
+    const handlePointClick = (idx) => {
+        if (!routeData.length) return;
+
+        const p = routeData[idx];
+
+        // set activeIndex -> trigger effect scroll + highlight
+        setActiveIndex(idx);
+        handleSelectPoint(idx);
+
+        // popup
+        if (p) {
+            openInfoPopup(p);
         }
     };
 
     const handleSliderChange = (e) => {
         const idx = Number(e.target.value);
-        handleSelectPoint(idx);
+        handlePointClick(idx);
     };
 
     // Load device list
@@ -283,7 +400,7 @@ const CruisePage = () => {
         return () => map.remove();
     }, [LMap]);
 
-    // Calculate total distance (haversine, khỏi xài Leaflet)
+    // Calculate total distance (haversine)
     useEffect(() => {
         if (routeData.length < 2) {
             setTotalKm(0);
@@ -323,11 +440,12 @@ const CruisePage = () => {
         setTotalKm(totalMeters / 1000);
     }, [routeData]);
 
-    // Render route on map
+    // Render route on map (polyline + chấm xanh + marker đỏ)
     useEffect(() => {
         const map = mapRef.current;
         if (!map || !LMap) return;
 
+        // clear cũ
         if (polylineRef.current) {
             map.removeLayer(polylineRef.current);
             polylineRef.current = null;
@@ -338,16 +456,21 @@ const CruisePage = () => {
         }
         pointMarkersRef.current.forEach((m) => map.removeLayer(m));
         pointMarkersRef.current = [];
+        highlightedMarkerRef.current = null;
 
         if (!routeData.length) return;
 
-        const routeWithCoords = routeData.filter((p) => typeof p.lat === 'number' && typeof p.lon === 'number');
+        // lấy các index hợp lệ có lat/lon
+        const validIndices = routeData
+            .map((p, idx) => (typeof p.lat === 'number' && typeof p.lon === 'number' ? idx : null))
+            .filter((idx) => idx !== null);
 
-        if (!routeWithCoords.length) {
-            return;
-        }
+        if (!validIndices.length) return;
 
-        const latlngs = routeWithCoords.map((p) => [p.lat, p.lon]);
+        const latlngs = validIndices.map((idx) => {
+            const p = routeData[idx];
+            return [p.lat, p.lon];
+        });
 
         polylineRef.current = LMap.polyline(latlngs, {
             color: '#f97316',
@@ -355,9 +478,14 @@ const CruisePage = () => {
             opacity: 0.9,
         }).addTo(map);
 
-        pointMarkersRef.current = routeWithCoords.map((p) => {
-            const isStart = p === routeWithCoords[0];
-            const isEnd = p === routeWithCoords[routeWithCoords.length - 1];
+        const firstIdx = validIndices[0];
+        const lastIdx = validIndices[validIndices.length - 1];
+
+        // tạo chấm xanh
+        validIndices.forEach((idx) => {
+            const p = routeData[idx];
+            const isStart = idx === firstIdx;
+            const isEnd = idx === lastIdx;
 
             const marker = LMap.circleMarker([p.lat, p.lon], {
                 radius: isStart || isEnd ? 7 : 6,
@@ -380,18 +508,15 @@ const CruisePage = () => {
                 LMap.marker([p.lat, p.lon], { icon: divIcon }).addTo(map);
             }
 
-            const globalIndex = routeData.indexOf(p);
+            pointMarkersRef.current[idx] = marker;
 
+            // click chấm xanh: sync hai bên
             marker.on('click', () => {
-                if (globalIndex >= 0) {
-                    handleSelectPoint(globalIndex);
-                }
+                handlePointClick(idx);
             });
-
-            return marker;
         });
 
-        const firstPoint = routeWithCoords[0];
+        const firstPoint = routeData[firstIdx];
 
         const customIcon = LMap.icon({
             iconUrl: markerIconImg.src,
@@ -401,9 +526,7 @@ const CruisePage = () => {
 
         movingMarkerRef.current = LMap.marker([firstPoint.lat, firstPoint.lon], {
             icon: customIcon,
-        })
-            .addTo(map)
-            .bindPopup(buildPopupHtml(firstPoint));
+        }).addTo(map);
 
         setIsPlaying(false);
         isPlayingRef.current = false;
@@ -415,20 +538,15 @@ const CruisePage = () => {
         map.dragging.enable();
     }, [routeData, LMap]);
 
-    // Sync marker with activeIndex
+    // khi address/activeIndex đổi, nếu popup đang mở thì update nội dung
     useEffect(() => {
-        if (!routeData.length || !movingMarkerRef.current || !mapRef.current) return;
+        if (!popupRef.current || !routeData.length) return;
 
         const p = routeData[activeIndex];
-        if (!p) return;
+        if (!p || p.lat == null || p.lon == null) return;
 
-        if (p.lat == null || p.lon == null) {
-            return;
-        }
-
-        movingMarkerRef.current.setLatLng([p.lat, p.lon]);
-        movingMarkerRef.current.setPopupContent(buildPopupHtml(p));
-    }, [activeIndex, routeData]);
+        popupRef.current.setLatLng([p.lat, p.lon]).setContent(buildPopupHtml(p, t));
+    }, [routeData, activeIndex, t]);
 
     // 🔥 Fetch địa chỉ cho point đang active (chỉ khi không play để đỡ spam API)
     useEffect(() => {
@@ -439,7 +557,14 @@ const CruisePage = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeIndex, routeData]);
 
-    // Animation loop
+    // 🔥 Đồng bộ: mỗi khi activeIndex đổi -> scroll list + highlight marker
+    useEffect(() => {
+        if (!routeData.length) return;
+        smoothScrollToItem(activeIndex);
+        highlightMarker(activeIndex);
+    }, [activeIndex, routeData]);
+
+    // Animation loop cho marker đỏ
     useEffect(() => {
         if (!routeData.length || !movingMarkerRef.current) return;
 
@@ -523,23 +648,23 @@ const CruisePage = () => {
         const token = localStorage.getItem('accessToken');
 
         if (!token) {
-            setError('Không tìm thấy accessToken, vui lòng kiểm tra lại đăng nhập.');
+            setError(t.error.noToken);
             return;
         }
 
         if (!selectedDeviceId || !selectedImei) {
-            setError('Vui lòng chọn phương tiện.');
+            setError(t.error.noVehicle);
             return;
         }
 
         if (!start || !end) {
-            setError('Vui lòng nhập đầy đủ thời gian bắt đầu và kết thúc.');
+            setError(t.error.missingTime);
             return;
         }
 
         const currentDevice = deviceList.find((d) => d._id === selectedDeviceId);
         if (!currentDevice) {
-            setError('Không tìm thấy thông tin phương tiện.');
+            setError(t.error.noVehicleInfo);
             return;
         }
 
@@ -564,7 +689,7 @@ const CruisePage = () => {
 
             if (!list.length) {
                 setRouteData([]);
-                setError('Không có dữ liệu lộ trình trong khoảng thời gian này.');
+                setError(t.error.noData);
                 return;
             }
 
@@ -582,19 +707,18 @@ const CruisePage = () => {
                 selector: item._id,
                 duration: 0,
                 dateTime: item.created ? new Date(item.created).toLocaleString() : item.tim || '',
-                // vẫn giữ logic cũ, nếu m muốn sync rule acc/spd/vgp như MonitorPage thì tao chỉnh tiếp
-                machineStatus: item.acc === 1 ? 'Mở máy' : 'Tắt máy',
-                velocity: item.spd != null ? `${item.spd} km/h` : '0 km/h',
-                vehicleStatus: item.acc === 1 ? 'Xe đang chạy' : 'Đỗ xe',
-                gpsSignText: item.gps === 1 ? 'Có GPS' : '',
-                address: '', // sẽ được fill bởi fetchAddressForPoint
+                machineStatus: item.acc === 1 ? t.status.engineOn : t.status.engineOff,
+                velocity: item.spd != null ? `${item.spd} km/h` : `0 km/h`,
+                vehicleStatus: item.acc === 1 ? t.status.vehicleRunning : t.status.vehicleParking,
+                gpsSignText: item.gps === 1 ? t.status.gpsAvailable : '',
+                address: '',
             }));
 
             setRouteData(mapped);
             setActiveIndex(0);
         } catch (e) {
             console.error(e);
-            setError('Lỗi tải dữ liệu lộ trình. Vui lòng thử lại.');
+            setError(t.error.loadFailed);
         } finally {
             setLoadingRoute(false);
         }
@@ -618,9 +742,9 @@ const CruisePage = () => {
         const p = routeData[0];
         if (movingMarkerRef.current && mapRef.current && p.lat != null && p.lon != null) {
             movingMarkerRef.current.setLatLng([p.lat, p.lon]);
-            movingMarkerRef.current.setPopupContent(buildPopupHtml(p));
             mapRef.current.panTo([p.lat, p.lon]);
         }
+        highlightMarker(0);
     };
 
     return (
@@ -628,19 +752,19 @@ const CruisePage = () => {
             {/* LEFT PANEL */}
             <aside className="iky-cruise__left">
                 <div className="iky-cruise__left-card">
-                    <div className="iky-cruise__left-header">Xem lại lộ trình</div>
+                    <div className="iky-cruise__left-header">{t.title}</div>
 
                     <div className="iky-cruise__form">
                         <div className="iky-cruise__form-row">
-                            <label>Chọn xe</label>
+                            <label>{t.form.selectVehicle}</label>
                             <select value={selectedDeviceId} onChange={handleDeviceChange} disabled={loadingDevices}>
-                                {loadingDevices && <option>Đang tải...</option>}
+                                {loadingDevices && <option>{t.form.loadingDevices}</option>}
                                 {!loadingDevices && (
                                     <>
-                                        <option value="">-- Chọn xe --</option>
+                                        <option value="">{t.form.selectVehiclePlaceholder}</option>
                                         {deviceList.map((d) => (
                                             <option key={d._id} value={d._id}>
-                                                {d.license_plate || 'Không rõ biển số'}
+                                                {d.license_plate || t.common.unknownPlate}
                                             </option>
                                         ))}
                                     </>
@@ -648,17 +772,44 @@ const CruisePage = () => {
                             </select>
                         </div>
 
+                        {/* Nút chọn nhanh 1 / 8 / 24 giờ */}
+                        <div className="iky-cruise__form-row iky-cruise__quick-row">
+                            <div className="iky-cruise__quick-group">
+                                <button
+                                    type="button"
+                                    className="iky-cruise__quick-btn"
+                                    onClick={() => handlePresetRange(1)}
+                                >
+                                    {t.quick.oneHour}
+                                </button>
+                                <button
+                                    type="button"
+                                    className="iky-cruise__quick-btn"
+                                    onClick={() => handlePresetRange(8)}
+                                >
+                                    {t.quick.eightHours}
+                                </button>
+                                <button
+                                    type="button"
+                                    className="iky-cruise__quick-btn"
+                                    onClick={() => handlePresetRange(24)}
+                                >
+                                    {t.quick.twentyFourHours}
+                                </button>
+                            </div>
+                        </div>
+
                         <div className="iky-cruise__form-row">
-                            <label>Từ ngày</label>
+                            <label>{t.form.from}</label>
                             <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
                         </div>
                         <div className="iky-cruise__form-row">
-                            <label>Đến ngày</label>
+                            <label>{t.form.to}</label>
                             <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
                         </div>
 
                         <button className="iky-cruise__load-btn" onClick={handleLoadRoute} disabled={loadingRoute}>
-                            {loadingRoute ? 'Đang tải...' : 'Tải lộ trình'}
+                            {loadingRoute ? t.form.loadingRoute : t.form.loadRoute}
                         </button>
 
                         {error && <div className="iky-cruise__error">{error}</div>}
@@ -672,15 +823,17 @@ const CruisePage = () => {
                     {routeData.length > 0 && (
                         <>
                             <div className="iky-cruise__result">
-                                <span>Kết quả</span>
+                                <span>{t.result.label}</span>
                                 <span>
                                     {activeIndex + 1}/{routeData.length}
                                 </span>
                             </div>
 
                             <div className="iky-cruise__distance">
-                                <span>Tổng km di chuyển:</span>
-                                <span>{totalKm.toFixed(3)} km</span>
+                                <span>{t.result.totalDistance}</span>
+                                <span>
+                                    {totalKm.toFixed(3)} {t.result.unitKm}
+                                </span>
                             </div>
 
                             <div className="iky-cruise__controls">
@@ -706,11 +859,13 @@ const CruisePage = () => {
                                 {routeData.map((p, idx) => (
                                     <div
                                         key={p.selector || idx}
+                                        ref={(el) => (itemRefs.current[idx] = el)}
                                         className={
                                             'iky-cruise__list-item' +
                                             (idx === activeIndex ? ' iky-cruise__list-item--active' : '')
                                         }
-                                        onClick={() => handleSelectPoint(idx)}
+                                        id={`cruise-item-${idx}`}
+                                        onClick={() => handlePointClick(idx)}
                                     >
                                         <div className="iky-cruise__list-time">{p.dateTime}</div>
                                         <div className="iky-cruise__list-meta">

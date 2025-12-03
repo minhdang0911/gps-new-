@@ -3,17 +3,23 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import './MonitorPage.css';
 
-import { getDevices, getDeviceInfo, lockDevice, unlockDevice } from './lib/api/devices';
+import { getDevices, getDeviceInfo } from './lib/api/devices';
 import { getBatteryStatusByImei } from './lib/api/batteryStatus';
 import { getLastCruise } from './lib/api/cruise';
 
 import markerIcon from './assets/marker-red.png';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { message, Modal } from 'antd';
 import { CheckCircleFilled, LockFilled } from '@ant-design/icons';
 
 // 🔥 MQTT
 import MqttConnector from './components/MqttConnector';
+
+// 🔥 i18n giống StatusBar
+import vi from './locales/vi.json';
+import en from './locales/en.json';
+
+const locales = { vi, en };
 
 const { confirm } = Modal;
 const GOONG_API_KEY = process.env.NEXT_PUBLIC_GOONG_API_KEY;
@@ -29,6 +35,31 @@ const toLocalDateTimeInput = (date) => {
 };
 
 const MonitorPage = () => {
+    // ----- LANG -----
+    const pathname = usePathname() || '/';
+    const [isEn, setIsEn] = useState(false);
+
+    const isEnFromPath = useMemo(() => {
+        const segments = pathname.split('/').filter(Boolean);
+        const last = segments[segments.length - 1];
+        return last === 'en';
+    }, [pathname]);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        if (isEnFromPath) {
+            setIsEn(true);
+            localStorage.setItem('iky_lang', 'en');
+        } else {
+            const saved = localStorage.getItem('iky_lang');
+            setIsEn(saved === 'en');
+        }
+    }, [isEnFromPath]);
+
+    const t = isEn ? locales.en.monitor : locales.vi.monitor;
+
+    // ----- STATE GỐC -----
     const [leftTab, setLeftTab] = useState('monitor');
     const [showPopup, setShowPopup] = useState(false);
     const [detailTab, setDetailTab] = useState('status');
@@ -60,6 +91,7 @@ const MonitorPage = () => {
 
     const [lockLoading, setLockLoading] = useState(false);
     const [lockError, setLockError] = useState(null);
+    const [pendingAction, setPendingAction] = useState(null);
 
     const [address, setAddress] = useState('');
     const [loadingAddress, setLoadingAddress] = useState(false);
@@ -191,6 +223,7 @@ const MonitorPage = () => {
         if (deviceList.length > 0 && !selectedDevice) {
             handleSelectDevice(deviceList[0]);
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [deviceList]);
 
     useEffect(() => {
@@ -213,7 +246,7 @@ const MonitorPage = () => {
             setHistoryStart(toLocalDateTimeInput(start));
             setHistoryEnd(toLocalDateTimeInput(end));
         }
-    }, [deviceList]);
+    }, [deviceList, historyDeviceId, historyStart, historyEnd]);
 
     const fetchAddressFromGoong = async (latVal, lonVal) => {
         if (latVal == null || lonVal == null) return;
@@ -221,18 +254,15 @@ const MonitorPage = () => {
         setLoadingAddress(true);
         setAddressError(null);
 
-        // nhỏ gọn: chuẩn hoá lat/lon thành string
         const lat = Number(latVal);
         const lon = Number(lonVal);
 
-        // ===== 1) Thử Goong trước (nếu có API key) =====
         const tryGoong = async () => {
             if (!GOONG_API_KEY) return '';
 
             const res = await fetch(`https://rsapi.goong.io/Geocode?latlng=${lat},${lon}&api_key=${GOONG_API_KEY}`);
 
             if (!res.ok) {
-                // ví dụ 4xx/5xx, hết quota, key die, v.v...
                 throw new Error('Goong API error');
             }
 
@@ -241,22 +271,16 @@ const MonitorPage = () => {
             return addr;
         };
 
-        // ===== 2) Fallback Nominatim (OpenStreetMap) =====
         const tryNominatim = async () => {
-            // chú ý: Nominatim rate limit chặt, m đừng spam quá
             const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`;
 
-            const res = await fetch(url, {
-                // header User-Agent custom thì browser không cho set,
-                // nên thôi để default, vẫn dùng được.
-            });
+            const res = await fetch(url);
 
             if (!res.ok) {
                 throw new Error('Nominatim error');
             }
 
             const data = await res.json();
-            // dùng display_name cho nhanh, sau này muốn format address có thể xử lý thêm
             const addr = data?.display_name || '';
             return addr;
         };
@@ -264,14 +288,12 @@ const MonitorPage = () => {
         try {
             let addr = '';
 
-            // 1. ưu tiên Goong
             try {
                 addr = await tryGoong();
             } catch (e) {
                 console.error('Goong failed, fallback Nominatim:', e);
             }
 
-            // 2. nếu Goong fail / không có key thì fallback OSM
             if (!addr) {
                 try {
                     addr = await tryNominatim();
@@ -284,12 +306,12 @@ const MonitorPage = () => {
                 setAddress(addr);
             } else {
                 setAddress('');
-                setAddressError('Không lấy được địa chỉ.');
+                setAddressError(t.error.address);
             }
         } catch (err) {
             console.error('Fetch address error (all providers):', err);
             setAddress('');
-            setAddressError('Không lấy được địa chỉ.');
+            setAddressError(t.error.address);
         } finally {
             setLoadingAddress(false);
         }
@@ -297,7 +319,7 @@ const MonitorPage = () => {
 
     const publishControlCommand = (payload) => {
         if (!selectedDevice || !selectedDevice.imei) {
-            const msgText = 'Chưa chọn thiết bị hoặc thiếu IMEI.';
+            const msgText = t.error.missingDeviceOrImei;
             setLockError(msgText);
             message.error(msgText);
             return;
@@ -305,7 +327,7 @@ const MonitorPage = () => {
 
         const client = mqttClientRef.current;
         if (!client) {
-            const msgText = 'Chưa kết nối MQTT đến thiết bị.';
+            const msgText = t.error.mqttNotReady;
             setLockError(msgText);
             message.error(msgText);
             return;
@@ -317,7 +339,7 @@ const MonitorPage = () => {
             client.publish(topic, JSON.stringify(payload), { qos: 1 }, (err) => {
                 if (err) {
                     console.error('❌ Publish control error:', err);
-                    const msgText = 'Gửi lệnh điều khiển thất bại.';
+                    const msgText = t.error.controlFailed;
                     setLockError(msgText);
                     message.error(msgText);
                 } else {
@@ -327,7 +349,7 @@ const MonitorPage = () => {
             });
         } catch (e) {
             console.error('❌ Publish exception:', e);
-            const msgText = 'Gửi lệnh điều khiển lỗi.';
+            const msgText = t.error.controlException;
             setLockError(msgText);
             message.error(msgText);
         }
@@ -365,7 +387,7 @@ const MonitorPage = () => {
             setBatteryStatus(null);
             setDeviceInfo(null);
             setLastCruise(null);
-            setCruiseError('Thiếu token hoặc IMEI để tải dữ liệu');
+            setCruiseError(t.error.missingTokenOrImei);
             return;
         }
 
@@ -402,7 +424,7 @@ const MonitorPage = () => {
 
             if (!cruise || cruise.error) {
                 setLastCruise(null);
-                setCruiseError('Không có dữ liệu hành trình');
+                setCruiseError(t.error.noTripData);
             } else {
                 setLastCruise(cruise);
                 setCruiseError(null);
@@ -419,77 +441,67 @@ const MonitorPage = () => {
             }
         } catch {
             setLastCruise(null);
-            setCruiseError('Không thể tải dữ liệu hành trình');
+            setCruiseError(t.error.tripLoadFailed);
         } finally {
             setLoadingCruise(false);
         }
     };
 
     const handleLockDevice = () => {
-        // khoá = bật SOS
         publishControlCommand({ sos: 1 });
-        message.success('Đã gửi lệnh khoá thiết bị (SOS bật).');
+        message.success(t.control.lockSuccessToast);
     };
 
     const handleUnlockDevice = () => {
-        // mở khoá = tắt SOS
         publishControlCommand({ sos: 0 });
-        message.success('Đã gửi lệnh mở khoá thiết bị (SOS tắt).');
+        message.success(t.control.unlockSuccessToast);
     };
 
     const handleConfirmLock = () => {
         if (!selectedDevice) return;
-        const plate = selectedDevice.license_plate || selectedDevice.imei || 'thiết bị';
+        const plate = selectedDevice.license_plate || selectedDevice.imei || t.common.deviceFallback;
 
         confirm({
-            title: 'Xác nhận khoá thiết bị',
-            content: `Bạn có chắc chắn muốn khoá ${plate}?`,
-            okText: 'Khoá',
-            cancelText: 'Huỷ',
-            onOk: () => handleLockDevice(),
+            title: t.control.confirmLockTitle,
+            content: t.control.confirmLockContent.replace('{plate}', plate),
+            okText: t.control.confirmLockOk,
+            cancelText: t.control.confirmCancel,
+            onOk: () => {
+                setPendingAction('lock');
+                setLockLoading(true);
+                handleLockDevice();
+                setLockLoading(false);
+                setPendingAction(null);
+            },
         });
     };
 
     const handleConfirmUnlock = () => {
         if (!selectedDevice) return;
-        const plate = selectedDevice.license_plate || selectedDevice.imei || 'thiết bị';
+        const plate = selectedDevice.license_plate || selectedDevice.imei || t.common.deviceFallback;
 
         confirm({
-            title: 'Xác nhận mở khoá thiết bị',
-            content: `Bạn có chắc chắn muốn mở khoá ${plate}?`,
-            okText: 'Mở khoá',
-            cancelText: 'Huỷ',
-            onOk: () => handleUnlockDevice(),
+            title: t.control.confirmUnlockTitle,
+            content: t.control.confirmUnlockContent.replace('{plate}', plate),
+            okText: t.control.confirmUnlockOk,
+            cancelText: t.control.confirmCancel,
+            onOk: () => {
+                setPendingAction('unlock');
+                setLockLoading(true);
+                handleUnlockDevice();
+                setLockLoading(false);
+                setPendingAction(null);
+            },
         });
     };
 
-    const isLocked = Number(liveTelemetry?.sos) === 1;
-
-    const isConnected = selectedDevice?.status === 10; // cái này vẫn theo backend nếu m muốn
+    const isConnected = selectedDevice?.status === 10;
 
     // helper normalize number
     const toNumberOrNull = (val) => {
         if (val == null) return null;
         const n = Number(val);
         return Number.isNaN(n) ? null : n;
-    };
-
-    // parse dòng sạc/xả cũ (không dùng nữa nhưng để đây cũng không sao)
-    const parseCurrentValue = (currentRaw) => {
-        if (currentRaw == null) return { text: 'Dòng sạc/xả: --' };
-
-        const num = Number(String(currentRaw).replace(',', '.'));
-        if (Number.isNaN(num)) return { text: 'Dòng sạc/xả: --' };
-
-        if (num > 0) {
-            return { text: `Dòng sạc/xả: Đang sạc ${num}A` };
-        }
-
-        if (num < 0) {
-            return { text: `Dòng sạc/xả: Đang xả ${Math.abs(num)}A` };
-        }
-
-        return { text: `Dòng sạc/xả: 0 A` };
     };
 
     // 🔥 nhận MQTT → update liveTelemetry + map
@@ -501,10 +513,8 @@ const MonitorPage = () => {
 
         if (!data || typeof data !== 'object') return;
 
-        // merge
         setLiveTelemetry((prev) => ({ ...(prev || {}), ...data }));
 
-        // realtime map move
         if (data.lat != null && data.lon != null && LMap && mapRef.current && markerRef.current) {
             const pos = LMap.latLng(data.lat, data.lon);
             markerRef.current.setLatLng(pos);
@@ -530,7 +540,7 @@ const MonitorPage = () => {
         'gic',
         'onl',
         'fwr',
-        'vgp', // thêm vgp để không show ở extra
+        'vgp',
     ];
 
     const BATTERY_FIELDS = ['soc', 'soh', 'tavg', 'tmax', 'tmin', 'vavg', 'vmax', 'vmin', 'cur', 'ckw', 'ckwh', 'an1'];
@@ -546,35 +556,31 @@ const MonitorPage = () => {
         const temp = src.tavg ?? src.tmax ?? bs.temperature;
         const currentRaw = src.cur ?? bs.current;
 
-        // helper format A → 0,12A
         const formatAmp = (val) => {
             const n = toNumberOrNull(val);
             if (n == null) return '--';
             const abs = Math.abs(n);
-            const s = abs.toFixed(2).replace('.', ','); // 0.12 -> 0,12
+            const s = abs.toFixed(2).replace('.', ',');
             return `${s}A`;
         };
 
-        let mode = 'Không xác định';
-        let currentLine = 'Dòng sạc/xả: --';
+        let mode = t.battery.unknown;
+        let currentLine = t.battery.currentLineDefault;
 
         const cur = toNumberOrNull(currentRaw);
 
         if (cur == null) {
-            mode = 'Không xác định';
-            currentLine = 'Dòng sạc/xả: --';
+            mode = t.battery.unknown;
+            currentLine = t.battery.currentLineDefault;
         } else if (cur > 0) {
-            // dương → đang sạc
-            mode = 'Đang sạc';
-            currentLine = `Dòng sạc: ${formatAmp(cur)}`;
+            mode = t.battery.charging;
+            currentLine = `${t.battery.chargeCurrent} ${formatAmp(cur)}`;
         } else if (cur < 0) {
-            // âm → đang xả
-            mode = 'Đang xả';
-            currentLine = `Dòng xả: ${formatAmp(cur)}`;
+            mode = t.battery.discharging;
+            currentLine = `${t.battery.dischargeCurrent} ${formatAmp(cur)}`;
         } else {
-            // = 0 → đang chờ
-            mode = 'Đang chờ';
-            currentLine = 'Dòng sạc/xả: Đang chờ';
+            mode = t.battery.idle;
+            currentLine = t.battery.currentIdle;
         }
 
         const updatedAt = src.tim
@@ -585,20 +591,34 @@ const MonitorPage = () => {
 
         return (
             <>
-                <div>IMEI: {selectedDevice?.imei}</div>
-                <div>Điện áp: {voltage ?? '--'} V</div>
+                <div>
+                    {t.battery.imei} {selectedDevice?.imei}
+                </div>
+                <div>
+                    {t.battery.voltage} {voltage ?? '--'} V
+                </div>
                 <div>{currentLine}</div>
-                <div>Trạng thái: {mode}</div>
-                <div>Trạng thái sạc (SOC): {soc ?? '--'}%</div>
-                <div>Sức khỏe pin (SOH): {soh ?? '--'}%</div>
-                <div>Nhiệt độ: {temp ?? '--'}°C</div>
-                <div>Cập nhật lúc: {updatedAt}</div>
+                <div>
+                    {t.battery.status} {mode}
+                </div>
+                <div>
+                    {t.battery.soc} {soc ?? '--'}%
+                </div>
+                <div>
+                    {t.battery.soh} {soh ?? '--'}%
+                </div>
+                <div>
+                    {t.battery.temperature} {temp ?? '--'}°C
+                </div>
+                <div>
+                    {t.battery.updatedAt} {updatedAt}
+                </div>
             </>
         );
     };
 
     const renderStatusInfo = () => {
-        if (!selectedDevice) return <>Vui lòng chọn xe.</>;
+        if (!selectedDevice) return <>{t.statusInfo.pleaseSelect}</>;
 
         const info = deviceInfo || selectedDevice;
         const src = liveTelemetry || lastCruise || {};
@@ -612,85 +632,74 @@ const MonitorPage = () => {
         const latVal = src.lat;
         const lonVal = src.lon;
 
-        // ====== TRẠNG THÁI MÁY & TRẠNG THÁI XE (MQTT) ======
         const accValNum = toNumberOrNull(mqttSrc.acc);
         const spdNum = toNumberOrNull(mqttSrc.spd);
         const vgpNum = toNumberOrNull(mqttSrc.vgp);
 
-        // Trạng thái máy:
-        // acc = 1 → tắt máy
-        // acc = 0 hoặc null → mở máy
         let machineStatus = '--';
         if (accValNum === 1) {
-            machineStatus = 'Tắt máy';
+            machineStatus = t.statusInfo.engineOff;
         } else {
-            // 0 hoặc null → mở máy
-            machineStatus = 'Mở máy';
+            machineStatus = t.statusInfo.engineOn;
         }
 
-        // Trạng thái xe:
-        // - Nếu acc = 1 → đỗ xe
-        // - Nếu acc = 0 hoặc null → dùng speed, nếu không có thì dùng vgp:
-        //      > 0 → đang chạy X km/h
-        //      = 0 hoặc không có → đỗ xe / không xác định
         let vehicleStatus = '--';
 
         if (accValNum === 1) {
-            vehicleStatus = 'Đỗ xe';
+            vehicleStatus = t.statusInfo.vehicleParking;
         } else {
-            // acc = 0 hoặc null → check speed / vgp
             let usedSpeed = null;
-            if (spdNum != null) {
-                usedSpeed = spdNum;
-            } else if (vgpNum != null) {
-                usedSpeed = vgpNum;
-            }
+            if (spdNum != null) usedSpeed = spdNum;
+            else if (vgpNum != null) usedSpeed = vgpNum;
 
             if (usedSpeed == null) {
-                vehicleStatus = 'Đổ xe';
-                // vehicleStatus = 'Không xác định';
+                vehicleStatus = t.statusInfo.vehicleUnknown;
             } else if (usedSpeed > 0) {
-                vehicleStatus = `Đang chạy ${usedSpeed} km/h`;
+                vehicleStatus = t.statusInfo.vehicleRunning.replace('{speed}', String(usedSpeed));
             } else {
-                vehicleStatus = 'Đỗ xe';
+                vehicleStatus = t.statusInfo.vehicleParking;
             }
         }
 
-        const extra = liveTelemetry
-            ? Object.entries(liveTelemetry).filter(
-                  ([k, v]) => v != null && !BATTERY_FIELDS.includes(k) && !DEVICE_FIELDS.includes(k),
-              )
-            : [];
-
         return (
             <>
-                <div>Biển số xe: {info.license_plate || '---'}</div>
-                <div>Loại xe: {info.vehicle_category_id?.name || '---'}</div>
-                <div>Dòng thiết bị: {info.device_category_id?.name || '---'}</div>
-                <div>Tại thời điểm: {timeStr}</div>
+                <div>
+                    {t.statusInfo.plate} {info.license_plate || '---'}
+                </div>
+                <div>
+                    {t.statusInfo.vehicleType} {info.vehicle_category_id?.name || '---'}
+                </div>
+                <div>
+                    {t.statusInfo.deviceType} {info.device_category_id?.name || '---'}
+                </div>
+                <div>
+                    {t.statusInfo.atTime} {timeStr}
+                </div>
 
-                <div>Trạng thái máy: {machineStatus}</div>
-                <div>Trạng thái xe: {vehicleStatus}</div>
+                <div>
+                    {t.statusInfo.engineStatus} {machineStatus}
+                </div>
+                <div>
+                    {t.statusInfo.vehicleStatus} {vehicleStatus}
+                </div>
 
-                {speed != null && <div>Tốc độ : {speed} km/h</div>}
-                {distance != null && <div>Quãng đường: {distance} km</div>}
-
-                <div>Vị trí: {address || '--'}</div>
-                <div>Tọa độ: {latVal && lonVal ? `${latVal}, ${lonVal}` : '--'}</div>
-                {/* <div>Địa chỉ: {address || '--'}</div> */}
-
-                {/* dữ liệu khác từ mqtt tạm cmt lại sau này hiển thị sau chứ không bỏ */}
-
-                {/* {extra.length > 0 && (
-                    <div style={{ marginTop: 10 }}>
-                        <b>Dữ liệu khác:</b>
-                        {extra.map(([k, v]) => (
-                            <div key={k}>
-                                {k}: {String(v)}
-                            </div>
-                        ))}
+                {speed != null && (
+                    <div>
+                        {t.statusInfo.speed} {speed} km/h
                     </div>
-                )} */}
+                )}
+                {distance != null && (
+                    <div>
+                        {t.statusInfo.distance} {distance} km
+                    </div>
+                )}
+
+                <div>
+                    {t.statusInfo.location} {address || '--'}
+                </div>
+                <div>
+                    {t.statusInfo.coordinate} {latVal && lonVal ? `${latVal}, ${lonVal}` : '--'}
+                </div>
             </>
         );
     };
@@ -700,7 +709,7 @@ const MonitorPage = () => {
         setHistoryMessageType('');
 
         if (!historyDeviceId || !historyStart || !historyEnd) {
-            setHistoryMessage('Vui lòng chọn xe và nhập đầy đủ "Từ ngày" / "Đến ngày".');
+            setHistoryMessage(t.history.errorMissing);
             setHistoryMessageType('error');
             return;
         }
@@ -709,13 +718,13 @@ const MonitorPage = () => {
         const endDate = new Date(historyEnd);
 
         if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
-            setHistoryMessage('Định dạng thời gian không hợp lệ. Vui lòng chọn lại.');
+            setHistoryMessage(t.history.errorInvalidDate);
             setHistoryMessageType('error');
             return;
         }
 
         if (endDate < startDate) {
-            setHistoryMessage('Thời gian "Đến ngày" không được nhỏ hơn "Từ ngày".');
+            setHistoryMessage(t.history.errorEndBeforeStart);
             setHistoryMessageType('error');
             return;
         }
@@ -729,26 +738,22 @@ const MonitorPage = () => {
         try {
             localStorage.setItem('iky_cruise_filter', JSON.stringify(filter));
             router.push('/cruise');
-            setHistoryMessage('Đã lưu bộ lọc lộ trình. Vào trang "Hành trình" để tải lộ trình.');
+            setHistoryMessage(t.history.saveSuccess);
             setHistoryMessageType('success');
         } catch (e) {
-            setHistoryMessage('Không thể lưu bộ lọc. Vui lòng thử lại.');
+            setHistoryMessage(t.history.saveFailed);
             setHistoryMessageType('error');
         }
     };
 
-    const STATUS_MAP = {
-        5: { text: 'Đã khoá', class: 'iky-monitor__tag-red' },
-        10: { text: 'Đang hoạt động', class: 'iky-monitor__tag-green' },
-    };
-
     const curStatus = selectedDevice?.status;
-    const deviceStatusText = isLocked ? 'Đã khoá' : 'Đang hoạt động';
+    const isLocked = Number(liveTelemetry?.sos) === 1;
+
+    let deviceStatusText = isLocked ? t.control.statusActivated : t.control.statusNotActivated;
     const deviceStatusClass = isLocked ? 'iky-monitor__tag-red' : 'iky-monitor__tag-green';
 
     return (
         <>
-            {/* MQTT realtime cho xe đang chọn */}
             <MqttConnector
                 imei={selectedDevice?.imei}
                 onMessage={handleMqttMessage}
@@ -760,7 +765,11 @@ const MonitorPage = () => {
             <div className="iky-monitor">
                 {/* LEFT */}
                 <aside className="iky-monitor__left">
-                    <div className="iky-monitor__left-card">
+                    <div
+                        className={
+                            'iky-monitor__left-card' + (leftTab === 'monitor' ? ' iky-monitor__left-card--full' : '')
+                        }
+                    >
                         <div className="iky-monitor__left-tabs">
                             <button
                                 className={
@@ -769,7 +778,7 @@ const MonitorPage = () => {
                                 }
                                 onClick={() => setLeftTab('monitor')}
                             >
-                                Giám sát xe
+                                {t.tabs.monitor}
                             </button>
                             <button
                                 className={
@@ -778,43 +787,43 @@ const MonitorPage = () => {
                                 }
                                 onClick={() => setLeftTab('history')}
                             >
-                                Xem lại lộ trình
+                                {t.tabs.history}
                             </button>
                         </div>
 
                         {leftTab === 'monitor' && (
                             <div className="iky-monitor__left-body">
                                 <div className="iky-monitor__left-section">
-                                    <div className="iky-monitor__left-label">Nhập xe cần tìm</div>
+                                    <div className="iky-monitor__left-label">{t.filter.searchLabel}</div>
                                     <input
                                         className="iky-monitor__input"
-                                        placeholder="Biển số / tên xe / IMEI..."
+                                        placeholder={t.filter.searchPlaceholder}
                                         value={searchText}
                                         onChange={(e) => setSearchText(e.target.value)}
                                     />
                                 </div>
 
                                 <div className="iky-monitor__left-section">
-                                    <div className="iky-monitor__left-label">Trạng thái</div>
+                                    <div className="iky-monitor__left-label">{t.filter.statusLabel}</div>
                                     <select
                                         className="iky-monitor__select"
                                         value={statusFilter}
                                         onChange={(e) => setStatusFilter(e.target.value)}
                                     >
-                                        <option value="all">-- Tất cả --</option>
-                                        <option value="online">Online</option>
-                                        <option value="offline">Offline</option>
+                                        <option value="all">{t.filter.statusAll}</option>
+                                        <option value="online">{t.filter.statusOnline}</option>
+                                        <option value="offline">{t.filter.statusOffline}</option>
                                     </select>
                                 </div>
 
-                                <div className="iky-monitor__left-section">
-                                    <div className="iky-monitor__left-label">Danh sách xe</div>
+                                <div className="iky-monitor__left-section iky-monitor__left-section--list">
+                                    <div className="iky-monitor__left-label">{t.list.label}</div>
 
                                     <div className="iky-monitor__device-list">
-                                        {loadingDevices && <div className="iky-loading">Đang tải...</div>}
+                                        {loadingDevices && <div className="iky-loading">{t.list.loading}</div>}
 
                                         {!loadingDevices && filteredDevices.length === 0 && (
-                                            <div className="iky-monitor__empty">Không có xe phù hợp</div>
+                                            <div className="iky-monitor__empty">{t.list.empty}</div>
                                         )}
 
                                         {!loadingDevices &&
@@ -831,16 +840,18 @@ const MonitorPage = () => {
                                                         onClick={() => handleSelectDevice(d)}
                                                     >
                                                         <div className="plate">
-                                                            {d.license_plate || 'Không rõ biển số'}
+                                                            {d.license_plate || t.list.unknownPlate}
                                                         </div>
                                                         <div className="imei">IMEI: {d.imei}</div>
-                                                        <div className="phone">SĐT: {d.phone_number}</div>
-                                                        <div className="status">
-                                                            Trạng thái:{' '}
-                                                            <span className={isOnline ? 'online' : 'offline'}>
-                                                                {isOnline ? 'Online' : 'Offline'}
-                                                            </span>
+                                                        <div className="phone">
+                                                            {t.list.phoneLabel} {d.phone_number}
                                                         </div>
+                                                        {/* <div className="status">
+                                                            {t.list.statusLabel}{' '}
+                                                            <span className={isOnline ? 'online' : 'offline'}>
+                                                                {isOnline ? t.list.statusOnline : t.list.statusOffline}
+                                                            </span>
+                                                        </div> */}
                                                     </div>
                                                 );
                                             })}
@@ -852,16 +863,16 @@ const MonitorPage = () => {
                         {leftTab === 'history' && (
                             <div className="iky-monitor__left-body">
                                 <div className="iky-monitor__left-section">
-                                    <div className="iky-monitor__left-label">Chọn xe</div>
+                                    <div className="iky-monitor__left-label">{t.history.selectVehicleLabel}</div>
                                     <select
                                         className="iky-monitor__select"
                                         value={historyDeviceId}
                                         onChange={(e) => setHistoryDeviceId(e.target.value)}
                                     >
-                                        <option value="">-- Chọn xe --</option>
+                                        <option value="">{t.history.selectVehiclePlaceholder}</option>
                                         {deviceList.map((d) => (
                                             <option key={d._id} value={d._id}>
-                                                {(d.license_plate || d.imei || 'Không rõ').trim()}
+                                                {(d.license_plate || d.imei || t.history.unknown).trim()}
                                                 {d.phone_number ? ` - ${d.phone_number}` : ''}
                                             </option>
                                         ))}
@@ -869,7 +880,7 @@ const MonitorPage = () => {
                                 </div>
 
                                 <div className="iky-monitor__left-section">
-                                    <div className="iky-monitor__left-label">Từ ngày</div>
+                                    <div className="iky-monitor__left-label">{t.history.fromLabel}</div>
                                     <input
                                         type="datetime-local"
                                         className="iky-monitor__input"
@@ -879,7 +890,7 @@ const MonitorPage = () => {
                                 </div>
 
                                 <div className="iky-monitor__left-section">
-                                    <div className="iky-monitor__left-label">Đến ngày</div>
+                                    <div className="iky-monitor__left-label">{t.history.toLabel}</div>
                                     <input
                                         type="datetime-local"
                                         className="iky-monitor__input"
@@ -889,7 +900,7 @@ const MonitorPage = () => {
                                 </div>
 
                                 <button className="iky-monitor__primary-btn" onClick={handleSaveHistoryFilter}>
-                                    Lưu bộ lọc lộ trình
+                                    {t.history.saveButton}
                                 </button>
 
                                 {historyMessage && (
@@ -930,7 +941,7 @@ const MonitorPage = () => {
                                                 setDetailTab('status');
                                             }}
                                         >
-                                            Trạng thái
+                                            {t.tabsDetail.status}
                                         </button>
                                         <button
                                             className={
@@ -942,7 +953,7 @@ const MonitorPage = () => {
                                                 setDetailTab('control');
                                             }}
                                         >
-                                            Điều khiển
+                                            {t.tabsDetail.control}
                                         </button>
                                         <button
                                             className={
@@ -954,7 +965,7 @@ const MonitorPage = () => {
                                                 setDetailTab('battery');
                                             }}
                                         >
-                                            Trạng thái Pin
+                                            {t.tabsDetail.battery}
                                         </button>
                                     </div>
 
@@ -966,7 +977,7 @@ const MonitorPage = () => {
                                         {detailTab === 'control' && (
                                             <div className="iky-monitor__popup-col">
                                                 <div className="iky-monitor__control-row">
-                                                    <span>Trạng thái kết nối</span>
+                                                    <span>{t.control.connectionStatus}</span>
                                                     <div
                                                         className={
                                                             'iky-monitor__connection ' +
@@ -977,14 +988,16 @@ const MonitorPage = () => {
                                                     >
                                                         <span className="iky-monitor__connection-icon">✓</span>
                                                         <span className="iky-monitor__connection-text">
-                                                            {isConnected ? 'Kết nối' : 'Mất kết nối'}
+                                                            {isConnected
+                                                                ? t.control.connectionOn
+                                                                : t.control.connectionOff}
                                                         </span>
                                                     </div>
                                                 </div>
                                                 <div className="iky-monitor__control-row">
-                                                    <span>Trạng thái thiết bị</span>
+                                                    <span>{t.control.emergencyStop}</span>
 
-                                                    <div className="iky-status-badge">
+                                                    <div className={`iky-status-badge ${deviceStatusClass}`}>
                                                         {isLocked ? (
                                                             <LockFilled className="iky-status-icon" />
                                                         ) : (
@@ -995,30 +1008,30 @@ const MonitorPage = () => {
                                                 </div>
 
                                                 <div className="iky-monitor__control-row">
-                                                    <span>Khoá thiết bị</span>
+                                                    <span>{t.control.lockDevice}</span>
                                                     <button
                                                         className="iky-monitor__secondary-btn"
                                                         onClick={handleConfirmLock}
+                                                        disabled={lockLoading}
                                                     >
-                                                        Khoá
+                                                        {lockLoading && pendingAction === 'lock'
+                                                            ? t.control.locking
+                                                            : t.control.lockButton}
                                                     </button>
                                                 </div>
 
                                                 <div className="iky-monitor__control-row">
-                                                    <span>Mở khoá thiết bị</span>
+                                                    <span>{t.control.unlockDevice}</span>
                                                     <button
                                                         className="iky-monitor__secondary-btn"
                                                         onClick={handleConfirmUnlock}
+                                                        disabled={lockLoading}
                                                     >
-                                                        Mở khoá
+                                                        {lockLoading && pendingAction === 'unlock'
+                                                            ? t.control.unlocking
+                                                            : t.control.unlockButton}
                                                     </button>
                                                 </div>
-
-                                                {lockError && (
-                                                    <div className="iky-monitor__error" style={{ marginTop: 8 }}>
-                                                        {lockError}
-                                                    </div>
-                                                )}
                                             </div>
                                         )}
 
@@ -1034,7 +1047,7 @@ const MonitorPage = () => {
 
                 {showPopup && detailTab === 'battery' && (
                     <aside className="iky-monitor__right">
-                        <h4 className="iky-monitor__right-title">Thông tin hiển thị</h4>\
+                        <h4 className="iky-monitor__right-title">{t.rightPanel.title}</h4>
                         <div className="iky-monitor__battery-box">{renderBatteryInfo()}</div>
                     </aside>
                 )}

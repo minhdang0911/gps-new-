@@ -1,7 +1,6 @@
 'use client';
-
-import React, { useState, useEffect, useMemo } from 'react';
-import { Card, Input, Button, Table, Space, Modal, Typography, Form, Select, Descriptions, message } from 'antd';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Card, Input, Button, Table, Space, Modal, Typography, Select, Descriptions, message, Row, Col } from 'antd';
 import {
     PlusOutlined,
     EditOutlined,
@@ -15,6 +14,9 @@ import { usePathname } from 'next/navigation';
 
 import { createUser, updateUser, deleteUser, getUserInfo, getUserList } from '../../lib/api/user';
 
+// Form tách riêng
+import UserForm from '../../components/UserForm';
+
 import './ManageUserPage.css';
 
 // Excel
@@ -25,10 +27,26 @@ import { getTodayForFileName } from '../../util/FormatDate';
 import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
 
-const { Title, Text } = Typography;
+const { Title } = Typography;
 const { Option } = Select;
 
 const locales = { vi, en };
+
+// default form data cho tạo mới
+const EMPTY_FORM = {
+    username: '',
+    password: '',
+    name: '',
+    email: '',
+    phone: '',
+    address: '',
+    position: 'customer',
+    distributor_id: null,
+    place_id: null,
+    place_raw: null,
+    address_lat: null,
+    address_lng: null,
+};
 
 export default function ManageUserPage() {
     const pathname = usePathname() || '/';
@@ -36,7 +54,11 @@ export default function ManageUserPage() {
     const [currentRole, setCurrentRole] = useState(null);
     const [users, setUsers] = useState([]);
     const [loadingUsers, setLoadingUsers] = useState(false);
-    const [userSearch, setUserSearch] = useState('');
+
+    // Tách thành 3 ô search riêng
+    const [searchUsername, setSearchUsername] = useState('');
+    const [searchEmail, setSearchEmail] = useState('');
+    const [searchPhone, setSearchPhone] = useState('');
 
     const [userModalVisible, setUserModalVisible] = useState(false);
     const [viewUserModalVisible, setViewUserModalVisible] = useState(false);
@@ -45,16 +67,8 @@ export default function ManageUserPage() {
     const [editingUser, setEditingUser] = useState(null);
     const [distributorOptions, setDistributorOptions] = useState([]);
 
-    const [userFormData, setUserFormData] = useState({
-        username: '',
-        password: '',
-        name: '',
-        email: '',
-        phone: '',
-        address: '',
-        position: 'customer',
-        distributor_id: null,
-    });
+    // Form data được lưu trong ref để KHÔNG làm re-render cả trang khi gõ
+    const userFormDataRef = useRef(EMPTY_FORM);
 
     // ===== LANG DETECT =====
     const [isEn, setIsEn] = useState(false);
@@ -93,23 +107,29 @@ export default function ManageUserPage() {
 
     // ===== INIT ROLE =====
     useEffect(() => {
+        if (typeof window === 'undefined') return;
         const role = localStorage.getItem('role');
         setCurrentRole(role);
     }, []);
 
+    // Load users khi search thay đổi (debounce 500ms)
     useEffect(() => {
-        loadUsers();
+        const timer = setTimeout(() => {
+            loadUsers();
+        }, 500);
+
+        return () => clearTimeout(timer);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [userSearch]);
+    }, [searchUsername, searchEmail, searchPhone]);
 
     const loadUsers = async () => {
         try {
             setLoadingUsers(true);
 
             const res = await getUserList({
-                username: userSearch,
-                phone: userSearch,
-                email: userSearch,
+                username: searchUsername,
+                email: searchEmail,
+                phone: searchPhone,
                 page: 1,
                 limit: 50,
             });
@@ -141,18 +161,14 @@ export default function ManageUserPage() {
     const handleOpenAddUser = async () => {
         setEditingUser(null);
 
-        setUserFormData({
-            username: '',
-            password: '',
-            name: '',
-            email: '',
-            phone: '',
-            address: '',
-            position: 'customer',
-            distributor_id: null,
-        });
+        // reset form data ref
+        userFormDataRef.current = {
+            ...EMPTY_FORM,
+        };
 
-        if (currentRole === 'administrator') await loadDistributors();
+        if (currentRole === 'administrator') {
+            await loadDistributors();
+        }
 
         setUserModalVisible(true);
     };
@@ -161,18 +177,25 @@ export default function ManageUserPage() {
     const handleOpenEditUser = async (record) => {
         setEditingUser(record);
 
-        setUserFormData({
-            username: record.username,
+        // map record -> form ref
+        userFormDataRef.current = {
+            username: record.username || '',
             password: '',
-            name: record.name,
-            email: record.email,
-            phone: record.phone,
-            address: record.address,
+            name: record.name || '',
+            email: record.email || '',
+            phone: record.phone || '',
+            address: record.address || '',
             position: record.position || 'customer',
             distributor_id: record.distributor_id || null,
-        });
+            place_id: record.place_id || null,
+            place_raw: record.address_raw || null,
+            address_lat: record.address_lat || null,
+            address_lng: record.address_lng || null,
+        };
 
-        if (currentRole === 'administrator') await loadDistributors();
+        if (currentRole === 'administrator') {
+            await loadDistributors();
+        }
 
         setUserModalVisible(true);
     };
@@ -191,33 +214,56 @@ export default function ManageUserPage() {
 
     const handleSaveUser = async () => {
         try {
+            const data = userFormDataRef.current || EMPTY_FORM;
+
             if (editingUser) {
                 const payload = {
-                    name: userFormData.name,
-                    email: userFormData.email,
-                    phone: userFormData.phone,
-                    address: userFormData.address,
-                    position: userFormData.position,
+                    name: data.name,
+                    email: data.email,
+                    phone: data.phone,
+                    address: data.address,
+                    position: data.position,
                 };
 
-                if (currentRole === 'administrator' && userFormData.position === 'customer') {
-                    payload.distributor_id = userFormData.distributor_id || null;
+                if (currentRole === 'administrator' && data.position === 'customer') {
+                    payload.distributor_id = data.distributor_id || null;
                 }
 
-                if (userFormData.password.trim() !== '') {
-                    payload.password = userFormData.password;
+                if (data.password && data.password.trim() !== '') {
+                    payload.password = data.password;
                 }
+
+                if (data.place_id) payload.place_id = data.place_id;
+                if (data.place_raw) payload.address_raw = data.place_raw;
+                if (data.address_lat) payload.address_lat = data.address_lat;
+                if (data.address_lng) payload.address_lng = data.address_lng;
 
                 await updateUser(editingUser._id, payload);
                 message.success(t.messages.updateSuccess);
             } else {
-                const payload = { ...userFormData };
+                const payload = { ...data };
 
                 if (currentRole !== 'administrator') {
                     delete payload.distributor_id;
                 }
 
-                await createUser(payload);
+                const cleanPayload = {
+                    username: payload.username,
+                    password: payload.password,
+                    name: payload.name,
+                    email: payload.email,
+                    phone: payload.phone,
+                    address: payload.address,
+                    position: payload.position,
+                };
+
+                if (payload.distributor_id) cleanPayload.distributor_id = payload.distributor_id;
+                if (payload.place_id) cleanPayload.place_id = payload.place_id;
+                if (payload.place_raw) cleanPayload.address_raw = payload.place_raw;
+                if (payload.address_lat) cleanPayload.address_lat = payload.address_lat;
+                if (payload.address_lng) cleanPayload.address_lng = payload.address_lng;
+
+                await createUser(cleanPayload);
                 message.success(t.messages.createSuccess);
             }
 
@@ -225,14 +271,40 @@ export default function ManageUserPage() {
             loadUsers();
         } catch (err) {
             console.log('SAVE USER ERROR', err);
+
             const apiData = err?.response?.data;
-            const msg =
-                apiData?.error ||
-                apiData?.message ||
-                (typeof apiData === 'string' ? apiData : null) ||
-                err?.message ||
-                t.messages.saveFailedFallback;
-            message.error(msg);
+
+            if (apiData && Array.isArray(apiData.errors) && apiData.errors.length) {
+                const joined = apiData.errors.join('\n');
+                message.error(joined);
+                return;
+            }
+
+            const singleMsg = apiData?.error || apiData?.message;
+            if (singleMsg) {
+                if (Array.isArray(singleMsg)) {
+                    message.error(singleMsg.join('\n'));
+                } else {
+                    message.error(String(singleMsg));
+                }
+                return;
+            }
+
+            if (apiData && typeof apiData === 'object') {
+                const collected = [];
+                Object.keys(apiData).forEach((k) => {
+                    const v = apiData[k];
+                    if (Array.isArray(v)) collected.push(...v);
+                    else if (typeof v === 'string') collected.push(v);
+                });
+                if (collected.length) {
+                    message.error(collected.join('\n'));
+                    return;
+                }
+            }
+
+            const fallback = err?.message || t.messages.saveFailedFallback;
+            message.error(fallback);
         }
     };
 
@@ -288,7 +360,6 @@ export default function ManageUserPage() {
             const ws = XLSX.utils.json_to_sheet(excelData, { origin: 'A2' });
             const headers = Object.keys(excelData[0]);
 
-            // Title dòng 1
             const title = t.excel.title;
             ws['A1'] = { v: title, t: 's' };
             ws['!merges'] = [
@@ -304,7 +375,6 @@ export default function ManageUserPage() {
             };
             ws['!rows'] = [{ hpt: 26 }, { hpt: 22 }];
 
-            // Header row (row 2 / index 1)
             headers.forEach((h, idx) => {
                 const ref = XLSX.utils.encode_cell({ r: 1, c: idx });
                 if (!ws[ref]) return;
@@ -321,7 +391,6 @@ export default function ManageUserPage() {
                 };
             });
 
-            // Style data
             const range = XLSX.utils.decode_range(ws['!ref']);
             for (let R = range.s.r; R <= range.e.r; R++) {
                 for (let C = range.s.c; C <= range.e.c; C++) {
@@ -338,7 +407,6 @@ export default function ManageUserPage() {
                         right: { style: 'thin', color: { rgb: '000000' } },
                     };
 
-                    // zebra stripe cho row > header
                     if (R > 1 && R % 2 === 0) {
                         cell.s.fill = cell.s.fill || {};
                         cell.s.fill.fgColor = cell.s.fill.fgColor || { rgb: 'F9F9F9' };
@@ -346,13 +414,11 @@ export default function ManageUserPage() {
                 }
             }
 
-            // Auto width
             ws['!cols'] = headers.map((key) => {
                 const maxLen = Math.max(key.length, ...excelData.map((row) => String(row[key] || '').length));
                 return { wch: maxLen + 4 };
             });
 
-            // Auto filter
             ws['!autofilter'] = {
                 ref: XLSX.utils.encode_range({
                     s: { r: 1, c: 0 },
@@ -427,6 +493,8 @@ export default function ManageUserPage() {
         },
     ];
 
+    // ========== RENDER ==========
+
     return (
         <div className="user-page">
             <Card className="user-page__card">
@@ -452,14 +520,37 @@ export default function ManageUserPage() {
                     </Space>
                 </div>
 
-                {/* SEARCH */}
-                <div className="user-page__search">
-                    <Input
-                        placeholder={t.search.placeholder}
-                        prefix={<SearchOutlined />}
-                        value={userSearch}
-                        onChange={(e) => setUserSearch(e.target.value)}
-                    />
+                {/* SEARCH - Tách thành 3 ô riêng */}
+                <div className="user-page__search" style={{ marginBottom: 16 }}>
+                    <Row gutter={[16, 16]}>
+                        <Col xs={24} sm={8}>
+                            <Input
+                                placeholder={isEn ? 'Search by username' : 'Tìm theo tên đăng nhập'}
+                                prefix={<SearchOutlined />}
+                                value={searchUsername}
+                                onChange={(e) => setSearchUsername(e.target.value)}
+                                allowClear
+                            />
+                        </Col>
+                        <Col xs={24} sm={8}>
+                            <Input
+                                placeholder={isEn ? 'Search by email' : 'Tìm theo email'}
+                                prefix={<SearchOutlined />}
+                                value={searchEmail}
+                                onChange={(e) => setSearchEmail(e.target.value)}
+                                allowClear
+                            />
+                        </Col>
+                        <Col xs={24} sm={8}>
+                            <Input
+                                placeholder={isEn ? 'Search by phone' : 'Tìm theo số điện thoại'}
+                                prefix={<SearchOutlined />}
+                                value={searchPhone}
+                                onChange={(e) => setSearchPhone(e.target.value)}
+                                allowClear
+                            />
+                        </Col>
+                    </Row>
                 </div>
 
                 {/* TABLE */}
@@ -485,118 +576,15 @@ export default function ManageUserPage() {
                 wrapClassName="user-modal"
                 destroyOnHidden
             >
-                <Form layout="vertical">
-                    <Form.Item label={t.form.username}>
-                        <Input
-                            value={userFormData.username}
-                            onChange={(e) =>
-                                setUserFormData((f) => ({
-                                    ...f,
-                                    username: e.target.value,
-                                }))
-                            }
-                            disabled={!!editingUser}
-                        />
-                    </Form.Item>
-
-                    <Form.Item label={editingUser ? t.form.passwordEdit : t.form.password}>
-                        <Input.Password
-                            value={userFormData.password}
-                            onChange={(e) =>
-                                setUserFormData((f) => ({
-                                    ...f,
-                                    password: e.target.value,
-                                }))
-                            }
-                            placeholder={editingUser ? t.form.passwordEditPlaceholder : t.form.passwordPlaceholder}
-                        />
-                    </Form.Item>
-
-                    <Form.Item label={t.form.name}>
-                        <Input
-                            value={userFormData.name}
-                            onChange={(e) =>
-                                setUserFormData((f) => ({
-                                    ...f,
-                                    name: e.target.value,
-                                }))
-                            }
-                        />
-                    </Form.Item>
-
-                    <Form.Item label={t.form.email}>
-                        <Input
-                            value={userFormData.email}
-                            onChange={(e) =>
-                                setUserFormData((f) => ({
-                                    ...f,
-                                    email: e.target.value,
-                                }))
-                            }
-                        />
-                    </Form.Item>
-
-                    <Form.Item label={t.form.phone}>
-                        <Input
-                            value={userFormData.phone}
-                            onChange={(e) =>
-                                setUserFormData((f) => ({
-                                    ...f,
-                                    phone: e.target.value,
-                                }))
-                            }
-                        />
-                    </Form.Item>
-
-                    <Form.Item label={t.form.address}>
-                        <Input
-                            value={userFormData.address}
-                            onChange={(e) =>
-                                setUserFormData((f) => ({
-                                    ...f,
-                                    address: e.target.value,
-                                }))
-                            }
-                        />
-                    </Form.Item>
-
-                    <Form.Item label={t.form.role}>
-                        <Select
-                            value={userFormData.position}
-                            onChange={(v) => setUserFormData((f) => ({ ...f, position: v }))}
-                        >
-                            {currentRole === 'administrator' && (
-                                <>
-                                    <Option value="administrator">{roleLabelMap.administrator}</Option>
-                                    <Option value="distributor">{roleLabelMap.distributor}</Option>
-                                </>
-                            )}
-
-                            <Option value="customer">{roleLabelMap.customer}</Option>
-                        </Select>
-                    </Form.Item>
-
-                    {currentRole === 'administrator' && userFormData.position === 'customer' && (
-                        <Form.Item label={t.form.distributor}>
-                            <Select
-                                placeholder={t.form.distributorPlaceholder}
-                                value={userFormData.distributor_id || undefined}
-                                onChange={(v) =>
-                                    setUserFormData((f) => ({
-                                        ...f,
-                                        distributor_id: v,
-                                    }))
-                                }
-                            >
-                                {distributorOptions.map((d) => (
-                                    <Option key={d._id} value={d._id}>
-                                        {d.email} ({d.username})
-                                    </Option>
-                                ))}
-                            </Select>
-                        </Form.Item>
-                    )}
-                </Form>
+                <UserForm
+                    initialData={userFormDataRef.current}
+                    currentRole={currentRole}
+                    distributors={distributorOptions}
+                    // chỉ update ref, không setState → không re-render cả trang
+                    onChange={(data) => {
+                        userFormDataRef.current = data;
+                    }}
+                />
             </Modal>
 
             {/* VIEW USER */}
@@ -623,6 +611,9 @@ export default function ManageUserPage() {
                                 : viewUserData.distributor_id
                                 ? `${viewUserData.distributor_id.email} (${viewUserData.distributor_id.username})`
                                 : ''}
+                        </Descriptions.Item>
+                        <Descriptions.Item label={t.view.fields.address}>
+                            {viewUserData.address || ''}
                         </Descriptions.Item>
                         <Descriptions.Item label={t.view.fields.createdAt}>
                             {viewUserData.createdAt

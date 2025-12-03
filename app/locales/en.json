@@ -518,5 +518,175 @@
             "endTime": "End time",
             "showTotal": "Total {total} records"
         }
+    },
+    "monitor": {
+        "common": {
+            "deviceFallback": "device"
+        },
+        "tabs": {
+            "monitor": "Vehicle monitoring",
+            "history": "Trip history"
+        },
+        "tabsDetail": {
+            "status": "Status",
+            "control": "Control",
+            "battery": "Battery status"
+        },
+        "filter": {
+            "searchLabel": "Search vehicle",
+            "searchPlaceholder": "Plate / name / IMEI...",
+            "statusLabel": "Status",
+            "statusAll": "-- All --",
+            "statusOnline": "Online",
+            "statusOffline": "Offline"
+        },
+        "list": {
+            "label": "Vehicle list",
+            "loading": "Loading...",
+            "empty": "No matching vehicle",
+            "unknownPlate": "Unknown plate",
+            "phoneLabel": "Phone:",
+            "statusLabel": "Status:",
+            "statusOnline": "Online",
+            "statusOffline": "Offline"
+        },
+        "history": {
+            "selectVehicleLabel": "Select vehicle",
+            "selectVehiclePlaceholder": "-- Select vehicle --",
+            "unknown": "Unknown",
+            "fromLabel": "From date",
+            "toLabel": "To date",
+            "saveButton": "Save trip filter",
+            "errorMissing": "Please select vehicle and fill both From / To time.",
+            "errorInvalidDate": "Invalid time format. Please select again.",
+            "errorEndBeforeStart": "\"To date\" must not be earlier than \"From date\".",
+            "saveSuccess": "Trip filter saved. Go to \"Trip\" page to load data.",
+            "saveFailed": "Cannot save filter. Please try again."
+        },
+        "error": {
+            "address": "Cannot get address.",
+            "missingTokenOrImei": "Missing token or IMEI to load data.",
+            "noTripData": "No trip data.",
+            "tripLoadFailed": "Failed to load trip data.",
+            "missingDeviceOrImei": "No selected device or missing IMEI.",
+            "mqttNotReady": "MQTT connection to device is not ready.",
+            "controlFailed": "Failed to send control command.",
+            "controlException": "Error while sending control command."
+        },
+        "battery": {
+            "unknown": "Unknown",
+            "currentLineDefault": "Charge/discharge current: --",
+            "charging": "Charging",
+            "discharging": "Discharging",
+            "idle": "Idle",
+            "chargeCurrent": "Charge current:",
+            "dischargeCurrent": "Discharge current:",
+            "currentIdle": "Charge/discharge current: Idle",
+            "imei": "IMEI:",
+            "voltage": "Voltage:",
+            "status": "Status:",
+            "soc": "State of charge (SOC):",
+            "soh": "Battery health (SOH):",
+            "temperature": "Temperature:",
+            "updatedAt": "Updated at:"
+        },
+        "statusInfo": {
+            "pleaseSelect": "Please select a vehicle.",
+            "plate": "License plate:",
+            "vehicleType": "Vehicle type:",
+            "deviceType": "Device type:",
+            "atTime": "At:",
+            "engineStatus": "Engine status:",
+            "vehicleStatus": "Vehicle status:",
+            "speed": "Speed:",
+            "distance": "Distance:",
+            "location": "Location:",
+            "coordinate": "Coordinate:",
+            "engineOff": "Ignition off",
+            "engineOn": "Ignition on",
+            "vehicleParking": "Parking",
+            "vehicleRunning": "Running {speed} km/h",
+            "vehicleUnknown": "Unknown"
+        },
+        "control": {
+            "connectionStatus": "Connection status",
+            "connectionOn": "Connected",
+            "connectionOff": "Disconnected",
+            "emergencyStop": "Emergency engine cut-off",
+            "statusActivated": "Activated",
+            "statusNotActivated": "Not activated",
+            "statusActivating": "Activating emergency cut-off...",
+            "statusDeactivating": "Cancelling emergency cut-off...",
+            "lockDevice": "Lock device",
+            "unlockDevice": "Unlock device",
+            "locking": "Locking...",
+            "unlocking": "Unlocking...",
+            "lockButton": "Lock",
+            "unlockButton": "Unlock",
+            "lockSuccessToast": "Lock command (SOS on) sent.",
+            "unlockSuccessToast": "Unlock command (SOS off) sent.",
+            "confirmLockTitle": "Confirm lock device",
+            "confirmLockContent": "Are you sure you want to lock {plate}?",
+            "confirmUnlockTitle": "Confirm unlock device",
+            "confirmUnlockContent": "Are you sure you want to unlock {plate}?",
+            "confirmLockOk": "Lock",
+            "confirmUnlockOk": "Unlock",
+            "confirmCancel": "Cancel"
+        },
+        "rightPanel": {
+            "title": "Display information"
+        }
+    },
+    "cruise": {
+        "title": "Trip playback",
+        "form": {
+            "selectVehicle": "Select vehicle",
+            "selectVehiclePlaceholder": "-- Select vehicle --",
+            "loadingDevices": "Loading...",
+            "from": "From",
+            "to": "To",
+            "loadRoute": "Load route",
+            "loadingRoute": "Loading route..."
+        },
+        "quick": {
+            "oneHour": "1 hour",
+            "eightHours": "8 hours",
+            "twentyFourHours": "24 hours"
+        },
+        "error": {
+            "noToken": "Access token not found, please log in again.",
+            "noVehicle": "Please select a vehicle.",
+            "missingTime": "Please fill in both start and end time.",
+            "noVehicleInfo": "Vehicle information not found.",
+            "noData": "No trip data in this time range.",
+            "loadFailed": "Failed to load trip data. Please try again.",
+            "addressFailed": "Unable to fetch address."
+        },
+        "result": {
+            "label": "Result",
+            "totalDistance": "Total distance traveled:",
+            "unitKm": "km"
+        },
+        "common": {
+            "unknownPlate": "Unknown plate"
+        },
+        "popup": {
+            "licensePlate": "License plate",
+            "vehicleType": "Vehicle type",
+            "manufacturer": "Manufacturer",
+            "time": "Time",
+            "currentLocation": "Current location",
+            "coordinate": "Coordinate",
+            "machineStatus": "Engine status",
+            "vehicleStatus": "Vehicle status",
+            "speed": "Speed"
+        },
+        "status": {
+            "engineOn": "Engine on",
+            "engineOff": "Engine off",
+            "vehicleRunning": "Vehicle running",
+            "vehicleParking": "Vehicle parked",
+            "gpsAvailable": "GPS fixed"
+        }
     }
 }

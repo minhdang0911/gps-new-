@@ -518,5 +518,175 @@
             "endTime": "Thời gian kết thúc",
             "showTotal": "Tổng {total} bản ghi"
         }
+    },
+    "monitor": {
+        "common": {
+            "deviceFallback": "thiết bị"
+        },
+        "tabs": {
+            "monitor": "Giám sát xe",
+            "history": "Xem lại lộ trình"
+        },
+        "tabsDetail": {
+            "status": "Trạng thái",
+            "control": "Điều khiển",
+            "battery": "Trạng thái Pin"
+        },
+        "filter": {
+            "searchLabel": "Nhập xe cần tìm",
+            "searchPlaceholder": "Biển số / tên xe / IMEI...",
+            "statusLabel": "Trạng thái",
+            "statusAll": "-- Tất cả --",
+            "statusOnline": "Online",
+            "statusOffline": "Offline"
+        },
+        "list": {
+            "label": "Danh sách xe",
+            "loading": "Đang tải...",
+            "empty": "Không có xe phù hợp",
+            "unknownPlate": "Không rõ biển số",
+            "phoneLabel": "SĐT:",
+            "statusLabel": "Trạng thái:",
+            "statusOnline": "Online",
+            "statusOffline": "Offline"
+        },
+        "history": {
+            "selectVehicleLabel": "Chọn xe",
+            "selectVehiclePlaceholder": "-- Chọn xe --",
+            "unknown": "Không rõ",
+            "fromLabel": "Từ ngày",
+            "toLabel": "Đến ngày",
+            "saveButton": "Lưu bộ lọc lộ trình",
+            "errorMissing": "Vui lòng chọn xe và nhập đầy đủ \"Từ ngày\" / \"Đến ngày\".",
+            "errorInvalidDate": "Định dạng thời gian không hợp lệ. Vui lòng chọn lại.",
+            "errorEndBeforeStart": "Thời gian \"Đến ngày\" không được nhỏ hơn \"Từ ngày\".",
+            "saveSuccess": "Đã lưu bộ lọc lộ trình. Vào trang \"Hành trình\" để tải lộ trình.",
+            "saveFailed": "Không thể lưu bộ lọc. Vui lòng thử lại."
+        },
+        "error": {
+            "address": "Không lấy được địa chỉ.",
+            "missingTokenOrImei": "Thiếu token hoặc IMEI để tải dữ liệu.",
+            "noTripData": "Không có dữ liệu hành trình",
+            "tripLoadFailed": "Không thể tải dữ liệu hành trình",
+            "missingDeviceOrImei": "Chưa chọn thiết bị hoặc thiếu IMEI.",
+            "mqttNotReady": "Chưa kết nối MQTT đến thiết bị.",
+            "controlFailed": "Gửi lệnh điều khiển thất bại.",
+            "controlException": "Gửi lệnh điều khiển lỗi."
+        },
+        "battery": {
+            "unknown": "Không xác định",
+            "currentLineDefault": "Dòng sạc/xả: --",
+            "charging": "Đang sạc",
+            "discharging": "Đang xả",
+            "idle": "Đang chờ",
+            "chargeCurrent": "Dòng sạc:",
+            "dischargeCurrent": "Dòng xả:",
+            "currentIdle": "Dòng sạc/xả: Đang chờ",
+            "imei": "IMEI:",
+            "voltage": "Điện áp:",
+            "status": "Trạng thái:",
+            "soc": "Trạng thái sạc (SOC):",
+            "soh": "Sức khỏe pin (SOH):",
+            "temperature": "Nhiệt độ:",
+            "updatedAt": "Cập nhật lúc:"
+        },
+        "statusInfo": {
+            "pleaseSelect": "Vui lòng chọn xe.",
+            "plate": "Biển số xe:",
+            "vehicleType": "Loại xe:",
+            "deviceType": "Dòng thiết bị:",
+            "atTime": "Tại thời điểm:",
+            "engineStatus": "Trạng thái máy:",
+            "vehicleStatus": "Trạng thái xe:",
+            "speed": "Tốc độ:",
+            "distance": "Quãng đường:",
+            "location": "Vị trí:",
+            "coordinate": "Tọa độ:",
+            "engineOff": "Tắt máy",
+            "engineOn": "Mở máy",
+            "vehicleParking": "Đỗ xe",
+            "vehicleRunning": "Đang chạy {speed} km/h",
+            "vehicleUnknown": "Chưa chạy xe"
+        },
+        "control": {
+            "connectionStatus": "Trạng thái kết nối",
+            "connectionOn": "Kết nối",
+            "connectionOff": "Mất kết nối",
+            "emergencyStop": "Tắt máy xe khẩn cấp",
+            "statusActivated": "Đã kích hoạt",
+            "statusNotActivated": "Chưa kích hoạt",
+            "statusActivating": "Đang kích hoạt tắt máy xe khẩn cấp...",
+            "statusDeactivating": "Đang huỷ kích hoạt tắt máy xe khẩn cấp...",
+            "lockDevice": "Khoá thiết bị",
+            "unlockDevice": "Mở khoá thiết bị",
+            "locking": "Đang khoá...",
+            "unlocking": "Đang mở khoá...",
+            "lockButton": "Khoá",
+            "unlockButton": "Mở khoá",
+            "lockSuccessToast": "Đã gửi lệnh khoá thiết bị (SOS bật).",
+            "unlockSuccessToast": "Đã gửi lệnh mở khoá thiết bị (SOS tắt).",
+            "confirmLockTitle": "Xác nhận khoá thiết bị",
+            "confirmLockContent": "Bạn có chắc chắn muốn khoá {plate}?",
+            "confirmUnlockTitle": "Xác nhận mở khoá thiết bị",
+            "confirmUnlockContent": "Bạn có chắc chắn muốn mở khoá {plate}?",
+            "confirmLockOk": "Khoá",
+            "confirmUnlockOk": "Mở khoá",
+            "confirmCancel": "Huỷ"
+        },
+        "rightPanel": {
+            "title": "Thông tin hiển thị"
+        }
+    },
+    "cruise": {
+        "title": "Xem lại lộ trình",
+        "form": {
+            "selectVehicle": "Chọn xe",
+            "selectVehiclePlaceholder": "-- Chọn xe --",
+            "loadingDevices": "Đang tải...",
+            "from": "Từ ngày",
+            "to": "Đến ngày",
+            "loadRoute": "Tải lộ trình",
+            "loadingRoute": "Đang tải..."
+        },
+        "quick": {
+            "oneHour": "1 Giờ",
+            "eightHours": "8 Giờ",
+            "twentyFourHours": "24 Giờ"
+        },
+        "error": {
+            "noToken": "Không tìm thấy accessToken, vui lòng kiểm tra lại đăng nhập.",
+            "noVehicle": "Vui lòng chọn phương tiện.",
+            "missingTime": "Vui lòng nhập đầy đủ thời gian bắt đầu và kết thúc.",
+            "noVehicleInfo": "Không tìm thấy thông tin phương tiện.",
+            "noData": "Không có dữ liệu lộ trình trong khoảng thời gian này.",
+            "loadFailed": "Lỗi tải dữ liệu lộ trình. Vui lòng thử lại.",
+            "addressFailed": "Không lấy được địa chỉ."
+        },
+        "result": {
+            "label": "Kết quả",
+            "totalDistance": "Tổng km di chuyển:",
+            "unitKm": "km"
+        },
+        "common": {
+            "unknownPlate": "Không rõ biển số"
+        },
+        "popup": {
+            "licensePlate": "Biển số xe",
+            "vehicleType": "Loại xe",
+            "manufacturer": "Hãng",
+            "time": "Thời điểm",
+            "currentLocation": "Vị trí hiện tại",
+            "coordinate": "Tọa độ",
+            "machineStatus": "Trạng thái máy",
+            "vehicleStatus": "Trạng thái xe",
+            "speed": "Vận tốc"
+        },
+        "status": {
+            "engineOn": "Mở máy",
+            "engineOff": "Tắt máy",
+            "vehicleRunning": "Xe đang chạy",
+            "vehicleParking": "Đỗ xe",
+            "gpsAvailable": "Có GPS"
+        }
     }
 }

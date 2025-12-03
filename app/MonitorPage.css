@@ -152,7 +152,13 @@
     border: 1px solid #e5e7eb;
     display: flex;
     flex-direction: column;
-    max-height: 60vh;
+    max-height: 60vh; /* vẫn dùng cho tab Xem lại lộ trình */
+}
+
+/* 🔥 chỉ dùng khi tab Giám sát xe đang active */
+.iky-monitor__left-card--full {
+    height: 100% !important;
+    max-height: none;
 }
 .iky-monitor__left-tabs {
     display: flex;
@@ -183,9 +189,26 @@
 .iky-monitor__left-body {
     padding: 12px 14px 14px;
     font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    flex: 1;
+}
+
+.iky-monitor__left-section--list {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
     overflow: auto;
 }
 
+/* list xe: giãn full + scroll, không giới hạn 260px nữa */
+.iky-monitor__device-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    max-height: none; /* 👈 override cái 260px cũ */
+}
 .iky-monitor__left-section {
     margin-bottom: 12px;
 }
@@ -411,6 +434,9 @@
     .iky-monitor__right {
         display: none;
     }
+    .iky-monitor__device-list {
+        max-height: 250px;
+    }
 }
 
 @media (max-width: 768px) {
@@ -508,8 +534,7 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    max-height: 260px;
-    overflow-y: auto;
+    overflow: auto;
 }
 
 .iky-monitor__device-item {
@@ -571,4 +596,40 @@
     margin-top: 8px;
     color: #b91c1c;
     font-size: 12px;
+}
+
+.iky-monitor__overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+
+.iky-monitor__overlay-inner {
+    background: #fff;
+    padding: 16px 24px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+}
+
+.iky-monitor__spinner {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid #ddd;
+    border-top-color: #1890ff;
+    animation: iky-spin 0.7s linear infinite;
+}
+
+@keyframes iky-spin {
+    to {
+        transform: rotate(360deg);
+    }
 }
