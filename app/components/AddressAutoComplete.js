@@ -3,6 +3,88 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { AutoComplete, Input } from 'antd';
 import { EnvironmentOutlined } from '@ant-design/icons';
 
+// ===============================
+// 🔑 NHIỀU GOONG API KEY + XOAY VÒNG
+// ===============================
+const GOONG_KEYS = [
+    process.env.NEXT_PUBLIC_GOONG_API_KEY,
+    process.env.NEXT_PUBLIC_GOONG_API_KEY1,
+    process.env.NEXT_PUBLIC_GOONG_API_KEY3,
+    process.env.NEXT_PUBLIC_GOONG_API_KEY4,
+    process.env.NEXT_PUBLIC_GOONG_API_KEY5,
+    process.env.NEXT_PUBLIC_GOONG_API_KEY6,
+].filter(Boolean); // bỏ undefined / null
+
+let goongKeyIndex = 0;
+
+const getCurrentGoongKey = () => {
+    if (!GOONG_KEYS.length) return null;
+    return GOONG_KEYS[goongKeyIndex % GOONG_KEYS.length];
+};
+
+const moveToNextGoongKey = () => {
+    if (!GOONG_KEYS.length) return;
+    goongKeyIndex = (goongKeyIndex + 1) % GOONG_KEYS.length;
+};
+
+// Gọi autocomplete Goong với cơ chế xoay key
+const callGoongAutocompleteWithRotation = async (q, limit = 6) => {
+    if (!GOONG_KEYS.length) return null;
+
+    for (let i = 0; i < GOONG_KEYS.length; i++) {
+        const apiKey = getCurrentGoongKey();
+        if (!apiKey) break;
+
+        try {
+            const params = new URLSearchParams({
+                input: q,
+                limit: String(limit),
+                api_key: apiKey,
+            });
+            const url = `https://rsapi.goong.io/place/autocomplete?${params.toString()}`;
+
+            const res = await fetch(url);
+
+            let data = null;
+            try {
+                data = await res.json();
+            } catch (e) {
+                // parse json lỗi → thử key tiếp theo
+                moveToNextGoongKey();
+                continue;
+            }
+
+            // 1. HTTP bị limit/quyền
+            if (res.status === 429 || res.status === 403) {
+                moveToNextGoongKey();
+                continue;
+            }
+
+            // 2. Body báo lỗi limit / denied
+            const status = data?.status || data?.error || data?.error_code;
+            if (status === 'OVER_QUERY_LIMIT' || status === 'REQUEST_DENIED' || status === 'PERMISSION_DENIED') {
+                moveToNextGoongKey();
+                continue;
+            }
+
+            // 3. Lỗi HTTP khác
+            if (!res.ok) {
+                moveToNextGoongKey();
+                continue;
+            }
+
+            // Thành công → trả data, KHÔNG đổi key
+            return data;
+        } catch (err) {
+            // Lỗi network hoặc fetch → thử key khác
+            moveToNextGoongKey();
+        }
+    }
+
+    // Tất cả key fail
+    return null;
+};
+
 export default function AddressAutoComplete({ value, onChange, placeholder }) {
     const [innerValue, setInnerValue] = useState(value || '');
     const [options, setOptions] = useState([]);
@@ -46,43 +128,31 @@ export default function AddressAutoComplete({ value, onChange, placeholder }) {
             }
             if (fallbackMode) return;
 
+            // Không có key nào → chuyển fallback luôn
+            if (!GOONG_KEYS.length) {
+                console.warn('No Goong API keys configured');
+                switchToFallbackMode();
+                return;
+            }
+
             if (timerRef.current) clearTimeout(timerRef.current);
             timerRef.current = setTimeout(async () => {
                 try {
                     setLoading(true);
-                    const apiKey = process.env.NEXT_PUBLIC_GOONG_API_KEY;
 
-                    if (!apiKey) {
-                        console.warn('Goong API key not set: NEXT_PUBLIC_GOONG_API_KEY');
-                        switchToFallbackMode();
-                        return;
-                    }
+                    const data = await callGoongAutocompleteWithRotation(q);
 
-                    const params = new URLSearchParams({
-                        input: q,
-                        limit: '6',
-                        api_key: apiKey,
-                    });
-
-                    const url = `https://rsapi.goong.io/place/autocomplete?${params.toString()}`;
-                    const res = await fetch(url);
-
-                    if (!res.ok) {
-                        const errorData = await res.json().catch(() => null);
-                        console.error('Goong API error:', res.status, errorData);
-
+                    // Nếu hết key hoặc API lỗi → tăng error, có thể chuyển fallback
+                    if (!data) {
                         setErrorCount((prev) => {
                             const next = prev + 1;
                             if (next >= 3) switchToFallbackMode();
                             return next;
                         });
-
                         setOptions([]);
                         setLoading(false);
                         return;
                     }
-
-                    const data = await res.json();
 
                     setErrorCount(0);
 

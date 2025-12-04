@@ -22,7 +22,88 @@ import en from './locales/en.json';
 const locales = { vi, en };
 
 const { confirm } = Modal;
+
+// Giữ nguyên nếu bạn vẫn muốn dùng 1 key chính ở nơi khác
 const GOONG_API_KEY = process.env.NEXT_PUBLIC_GOONG_API_KEY;
+
+// ===============================
+// 🔑 NHIỀU GOONG API KEY + XOAY VÒNG
+// ===============================
+const GOONG_KEYS = [
+    process.env.NEXT_PUBLIC_GOONG_API_KEY,
+    process.env.NEXT_PUBLIC_GOONG_API_KEY1,
+    process.env.NEXT_PUBLIC_GOONG_API_KEY3,
+    process.env.NEXT_PUBLIC_GOONG_API_KEY4,
+    process.env.NEXT_PUBLIC_GOONG_API_KEY5,
+    process.env.NEXT_PUBLIC_GOONG_API_KEY6,
+].filter(Boolean);
+
+let goongKeyIndex = 0;
+
+const getCurrentGoongKey = () => {
+    if (!GOONG_KEYS.length) return null;
+    return GOONG_KEYS[goongKeyIndex % GOONG_KEYS.length];
+};
+
+const moveToNextGoongKey = () => {
+    if (!GOONG_KEYS.length) return;
+    goongKeyIndex = (goongKeyIndex + 1) % GOONG_KEYS.length;
+};
+
+const callGoongWithRotation = async (lat, lon) => {
+    if (!GOONG_KEYS.length) return '';
+
+    // Thử tối đa số lần = số lượng key
+    for (let i = 0; i < GOONG_KEYS.length; i++) {
+        const apiKey = getCurrentGoongKey();
+        if (!apiKey) break;
+
+        try {
+            const res = await fetch(`https://rsapi.goong.io/Geocode?latlng=${lat},${lon}&api_key=${apiKey}`);
+
+            // Nếu bị limit/quota/forbidden → chuyển qua key khác
+            if (res.status === 429 || res.status === 403) {
+                console.warn('Goong key bị limit hoặc forbidden, đổi key khác...');
+                moveToNextGoongKey();
+                continue;
+            }
+
+            if (!res.ok) {
+                // Lỗi khác (500, 400, ...) → cũng cho key này nghỉ, thử key tiếp theo
+                console.error('Goong API error với key hiện tại:', res.status);
+                moveToNextGoongKey();
+                continue;
+            }
+
+            const data = await res.json();
+
+            // Nếu Goong trả error trong body (tuỳ API thực tế)
+            if (data.error || data.error_code) {
+                console.error('Goong trả error body:', data);
+                // Nếu có code limit thì đổi key luôn
+                if (data.error_code === 429 || data.error_code === 403) {
+                    moveToNextGoongKey();
+                    continue;
+                }
+            }
+
+            const addr = data?.results?.[0]?.formatted_address || '';
+
+            if (addr) {
+                return addr;
+            }
+
+            // Không có địa chỉ → coi như fail, nhảy key
+            moveToNextGoongKey();
+        } catch (e) {
+            console.error('Lỗi gọi Goong với key hiện tại:', e);
+            moveToNextGoongKey();
+        }
+    }
+
+    // Nếu chạy hết vòng mà vẫn không có địa chỉ
+    return '';
+};
 
 const toLocalDateTimeInput = (date) => {
     const pad = (n) => String(n).padStart(2, '0');
@@ -248,31 +329,25 @@ const MonitorPage = () => {
         }
     }, [deviceList, historyDeviceId, historyStart, historyEnd]);
 
+    // =============================
+    // 🔄 FETCH ADDRESS (MULTI KEY GOONG + NOMINATIM)
+    // =============================
     const fetchAddressFromGoong = async (latVal, lonVal) => {
         if (latVal == null || lonVal == null) return;
 
         setLoadingAddress(true);
         setAddressError(null);
 
-        const lat = Number(latVal);
-        const lon = Number(lonVal);
+        const latNum = Number(latVal);
+        const lonNum = Number(lonVal);
 
         const tryGoong = async () => {
-            if (!GOONG_API_KEY) return '';
-
-            const res = await fetch(`https://rsapi.goong.io/Geocode?latlng=${lat},${lon}&api_key=${GOONG_API_KEY}`);
-
-            if (!res.ok) {
-                throw new Error('Goong API error');
-            }
-
-            const data = await res.json();
-            const addr = data?.results?.[0]?.formatted_address || '';
+            const addr = await callGoongWithRotation(latNum, lonNum);
             return addr;
         };
 
         const tryNominatim = async () => {
-            const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`;
+            const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latNum}&lon=${lonNum}&zoom=18&addressdetails=1`;
 
             const res = await fetch(url);
 
@@ -288,12 +363,14 @@ const MonitorPage = () => {
         try {
             let addr = '';
 
+            // 1. Thử tất cả key Goong bằng cơ chế xoay vòng
             try {
                 addr = await tryGoong();
             } catch (e) {
-                console.error('Goong failed, fallback Nominatim:', e);
+                console.error('Goong failed (all keys):', e);
             }
 
+            // 2. Nếu Goong không ra gì → fallback sang Nominatim
             if (!addr) {
                 try {
                     addr = await tryNominatim();
@@ -846,12 +923,6 @@ const MonitorPage = () => {
                                                         <div className="phone">
                                                             {t.list.phoneLabel} {d.phone_number}
                                                         </div>
-                                                        {/* <div className="status">
-                                                            {t.list.statusLabel}{' '}
-                                                            <span className={isOnline ? 'online' : 'offline'}>
-                                                                {isOnline ? t.list.statusOnline : t.list.statusOffline}
-                                                            </span>
-                                                        </div> */}
                                                     </div>
                                                 );
                                             })}

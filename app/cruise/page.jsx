@@ -17,6 +17,151 @@ const locales = { vi, en };
 
 const GOONG_API_KEY = process.env.NEXT_PUBLIC_GOONG_API_KEY;
 
+// ===============================
+// 🔑 NHIỀU GOONG API KEY + XOAY VÒNG
+// ===============================
+const GOONG_KEYS = [
+    process.env.NEXT_PUBLIC_GOONG_API_KEY,
+    process.env.NEXT_PUBLIC_GOONG_API_KEY1,
+    process.env.NEXT_PUBLIC_GOONG_API_KEY3,
+    process.env.NEXT_PUBLIC_GOONG_API_KEY4,
+    process.env.NEXT_PUBLIC_GOONG_API_KEY5,
+    process.env.NEXT_PUBLIC_GOONG_API_KEY6,
+].filter(Boolean); // bỏ undefined / null
+
+let goongKeyIndex = 0;
+
+const getCurrentGoongKey = () => {
+    if (!GOONG_KEYS.length) return null;
+    return GOONG_KEYS[goongKeyIndex % GOONG_KEYS.length];
+};
+
+const moveToNextGoongKey = () => {
+    if (!GOONG_KEYS.length) return;
+    goongKeyIndex = (goongKeyIndex + 1) % GOONG_KEYS.length;
+};
+
+// Hàm gọi Goong Geocode có xoay vòng key + nhận diện limit qua HTTP status & body
+const callGoongWithRotation = async (lat, lon) => {
+    if (!GOONG_KEYS.length) return '';
+
+    for (let i = 0; i < GOONG_KEYS.length; i++) {
+        const apiKey = getCurrentGoongKey();
+        if (!apiKey) break;
+
+        try {
+            const res = await fetch(`https://rsapi.goong.io/Geocode?latlng=${lat},${lon}&api_key=${apiKey}`);
+
+            let data = null;
+            try {
+                data = await res.json();
+            } catch (e) {
+                // nếu parse json lỗi thì coi như key này lỗi
+                moveToNextGoongKey();
+                continue;
+            }
+
+            // 1. HTTP 429 / 403 -> chắc chắn bị limit/forbidden
+            if (res.status === 429 || res.status === 403) {
+                moveToNextGoongKey();
+                continue;
+            }
+
+            // 2. Kiểm tra trong body có status limit/denied không
+            const status = data?.status || data?.error || data?.error_code;
+            if (status === 'OVER_QUERY_LIMIT' || status === 'REQUEST_DENIED' || status === 'PERMISSION_DENIED') {
+                moveToNextGoongKey();
+                continue;
+            }
+
+            // 3. Các lỗi HTTP khác
+            if (!res.ok) {
+                moveToNextGoongKey();
+                continue;
+            }
+
+            const addr = data?.results?.[0]?.formatted_address || '';
+
+            if (addr) {
+                return addr;
+            }
+
+            // không có địa chỉ → thử key khác
+            moveToNextGoongKey();
+        } catch (e) {
+            // lỗi mạng, lỗi fetch → thử key tiếp theo
+            moveToNextGoongKey();
+        }
+    }
+
+    return '';
+};
+
+// 🔥 Hàm gọi Goong Trip API để lấy tổng quãng đường (meters) với xoay key
+const callGoongTripWithRotation = async (points) => {
+    if (!GOONG_KEYS.length) return null;
+
+    const coords = points.filter((p) => typeof p.lat === 'number' && typeof p.lon === 'number');
+    if (coords.length < 2) return null;
+
+    const origin = `${coords[0].lat},${coords[0].lon}`;
+    const destination = `${coords[coords.length - 1].lat},${coords[coords.length - 1].lon}`;
+    const mid = coords.slice(1, -1);
+    const waypointsStr = mid.map((p) => `${p.lat},${p.lon}`).join(';');
+
+    for (let i = 0; i < GOONG_KEYS.length; i++) {
+        const apiKey = getCurrentGoongKey();
+        if (!apiKey) break;
+
+        try {
+            const url =
+                `https://rsapi.goong.io/v2/trip?origin=${origin}` +
+                (waypointsStr ? `&waypoints=${waypointsStr}` : '') +
+                `&destination=${destination}&api_key=${apiKey}`;
+
+            const res = await fetch(url);
+
+            let data = null;
+            try {
+                data = await res.json();
+            } catch (e) {
+                moveToNextGoongKey();
+                continue;
+            }
+
+            // limit / forbidden
+            if (res.status === 429 || res.status === 403) {
+                moveToNextGoongKey();
+                continue;
+            }
+
+            const status = data?.code || data?.status || data?.error || data?.error_code;
+            if (status === 'OVER_QUERY_LIMIT' || status === 'REQUEST_DENIED' || status === 'PERMISSION_DENIED') {
+                moveToNextGoongKey();
+                continue;
+            }
+
+            if (!res.ok && status && status !== 'Ok' && status !== 'OK') {
+                moveToNextGoongKey();
+                continue;
+            }
+
+            const trip = data?.trips?.[0];
+            const dist = trip?.distance;
+
+            if (typeof dist === 'number') {
+                return dist; // meters
+            }
+
+            moveToNextGoongKey();
+        } catch (e) {
+            moveToNextGoongKey();
+        }
+    }
+
+    return null;
+};
+
 // thêm t vào để popup dùng đa ngôn ngữ
 const buildPopupHtml = (p, t) => `
     <div class="iky-cruise-popup">
@@ -190,7 +335,7 @@ const CruisePage = () => {
         });
     };
 
-    // 🔥 reverse geocode cho 1 point trong routeData (index)
+    // 🔥 reverse geocode cho 1 point trong routeData (index) với multi-key Goong
     const fetchAddressForPoint = async (idx) => {
         if (!routeData.length) return;
         const point = routeData[idx];
@@ -208,13 +353,8 @@ const CruisePage = () => {
         setAddressError(null);
 
         const tryGoong = async () => {
-            if (!GOONG_API_KEY) return '';
-            const res = await fetch(
-                `https://rsapi.goong.io/Geocode?latlng=${latNum},${lonNum}&api_key=${GOONG_API_KEY}`,
-            );
-            if (!res.ok) throw new Error('Goong API error');
-            const data = await res.json();
-            return data?.results?.[0]?.formatted_address || '';
+            const addr = await callGoongWithRotation(latNum, lonNum);
+            return addr;
         };
 
         const tryNominatim = async () => {
@@ -228,14 +368,14 @@ const CruisePage = () => {
         try {
             let addr = '';
 
-            // 1. thử Goong
+            // 1. thử Goong với nhiều key
             try {
                 addr = await tryGoong();
             } catch (e) {
-                console.error('Goong failed, fallback Nominatim:', e);
+                console.error('Goong failed (all keys), fallback Nominatim:', e);
             }
 
-            // 2. fallback OSM nếu Goong toang / ko có key
+            // 2. fallback OSM nếu Goong toang / hết key
             if (!addr) {
                 try {
                     addr = await tryNominatim();
@@ -302,11 +442,9 @@ const CruisePage = () => {
 
         const p = routeData[idx];
 
-        // set activeIndex -> trigger effect scroll + highlight
         setActiveIndex(idx);
         handleSelectPoint(idx);
 
-        // popup
         if (p) {
             openInfoPopup(p);
         }
@@ -400,44 +538,42 @@ const CruisePage = () => {
         return () => map.remove();
     }, [LMap]);
 
-    // Calculate total distance (haversine)
+    // 🔥 Tính tổng quãng đường:
+    // - Ưu tiên dùng Goong Trip API (đường thực tế qua /v2/trip)
+    // - Nếu lỗi / hết quota / không có key → fallback Haversine giữa các điểm
+    // 🔥 Tính tổng quãng đường đã di chuyển theo track (A→B + B→C + …)
     useEffect(() => {
         if (routeData.length < 2) {
             setTotalKm(0);
             return;
         }
 
-        const toRad = (val) => (val * Math.PI) / 180;
-        const R = 6371000; // m
+        // lọc điểm có tọa độ chuẩn
+        const coords = routeData.filter((p) => typeof p.lat === 'number' && typeof p.lon === 'number');
 
-        let totalMeters = 0;
-
-        for (let i = 1; i < routeData.length; i++) {
-            const p1 = routeData[i - 1];
-            const p2 = routeData[i];
-
-            if (
-                typeof p1.lat !== 'number' ||
-                typeof p1.lon !== 'number' ||
-                typeof p2.lat !== 'number' ||
-                typeof p2.lon !== 'number'
-            ) {
-                continue;
-            }
-
-            const dLat = toRad(p2.lat - p1.lat);
-            const dLon = toRad(p2.lon - p1.lon);
-
-            const a =
-                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                Math.cos(toRad(p1.lat)) * Math.cos(toRad(p2.lat)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-            totalMeters += R * c;
+        if (coords.length < 2) {
+            setTotalKm(0);
+            return;
         }
 
-        setTotalKm(totalMeters / 1000);
+        const toRad = (v) => (v * Math.PI) / 180;
+        const R = 6371000;
+
+        const A = coords[0];
+        const Z = coords[coords.length - 1];
+
+        const dLat = toRad(Z.lat - A.lat);
+        const dLon = toRad(Z.lon - A.lon);
+
+        const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(toRad(A.lat)) * Math.cos(toRad(Z.lat)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+        const km = (R * c) / 1000;
+
+        setTotalKm(km); // chỉ A→Z
     }, [routeData]);
 
     // Render route on map (polyline + chấm xanh + marker đỏ)
@@ -460,7 +596,6 @@ const CruisePage = () => {
 
         if (!routeData.length) return;
 
-        // lấy các index hợp lệ có lat/lon
         const validIndices = routeData
             .map((p, idx) => (typeof p.lat === 'number' && typeof p.lon === 'number' ? idx : null))
             .filter((idx) => idx !== null);
@@ -510,7 +645,6 @@ const CruisePage = () => {
 
             pointMarkersRef.current[idx] = marker;
 
-            // click chấm xanh: sync hai bên
             marker.on('click', () => {
                 handlePointClick(idx);
             });
