@@ -6,18 +6,22 @@ import mqtt from 'mqtt';
 export default function MqttConnector({ imei, onMessage, onClientReady }) {
     const clientRef = useRef(null);
 
-    useEffect(() => {
-        if (!imei) return; // chưa có imei thì khỏi connect
+    // lấy từ env
+    const url = process.env.NEXT_PUBLIC_MQTT_URL;
+    const username = process.env.NEXT_PUBLIC_MQTT_USERNAME;
+    const password = process.env.NEXT_PUBLIC_MQTT_PASSWORD;
 
-        const url = 'wss://ev-mqtt.iky.vn:8083';
+    useEffect(() => {
+        if (!imei) return;
+
         const topic = `device/${imei}/telemetry`;
 
-        console.log('🔌 Connecting MQTT to:', url, 'topic:', topic);
+        console.log('🔌 MQTT connecting →', url, 'topic →', topic);
 
         const client = mqtt.connect(url, {
             clientId: `iky_web_${Math.random().toString(16).slice(2)}`,
-            username: 'iky',
-            password: 'IKY123456',
+            username,
+            password,
             connectTimeout: 10000,
             reconnectPeriod: 5000,
             keepalive: 60,
@@ -28,12 +32,10 @@ export default function MqttConnector({ imei, onMessage, onClientReady }) {
 
         client.on('connect', () => {
             console.log('✅ MQTT Connected!');
-            // báo cho parent biết client đã sẵn sàng
             onClientReady?.(client);
-
             client.subscribe(topic, (err) => {
-                if (err) console.error('❌ Subscribe error:', err);
-                else console.log(`📡 Subscribed → ${topic}`);
+                if (err) console.error('❌ Subscribe error', err);
+                else console.log('📡 Subscribed:', topic);
             });
         });
 
@@ -43,30 +45,19 @@ export default function MqttConnector({ imei, onMessage, onClientReady }) {
 
         client.on('message', (tpc, payload) => {
             const raw = payload.toString();
-
-            console.log('--------------------------------------------------');
-            console.log('📥 MQTT RAW MESSAGE:');
-            console.log('TOPIC:', tpc);
-            console.log('PAYLOAD:', raw);
-
             let json = null;
             try {
                 json = JSON.parse(raw);
-                console.log('📦 JSON PARSED:', json);
-            } catch {
-                console.log('⚠️ PAYLOAD KHÔNG PHẢI JSON');
-            }
-            console.log('--------------------------------------------------');
-
+            } catch {}
             onMessage?.(tpc, json || raw);
         });
 
         return () => {
             console.log('🔌 MQTT Disconnected');
-            onClientReady?.(null); // clear client ở parent
+            onClientReady?.(null);
             client.end(true);
         };
-    }, [imei, onMessage, onClientReady]);
+    }, [imei]);
 
     return null;
 }

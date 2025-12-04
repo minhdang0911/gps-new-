@@ -17,7 +17,7 @@ export const getDevices = async (token, params = {}) => {
                 driver: params.driver || '',
                 imei: params.imei || '',
                 page: params.page || 1,
-                limit: params.limit || 20,
+                limit: params.limit || 200000,
             },
         });
 

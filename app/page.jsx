@@ -264,7 +264,7 @@ const MonitorPage = () => {
         const fetchDevices = async () => {
             try {
                 setLoadingDevices(true);
-                const res = await getDevices(token, { limit: 50 });
+                const res = await getDevices(token);
                 setDeviceList(res.devices || []);
             } catch (err) {
                 console.error('Load devices error:', err);

@@ -1,6 +1,6 @@
 // app/sitemap.ts
 export default function sitemap() {
-    const baseUrl = 'https://gps-bms-tracking.iky.vn';
+    const baseUrl = 'https://ev.iky.vn';
 
     return [
         {

@@ -648,6 +648,12 @@
             "loadRoute": "Tải lộ trình",
             "loadingRoute": "Đang tải..."
         },
+        "table": {
+            "time": "Thời gian",
+            "lat": "Vĩ độ",
+            "lon": "Kinh độ",
+            "speed": "V (GPS)"
+        },
         "quick": {
             "oneHour": "1 Giờ",
             "eightHours": "8 Giờ",

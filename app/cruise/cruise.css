@@ -1,3 +1,6 @@
+/* =========================
+ *  LAYOUT CHUNG
+ * ========================= */
 .iky-cruise {
     display: flex;
     height: calc(100vh - 104px);
@@ -5,9 +8,11 @@
     font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
-/* LEFT PANEL */
+/* =========================
+ *  LEFT PANEL
+ * ========================= */
 .iky-cruise__left {
-    width: 260px;
+    width: 350px;
     padding: 12px;
     box-sizing: border-box;
 }
@@ -30,6 +35,9 @@
     background: #f9fafb;
 }
 
+/* =========================
+ *  FORM FILTER
+ * ========================= */
 .iky-cruise__form {
     padding: 10px 12px;
     border-bottom: 1px solid #e5e7eb;
@@ -78,6 +86,64 @@
     cursor: pointer;
 }
 
+.iky-cruise__load-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+/* error text */
+.iky-cruise__error {
+    margin-top: 6px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #b91c1c;
+    background: #fee2e2;
+}
+
+/* =========================
+ *  QUICK RANGE BUTTONS
+ * ========================= */
+.iky-cruise__quick-row {
+    margin-top: 6px;
+}
+
+.iky-cruise__quick-group {
+    display: flex;
+    width: 100%;
+    gap: 8px;
+    box-sizing: border-box;
+}
+
+.iky-cruise__quick-btn {
+    flex: 1 1 0;
+    padding: 6px 0;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    font-size: 14px;
+    cursor: pointer;
+    color: #334155;
+    text-align: center;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    white-space: nowrap;
+    box-sizing: border-box;
+}
+
+.iky-cruise__quick-btn:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+}
+
+.iky-cruise__quick-btn:active {
+    background: #e2e8f0;
+    transform: scale(0.96);
+}
+
+/* =========================
+ *  RESULT + DISTANCE
+ * ========================= */
 .iky-cruise__result {
     display: flex;
     justify-content: space-between;
@@ -88,6 +154,18 @@
     background: #f9fafb;
 }
 
+.iky-cruise__distance {
+    margin: 6px 0 10px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 500;
+    color: #111827;
+}
+
+/* =========================
+ *  PLAYER CONTROLS
+ * ========================= */
 .iky-cruise__controls {
     display: flex;
     align-items: center;
@@ -115,67 +193,128 @@
     flex: 1;
 }
 
-/* list */
+/* =========================
+ *  LIST / TABLE BÊN TRÁI
+ * ========================= */
 .iky-cruise__list {
-    flex: 1;
-    overflow: auto;
-    padding: 6px 8px 10px;
-}
-
-.iky-cruise__list-item {
+    margin-top: 8px;
+    max-height: 260px; /* chỉ là khung ngoài, scroll do react-window handle */
+    border: 1px solid #e5e7eb;
     border-radius: 6px;
-    border: 1px solid transparent;
-    padding: 6px 8px;
+    background: #ffffff;
+    overflow: hidden; /* không để scroll riêng ở đây */
+}
+
+.iky-cruise__table {
+    width: 100%;
     font-size: 12px;
-    cursor: pointer;
-    margin-bottom: 4px;
 }
 
-.iky-cruise__list-item:hover {
-    background: #f3f4ff;
+/* header + row dùng grid giống nhau */
+.iky-cruise__table-header,
+.iky-cruise__table-row {
+    display: grid;
+    grid-template-columns: 1.7fr 1fr 1fr 1fr; /* time, lat, lon, speed */
+    align-items: center;
+    font-size: 12px;
 }
 
-.iky-cruise__list-item--active {
-    border-color: #2563eb;
-    background: #e0ecff;
-}
-
-.iky-cruise__list-time {
+.iky-cruise__table-header {
+    background: #f3f4f6;
     font-weight: 600;
-    margin-bottom: 2px;
+    border-bottom: 1px solid #e5e7eb;
 }
 
-.iky-cruise__list-meta {
-    display: flex;
-    justify-content: space-between;
-    gap: 4px;
+.iky-cruise__table-cell {
+    padding: 4px 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-/* MAP */
+.iky-cruise__table-cell--time {
+    font-variant-numeric: tabular-nums;
+}
+
+.iky-cruise__table-row {
+    cursor: pointer;
+    border-bottom: 1px solid #f3f4f6;
+}
+
+.iky-cruise__table-row:hover {
+    background: #f9fafb;
+}
+
+.iky-cruise__table-row--active {
+    background: #e0f2fe;
+}
+
+/* =========================
+ *  MAP AREA
+ * ========================= */
 .iky-cruise__center {
     flex: 1;
     padding: 12px 12px 12px 0;
     box-sizing: border-box;
 }
 
+/* khung bọc map */
 .iky-cruise__map {
     width: 100%;
     height: 100%;
-    border-radius: 12px;
+    border-radius: 16px;
     border: 1px solid #e5e7eb;
     background: #e5e7eb;
-    position: relative;
+    position: relative; /* để overlay bám theo */
     overflow: hidden;
 }
 
+/* div chứa Leaflet map */
 .iky-cruise__map-inner {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
+    z-index: 0; /* luôn nằm dưới overlay */
 }
 
-/* popup content */
+/* overlay mờ + loading */
+.iky-cruise__map-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(0, 0, 0, 0.35); /* mờ rõ màu đen nhẹ */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none; /* không chặn drag/zoom map nếu bạn muốn */
+}
+
+.iky-cruise__loading-gif {
+    width: 200px;
+    height: 200px;
+    object-fit: contain;
+}
+
+/* (tuỳ chọn) spinner nếu muốn dùng thay vì GIF
+.iky-cruise__spinner {
+    width: 48px;
+    height: 48px;
+    border-radius: 999px;
+    border: 4px solid rgba(255, 255, 255, 0.6);
+    border-top-color: #ffffff;
+    animation: iky-spin 0.8s linear infinite;
+}
+@keyframes iky-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+*/
+
+/* =========================
+ *  POPUP & ICON A/B
+ * ========================= */
 .iky-cruise-popup {
     font-size: 12px;
     line-height: 1.4;
@@ -185,62 +324,21 @@
     margin-top: 2px;
 }
 
-/* A/B label */
 .iky-cruise-ab-icon {
-    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    background: #2563eb;
+    color: #fff;
     border-radius: 999px;
-    border: 2px solid #ffffff;
-    color: #ffffff;
+    font-size: 11px;
+    font-weight: 700;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.4);
-    font-size: 11px;
-    font-weight: 700;
-    text-align: center;
+    box-shadow: 0 0 0 2px #eff6ff;
 }
 
-/* Hàng nút chọn nhanh */
-.iky-cruise__quick-row {
-    margin-top: 6px;
-}
-
-/* Container của 3 nút – full width, dùng flex */
-.iky-cruise__quick-group {
-    display: flex;
-    width: 100%;
-    gap: 8px;
-    box-sizing: border-box;
-}
-
-/* Nút chọn nhanh: chia đều 1/3, không tràn */
-.iky-cruise__quick-btn {
-    flex: 1 1 0;
-    padding: 6px 0;
-    background: #fff;
-    border: 1px solid #cbd5e1;
-    border-radius: 999px;
-    font-size: 14px;
-    cursor: pointer;
-    color: #334155;
-    text-align: center;
-    transition: all 0.2s ease;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-    white-space: nowrap;
-    box-sizing: border-box;
-}
-
-.iky-cruise__quick-btn:hover {
-    background: #f1f5f9;
-    border-color: #94a3b8;
-}
-
-.iky-cruise__quick-btn:active {
-    background: #e2e8f0;
-    transform: scale(0.96);
-}
-
-/* responsive */
+/* =========================
+ *  RESPONSIVE
+ * ========================= */
 @media (max-width: 1024px) {
     .iky-cruise {
         flex-direction: column;
@@ -262,107 +360,6 @@
     }
 }
 
-.iky-cruise {
-    display: flex;
-    height: calc(100vh - 104px);
-    background: #f3f4f6;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-}
-
-/* left panel & form giữ như cũ, chỉ thêm distance */
-.iky-cruise__distance {
-    margin: 6px 0 10px;
-    display: flex;
-    justify-content: space-between;
-    font-size: 13px;
-    font-weight: 500;
-    color: #111827;
-}
-
-/* icon A/B cho đẹp hơn */
-.iky-cruise-ab-icon {
-    background: #2563eb;
-    color: #fff;
-    border-radius: 999px;
-    font-size: 11px;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 0 0 2px #eff6ff;
-}
-
-/* danh sách log */
-.iky-cruise__list {
-    margin-top: 8px;
-    max-height: 260px;
-    overflow: auto;
-    border: 1px solid #e5e7eb;
-    border-radius: 6px;
-    background: #ffffff;
-}
-
-.iky-cruise__list-item {
-    padding: 6px 8px;
-    font-size: 12px;
-    border-bottom: 1px solid #f3f4f6;
-    cursor: pointer;
-}
-
-.iky-cruise__list-item:last-child {
-    border-bottom: none;
-}
-
-.iky-cruise__list-item--active {
-    background: #eff6ff;
-}
-
-.iky-cruise__list-time {
-    font-weight: 600;
-    margin-bottom: 2px;
-}
-
-.iky-cruise__list-meta {
-    display: flex;
-    gap: 8px;
-    color: #6b7280;
-}
-
-/* map */
-.iky-cruise__center {
-    flex: 1;
-    padding: 12px 12px 12px 0;
-    box-sizing: border-box;
-}
-
-.iky-cruise__map {
-    width: 100%;
-    height: 100%;
-    border-radius: 16px;
-    border: 1px solid #e5e7eb;
-    background: #e5e7eb;
-    position: relative;
-    overflow: hidden;
-}
-
-.iky-cruise__map-inner {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-}
-
-/* popup nội dung */
-.iky-cruise-popup {
-    font-size: 12px;
-    line-height: 1.5;
-}
-
-.iky-cruise-popup div + div {
-    margin-top: 2px;
-}
-
-/* responsive */
 @media (max-width: 768px) {
     .iky-cruise {
         flex-direction: column;

@@ -122,7 +122,7 @@ export default function ManageDevicesPage() {
             setLoading(true);
             const res = await getDevices(token, {
                 page: 1,
-                limit: 200,
+                limit: 200000,
                 ...filters,
             });
             setDevices(res?.devices || []);
@@ -138,13 +138,13 @@ export default function ManageDevicesPage() {
     ========================= */
     const loadOptions = async () => {
         try {
-            const dc = await getDeviceCategories(token, { limit: 200 });
+            const dc = await getDeviceCategories(token, { limit: 200000 });
             setDeviceCategories(dc.items || []);
 
-            const vc = await getVehicleCategories(token, { limit: 200 });
+            const vc = await getVehicleCategories(token, { limit: 200000 });
             setVehicleCategories(vc.items || []);
 
-            const users = await getUserList({ limit: 3000 });
+            const users = await getUserList({ limit: 300000 });
             setUserOptions(users.items || []);
         } catch (err) {
             message.error(t.configLoadError);

@@ -648,6 +648,13 @@
             "loadRoute": "Load route",
             "loadingRoute": "Loading route..."
         },
+        "table": {
+            "time": "Time",
+            "lat": "Latitude",
+            "lon": "Longitude",
+            "speed": "Speed (GPS)"
+        },
+
         "quick": {
             "oneHour": "1 hour",
             "eightHours": "8 hours",
