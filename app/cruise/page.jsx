@@ -185,7 +185,7 @@ const buildPopupHtml = (p, t) => `
         <div><strong>${t.popup.licensePlate}:</strong> ${p.licensePlate || '--'}</div>
         <div><strong>${t.popup.vehicleType}:</strong> ${p.vehicleName || '--'}</div>
         <div><strong>${t.popup.manufacturer}:</strong> ${p.manufacturer || '--'}</div>
-        <div><strong>${t.popup.time}:</strong> ${p.dateTime || '--'}</div>
+        <div><strong>${t.popup.time}:</strong> ${formatDateFromDevice(p.dateTime) || '--'}</div>
         <div><strong>${t.popup.currentLocation}:</strong> ${p.address || '--'}</div>
         <div><strong>${t.popup.coordinate}:</strong> ${p.lat}, ${p.lon}</div>
         <div><strong>${t.popup.machineStatus}:</strong> ${p.machineStatus || '--'}</div>
