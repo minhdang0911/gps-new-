@@ -230,7 +230,6 @@ const MonitorPage = () => {
 
         const customIcon = LMap.icon({
             iconUrl: markerIcon.src,
-            iconSize: [36, 36],
             iconAnchor: [18, 36],
         });
 

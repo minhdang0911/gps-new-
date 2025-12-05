@@ -18,7 +18,6 @@ export const getTodayForFileName = () => {
 
 export const formatDateFromDevice = (tim) => {
     if (!tim) return null;
-
     const s = String(tim);
     if (s.length !== 12) return null;
 
@@ -31,17 +30,5 @@ export const formatDateFromDevice = (tim) => {
 
     const yyyy = 2000 + Number(yy);
 
-    const date = new Date(`${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}`);
-
-    if (isNaN(date.getTime())) return null;
-
-    // Trả về string đã format
-    return date.toLocaleString('vi-VN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-    });
+    return `${dd}/${MM}/${yyyy} ${hh}:${mm}:${ss}`;
 };
