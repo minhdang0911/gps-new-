@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Layout, Menu, Typography } from 'antd';
+import { Layout, Menu, Typography, Tooltip } from 'antd';
 import { MobileOutlined, AppstoreOutlined, CarOutlined, ToolOutlined, UsergroupAddOutlined } from '@ant-design/icons';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -55,27 +55,51 @@ export default function Sidebar() {
                 items={[
                     {
                         key: 'devices',
-                        icon: <MobileOutlined />,
+                        icon: (
+                            <Tooltip title={t.devices} placement="right">
+                                <MobileOutlined />
+                            </Tooltip>
+                        ),
                         label: <Link href={`/manage/devices${suffix}`}>{t.devices}</Link>,
                     },
                     {
                         key: 'device-category',
-                        icon: <AppstoreOutlined />,
+                        icon: (
+                            <Tooltip title={t.deviceCategory} placement="right">
+                                <AppstoreOutlined />
+                            </Tooltip>
+                        ),
                         label: <Link href={`/manage/device-category${suffix}`}>{t.deviceCategory}</Link>,
                     },
                     {
                         key: 'vehicle-category',
-                        icon: <CarOutlined />,
+                        icon: (
+                            <Tooltip title={t.vehicleCategory} placement="right">
+                                <CarOutlined />
+                            </Tooltip>
+                        ),
                         label: <Link href={`/manage/vehicle-category${suffix}`}>{t.vehicleCategory}</Link>,
                     },
                     {
                         key: 'vehicle-customer',
-                        icon: <ToolOutlined />,
-                        label: <Link href={`/manage/device-customer${suffix}`}>{t.deviceCustomer}</Link>,
+                        icon: (
+                            <Tooltip title={t.deviceCustomer} placement="right">
+                                <ToolOutlined />
+                            </Tooltip>
+                        ),
+                        label: (
+                            <Link href={`/manage/device-customer${suffix}`} style={{ fontSize: '13px' }}>
+                                {t.deviceCustomer}
+                            </Link>
+                        ),
                     },
                     {
                         key: 'user',
-                        icon: <UsergroupAddOutlined />,
+                        icon: (
+                            <Tooltip title={t.user} placement="right">
+                                <UsergroupAddOutlined />
+                            </Tooltip>
+                        ),
                         label: <Link href={`/manage/user${suffix}`}>{t.user}</Link>,
                     },
                 ]}

@@ -7,6 +7,7 @@ import markerIconImg from '../assets/marker-red.png';
 
 import { getCruiseHistory } from '../lib/api/cruise';
 import { getDevices } from '../lib/api/devices';
+import cruiseCacheManager from '../lib/cache/CruiseCacheManager'; // Import cache manager
 
 import vi from '../locales/vi.json';
 import en from '../locales/en.json';
@@ -16,10 +17,9 @@ import { formatDateFromDevice } from '../util/FormatDate';
 import { FixedSizeList as List } from 'react-window';
 import loading from '../assets/loading.gif';
 import Image from 'next/image';
+import { Tooltip } from 'antd';
 
 const locales = { vi, en };
-
-const GOONG_API_KEY = process.env.NEXT_PUBLIC_GOONG_API_KEY;
 
 // ===============================
 // 🔑 NHIỀU GOONG API KEY + XOAY VÒNG
@@ -118,67 +118,6 @@ const callGoongWithRotation = async (lat, lon) => {
     return '';
 };
 
-// Goong Trip
-const callGoongTripWithRotation = async (points) => {
-    if (!GOONG_KEYS.length) return null;
-
-    const coords = points.filter((p) => typeof p.lat === 'number' && typeof p.lon === 'number');
-    if (coords.length < 2) return null;
-
-    const origin = `${coords[0].lat},${coords[0].lon}`;
-    const destination = `${coords[coords.length - 1].lat},${coords[coords.length - 1].lon}`;
-    const mid = coords.slice(1, -1);
-    const waypointsStr = mid.map((p) => `${p.lat},${p.lon}`).join(';');
-
-    for (let i = 0; i < GOONG_KEYS.length; i++) {
-        const apiKey = getCurrentGoongKey();
-        if (!apiKey) break;
-
-        try {
-            const url =
-                `https://rsapi.goong.io/v2/trip?origin=${origin}` +
-                (waypointsStr ? `&waypoints=${waypointsStr}` : '') +
-                `&destination=${destination}&api_key=${apiKey}`;
-
-            const res = await fetch(url);
-
-            let data = null;
-            try {
-                data = await res.json();
-            } catch (e) {
-                moveToNextGoongKey();
-                continue;
-            }
-
-            if (res.status === 429 || res.status === 403) {
-                moveToNextGoongKey();
-                continue;
-            }
-
-            const status = data?.code || data?.status || data?.error || data?.error_code;
-            if (status === 'OVER_QUERY_LIMIT' || status === 'REQUEST_DENIED' || status === 'PERMISSION_DENIED') {
-                moveToNextGoongKey();
-                continue;
-            }
-
-            if (!res.ok && status && status !== 'Ok' && status !== 'OK') {
-                moveToNextGoongKey();
-                continue;
-            }
-
-            const trip = data?.trips?.[0];
-            const dist = trip?.distance;
-            if (typeof dist === 'number') return dist;
-
-            moveToNextGoongKey();
-        } catch (e) {
-            moveToNextGoongKey();
-        }
-    }
-
-    return null;
-};
-
 // popup HTML
 const buildPopupHtml = (p, t) => `
     <div class="iky-cruise-popup">
@@ -266,6 +205,19 @@ const CruisePage = () => {
             setLMap(L);
         };
         loadLeaflet();
+    }, []);
+
+    // Cleanup old cache on mount (ngầm, user không thấy)
+    useEffect(() => {
+        const cleanup = async () => {
+            try {
+                const deleted = await cruiseCacheManager.cleanupOldCache();
+                console.log(`🧹 Cleaned up ${deleted} old cache entries`);
+            } catch (e) {
+                console.error('Cache cleanup error:', e);
+            }
+        };
+        cleanup();
     }, []);
 
     const toApiDateTime = (value) => {
@@ -765,7 +717,9 @@ const CruisePage = () => {
         };
     }, [isPlaying, routeData]);
 
-    // Load route + paging
+    // ===============================
+    // 🚀 LOAD ROUTE VỚI CACHE (1 nút duy nhất)
+    // ===============================
     const handleLoadRoute = async () => {
         if (typeof window === 'undefined') return;
 
@@ -801,62 +755,56 @@ const CruisePage = () => {
             const apiStart = toApiDateTime(start);
             const apiEnd = toApiDateTime(end);
 
-            let allMapped = [];
-            let page = 1;
-            let total = 0;
-
-            while (true) {
-                const res = await getCruiseHistory(token, {
+            // Hàm fetch một page từ API
+            const fetchPageFn = async (page, limit) => {
+                return await getCruiseHistory(token, {
                     imei: selectedImei,
                     start: apiStart,
                     end: apiEnd,
                     page,
-                    limit: FETCH_PAGE_LIMIT,
+                    limit,
                 });
+            };
 
-                const list = res?.data || [];
-                total = res?.total || total;
+            // Dùng smartLoadRoute (cache ngầm, user không cần biết)
+            const result = await cruiseCacheManager.smartLoadRoute(
+                selectedImei,
+                apiStart,
+                apiEnd,
+                fetchPageFn,
+                FETCH_PAGE_LIMIT,
+            );
 
-                if (!list.length) break;
+            const allData = result.data;
 
-                const plate = currentDevice.license_plate || '';
-                const vehicleName =
-                    currentDevice.vehicle_category_id?.name || currentDevice.vehicle_category_id?.model || '';
-                const manufacturer =
-                    currentDevice.device_category_id?.name || currentDevice.device_category_id?.code || '';
-
-                const mapped = list.map((item) => ({
-                    lat: item.lat,
-                    lon: item.lon,
-                    licensePlate: plate,
-                    vehicleName,
-                    manufacturer,
-                    selector: item._id,
-                    duration: 0,
-                    dateTime: item.tim || item.created || '',
-                    machineStatus: item.acc === 1 ? t.status.engineOn : t.status.engineOff,
-                    velocity: item.spd != null ? `${item.spd} km/h` : `0 km/h`,
-                    vehicleStatus: item.acc === 1 ? t.status.vehicleRunning : t.status.vehicleParking,
-                    gpsSignText: item.gps === 1 ? t.status.gpsAvailable : '',
-                    address: '',
-                }));
-
-                allMapped = allMapped.concat(mapped);
-
-                if (total && page * FETCH_PAGE_LIMIT >= total) {
-                    break;
-                }
-
-                page += 1;
-            }
-
-            if (!allMapped.length) {
+            if (!allData || allData.length === 0) {
                 setRouteData([]);
                 setError(t.error.noData);
                 return;
             }
 
-            setRouteData(allMapped);
+            const plate = currentDevice.license_plate || '';
+            const vehicleName =
+                currentDevice.vehicle_category_id?.name || currentDevice.vehicle_category_id?.model || '';
+            const manufacturer = currentDevice.device_category_id?.name || currentDevice.device_category_id?.code || '';
+
+            const mapped = allData.map((item) => ({
+                lat: item.lat,
+                lon: item.lon,
+                licensePlate: plate,
+                vehicleName,
+                manufacturer,
+                selector: item._id,
+                duration: 0,
+                dateTime: item.tim || item.created || '',
+                machineStatus: item.acc === 1 ? t.status.engineOn : t.status.engineOff,
+                velocity: item.spd != null ? `${item.spd} km/h` : `0 km/h`,
+                vehicleStatus: item.acc === 1 ? t.status.vehicleRunning : t.status.vehicleParking,
+                gpsSignText: item.gps === 1 ? t.status.gpsAvailable : '',
+                address: '',
+            }));
+
+            setRouteData(mapped);
             setActiveIndex(0);
         } catch (e) {
             console.error(e);
@@ -904,12 +852,23 @@ const CruisePage = () => {
                 id={`cruise-item-${index}`}
                 onClick={() => handlePointClick(index)}
             >
-                <div className="iky-cruise__table-cell iky-cruise__table-cell--time">
-                    {formatDateFromDevice(p.dateTime)}
-                </div>
-                <div className="iky-cruise__table-cell">{typeof p.lat === 'number' ? p.lat.toFixed(6) : ''}</div>
-                <div className="iky-cruise__table-cell">{typeof p.lon === 'number' ? p.lon.toFixed(6) : ''}</div>
-                <div className="iky-cruise__table-cell">{p?.velocity}</div>
+                <Tooltip title={formatDateFromDevice(p.dateTime)}>
+                    <div className="iky-cruise__table-cell iky-cruise__table-cell--time">
+                        {formatDateFromDevice(p.dateTime)}
+                    </div>
+                </Tooltip>
+
+                <Tooltip title={`Vĩ độ: ${typeof p.lat === 'number' ? p.lat.toFixed(6) : 'N/A'}`}>
+                    <div className="iky-cruise__table-cell">{typeof p.lat === 'number' ? p.lat.toFixed(6) : ''}</div>
+                </Tooltip>
+
+                <Tooltip title={`Kinh độ: ${typeof p.lon === 'number' ? p.lon.toFixed(6) : 'N/A'}`}>
+                    <div className="iky-cruise__table-cell">{typeof p.lon === 'number' ? p.lon.toFixed(6) : ''}</div>
+                </Tooltip>
+
+                <Tooltip title={`Vận tốc: ${p?.velocity || 'N/A'}`}>
+                    <div className="iky-cruise__table-cell">{p?.velocity}</div>
+                </Tooltip>
             </div>
         );
     };
@@ -976,6 +935,7 @@ const CruisePage = () => {
                             <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
                         </div>
 
+                        {/* ✅ Chỉ còn 1 nút Tải lộ trình */}
                         <button className="iky-cruise__load-btn" onClick={handleLoadRoute} disabled={loadingRoute}>
                             {loadingRoute ? t.form.loadingRoute : t.form.loadRoute}
                         </button>

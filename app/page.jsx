@@ -25,6 +25,8 @@ const { confirm } = Modal;
 
 // Giữ nguyên nếu bạn vẫn muốn dùng 1 key chính ở nơi khác
 const GOONG_API_KEY = process.env.NEXT_PUBLIC_GOONG_API_KEY;
+// 🔑 MAPBOX
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_API_KEY;
 
 // ===============================
 // 🔑 NHIỀU GOONG API KEY + XOAY VÒNG
@@ -342,8 +344,33 @@ const MonitorPage = () => {
         const lonNum = Number(lonVal);
 
         const tryGoong = async () => {
+            // dùng cơ chế xoay key hiện tại
             const addr = await callGoongWithRotation(latNum, lonNum);
-            return addr;
+            return addr || '';
+        };
+
+        const tryMapbox = async () => {
+            if (!MAPBOX_TOKEN) return '';
+
+            // Mapbox reverse geocoding: lon,lat
+            const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lonNum},${latNum}.json?access_token=${MAPBOX_TOKEN}&language=vi&limit=1`;
+
+            const res = await fetch(url);
+
+            // bị limit/quota/forbidden → coi như Mapbox "hết"
+            if (res.status === 429 || res.status === 403) {
+                console.warn('Mapbox bị limit/quota/forbidden');
+                return '';
+            }
+
+            if (!res.ok) {
+                console.error('Mapbox API error:', res.status);
+                return '';
+            }
+
+            const data = await res.json();
+            const addr = data?.features?.[0]?.place_name || '';
+            return addr || '';
         };
 
         const tryNominatim = async () => {
@@ -352,30 +379,40 @@ const MonitorPage = () => {
             const res = await fetch(url);
 
             if (!res.ok) {
-                throw new Error('Nominatim error');
+                console.error('Nominatim error status:', res.status);
+                return '';
             }
 
             const data = await res.json();
             const addr = data?.display_name || '';
-            return addr;
+            return addr || '';
         };
 
         try {
             let addr = '';
 
-            // 1. Thử tất cả key Goong bằng cơ chế xoay vòng
+            // 1️⃣ Ưu tiên GOONG (xoay tất cả key)
             try {
                 addr = await tryGoong();
             } catch (e) {
                 console.error('Goong failed (all keys):', e);
             }
 
-            // 2. Nếu Goong không ra gì → fallback sang Nominatim
+            // 2️⃣ Nếu Goong không ra gì → fallback sang MAPBOX
+            if (!addr) {
+                try {
+                    addr = await tryMapbox();
+                } catch (e2) {
+                    console.error('Mapbox failed:', e2);
+                }
+            }
+
+            // 3️⃣ Nếu Mapbox cũng không ra → fallback cuối cùng NOMINATIM
             if (!addr) {
                 try {
                     addr = await tryNominatim();
-                } catch (e2) {
-                    console.error('Nominatim failed:', e2);
+                } catch (e3) {
+                    console.error('Nominatim failed:', e3);
                 }
             }
 
@@ -712,6 +749,7 @@ const MonitorPage = () => {
         const accValNum = toNumberOrNull(mqttSrc.acc);
         const spdNum = toNumberOrNull(mqttSrc.spd);
         const vgpNum = toNumberOrNull(mqttSrc.vgp);
+        const gpsValNum = toNumberOrNull(mqttSrc.gps); // 👈 GPS từ MQTT
 
         let machineStatus = '--';
         if (accValNum === 1) {
@@ -775,7 +813,15 @@ const MonitorPage = () => {
                     {t.statusInfo.location} {address || '--'}
                 </div>
                 <div>
-                    {t.statusInfo.coordinate} {latVal && lonVal ? `${latVal}, ${lonVal}` : '--'}
+                    {t.statusInfo.coordinate}{' '}
+                    {latVal != null && lonVal != null ? (
+                        <>
+                            {`${latVal}, ${lonVal}`}{' '}
+                            {gpsValNum === 1 && <span style={{ color: 'red', fontWeight: 600 }}>(*)</span>}
+                        </>
+                    ) : (
+                        '--'
+                    )}
                 </div>
             </>
         );

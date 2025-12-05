@@ -48,7 +48,10 @@ export default function MqttConnector({ imei, onMessage, onClientReady }) {
             let json = null;
             try {
                 json = JSON.parse(raw);
-            } catch {}
+                console.log('📦 JSON PARSED:', json);
+            } catch {
+                console.log('⚠️ PAYLOAD KHÔNG PHẢI JSON');
+            }
             onMessage?.(tpc, json || raw);
         });
 
