@@ -4,9 +4,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Form, Input, Button, Typography, message } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useRouter, usePathname } from 'next/navigation';
+import Image from 'next/image';
 
 import { login } from '../../lib/api/auth';
 import './Login.css';
+
+import logo from '../../assets/ChatGPT Image 14_36_56 5 thg 12, 2025.png';
 
 const { Title, Text } = Typography;
 
@@ -18,7 +21,6 @@ const LoginPage = () => {
     const router = useRouter();
     const pathname = usePathname() || '/login';
 
-    // tách /en khỏi pathname để lấy normalizedPath + flag en từ URL
     const { isEnFromPath, normalizedPath } = useMemo(() => {
         const segments = pathname.split('/').filter(Boolean);
         const last = segments[segments.length - 1];
@@ -33,9 +35,6 @@ const LoginPage = () => {
         return { isEnFromPath: false, normalizedPath: pathname || '/login' };
     }, [pathname]);
 
-    // quyết định ngôn ngữ:
-    // 1) nếu URL có /en -> EN + lưu vào localStorage
-    // 2) nếu không, lấy theo localStorage (nếu trước đó user chọn EN)
     useEffect(() => {
         if (typeof window === 'undefined') return;
 
@@ -60,7 +59,6 @@ const LoginPage = () => {
             return;
         }
 
-        // lang === 'en'
         if (isEn || isEnFromPath) return;
         setIsEn(true);
         const newPath = normalizedPath === '/login' ? '/login/en' : `${normalizedPath}/en`;
@@ -80,11 +78,9 @@ const LoginPage = () => {
 
             const res = await login(values.username, values.password, device);
 
-            // token + role
             localStorage.setItem('accessToken', res.accessToken);
             localStorage.setItem('refreshToken', res.refreshToken);
             localStorage.setItem('role', res?.user?.position || '');
-
             localStorage.setItem('username', res?.user?.username || '');
             localStorage.setItem('email', res?.user?.email || '');
 
@@ -150,6 +146,11 @@ const LoginPage = () => {
                     )}
                 </div>
 
+                {/* LOGO */}
+                <div className="iky-login__logo">
+                    <Image src={logo} alt="IKY GPS Logo" width={150} height={150} priority />
+                </div>
+
                 <div className="iky-login__header">
                     <Title level={3} className="iky-login__title">
                         {isEn ? 'Welcome back' : 'Chào mừng trở lại'}
@@ -207,7 +208,11 @@ const LoginPage = () => {
                 </Form>
 
                 <div className="iky-login__footer">
-                    <Text>© {new Date().getFullYear()} IKY Tracking System</Text>
+                    <Text>
+                        © {new Date().getFullYear()}
+                        <span style={{ marginLeft: 4, fontWeight: '600' }}>IKY GPS</span>.{' '}
+                        {isEn ? 'IKY Tracking System.' : 'Hệ thống giám sát IKY.'}
+                    </Text>
                 </div>
             </div>
         </div>

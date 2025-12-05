@@ -27,6 +27,7 @@ const { confirm } = Modal;
 const GOONG_API_KEY = process.env.NEXT_PUBLIC_GOONG_API_KEY;
 // 🔑 MAPBOX
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_API_KEY;
+const VIETMAP_TOKEN = process.env.NEXT_PUBLIC_VIETMAP_API_KEY;
 
 // ===============================
 // 🔑 NHIỀU GOONG API KEY + XOAY VÒNG
@@ -39,6 +40,14 @@ const GOONG_KEYS = [
     process.env.NEXT_PUBLIC_GOONG_API_KEY5,
     process.env.NEXT_PUBLIC_GOONG_API_KEY6,
 ].filter(Boolean);
+
+const VIETMAP_KEYS = [
+    process.env.NEXT_PUBLIC_VIETMAP_API_KEY,
+    process.env.NEXT_PUBLIC_VIETMAP_API_KEY1,
+    process.env.NEXT_PUBLIC_VIETMAP_API_KEY2,
+    process.env.NEXT_PUBLIC_VIETMAP_API_KEY3,
+    process.env.NEXT_PUBLIC_VIETMAP_API_KEY4,
+];
 
 let goongKeyIndex = 0;
 
@@ -343,79 +352,139 @@ const MonitorPage = () => {
         const latNum = Number(latVal);
         const lonNum = Number(lonVal);
 
+        // ============================
+        // 1️⃣ GOONG
+        // ============================
         const tryGoong = async () => {
-            // dùng cơ chế xoay key hiện tại
-            const addr = await callGoongWithRotation(latNum, lonNum);
-            return addr || '';
+            try {
+                const addr = await callGoongWithRotation(latNum, lonNum);
+                return addr || '';
+            } catch (e) {
+                console.error('Goong error:', e);
+                return '';
+            }
         };
 
+        // ============================
+        // 2️⃣ VIETMAP
+        // ============================
+        const tryVietMap = async () => {
+            // Lọc bỏ key null / undefined / ''
+            const validKeys = VIETMAP_KEYS.filter((k) => k);
+
+            if (validKeys.length === 0) return '';
+
+            for (let i = 0; i < validKeys.length; i++) {
+                const key = validKeys[i];
+
+                const url = `https://api.vnmap.com.vn/geocoding?latlng=${latNum},${lonNum}&key=${key}`;
+
+                try {
+                    const res = await fetch(url);
+
+                    // Nếu quota/forbidden → thử key tiếp theo
+                    if (res.status === 403 || res.status === 429) {
+                        console.warn(`VietMap key ${i} bị limit/quota/forbidden`);
+                        continue;
+                    }
+
+                    if (!res.ok) {
+                        console.warn(`VietMap key ${i} lỗi HTTP`, res.status);
+                        continue; // đổi key
+                    }
+
+                    const data = await res.json();
+
+                    const addr = data?.results?.[0]?.formatted_address || '';
+
+                    if (addr) {
+                        console.log(`VietMap key ${i} OK`);
+                        return addr;
+                    } else {
+                        console.warn(`VietMap key ${i} trả rỗng`);
+                    }
+                } catch (err) {
+                    console.error(`VietMap key ${i} exception:`, err);
+                    // tiếp tục thử key khác
+                }
+            }
+
+            // Không có key nào hoạt động
+            return '';
+        };
+
+        // ============================
+        // 3️⃣ MAPBOX
+        // ============================
         const tryMapbox = async () => {
             if (!MAPBOX_TOKEN) return '';
 
-            // Mapbox reverse geocoding: lon,lat
             const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lonNum},${latNum}.json?access_token=${MAPBOX_TOKEN}&language=vi&limit=1`;
 
-            const res = await fetch(url);
+            try {
+                const res = await fetch(url);
 
-            // bị limit/quota/forbidden → coi như Mapbox "hết"
-            if (res.status === 429 || res.status === 403) {
-                console.warn('Mapbox bị limit/quota/forbidden');
+                if (res.status === 429 || res.status === 403) {
+                    console.warn('Mapbox bị limit/quota/forbidden');
+                    return '';
+                }
+
+                if (!res.ok) {
+                    console.error('Mapbox API error:', res.status);
+                    return '';
+                }
+
+                const data = await res.json();
+                const addr = data?.features?.[0]?.place_name || '';
+                return addr || '';
+            } catch (e) {
+                console.error('Mapbox failed:', e);
                 return '';
             }
-
-            if (!res.ok) {
-                console.error('Mapbox API error:', res.status);
-                return '';
-            }
-
-            const data = await res.json();
-            const addr = data?.features?.[0]?.place_name || '';
-            return addr || '';
         };
 
+        // ============================
+        // 4️⃣ NOMINATIM (cuối)
+        // ============================
         const tryNominatim = async () => {
             const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latNum}&lon=${lonNum}&zoom=18&addressdetails=1`;
 
-            const res = await fetch(url);
+            try {
+                const res = await fetch(url);
 
-            if (!res.ok) {
-                console.error('Nominatim error status:', res.status);
+                if (!res.ok) {
+                    console.error('Nominatim error status:', res.status);
+                    return '';
+                }
+
+                const data = await res.json();
+                const addr = data?.display_name || '';
+                return addr || '';
+            } catch (e) {
+                console.error('Nominatim failed:', e);
                 return '';
             }
-
-            const data = await res.json();
-            const addr = data?.display_name || '';
-            return addr || '';
         };
 
+        // ============================
+        // CHUỖI FALLBACK
+        // ============================
         try {
             let addr = '';
 
-            // 1️⃣ Ưu tiên GOONG (xoay tất cả key)
-            try {
-                addr = await tryGoong();
-            } catch (e) {
-                console.error('Goong failed (all keys):', e);
-            }
+            // GOONG
+            addr = await tryGoong();
 
-            // 2️⃣ Nếu Goong không ra gì → fallback sang MAPBOX
-            if (!addr) {
-                try {
-                    addr = await tryMapbox();
-                } catch (e2) {
-                    console.error('Mapbox failed:', e2);
-                }
-            }
+            // nếu Goong fail → VIETMAP
+            if (!addr) addr = await tryVietMap();
 
-            // 3️⃣ Nếu Mapbox cũng không ra → fallback cuối cùng NOMINATIM
-            if (!addr) {
-                try {
-                    addr = await tryNominatim();
-                } catch (e3) {
-                    console.error('Nominatim failed:', e3);
-                }
-            }
+            // nếu VietMap fail → MAPBOX
+            if (!addr) addr = await tryMapbox();
 
+            // nếu Mapbox fail → NOMINATIM
+            if (!addr) addr = await tryNominatim();
+
+            // kết quả cuối
             if (addr) {
                 setAddress(addr);
             } else {
