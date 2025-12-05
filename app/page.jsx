@@ -619,6 +619,7 @@ const MonitorPage = () => {
     };
 
     // 🔥 nhận MQTT → update liveTelemetry + map
+    // 🔥 nhận MQTT → update liveTelemetry + map
     const handleMqttMessage = (topic, data) => {
         if (!selectedDevice) return;
 
@@ -627,7 +628,19 @@ const MonitorPage = () => {
 
         if (!data || typeof data !== 'object') return;
 
-        setLiveTelemetry((prev) => ({ ...(prev || {}), ...data }));
+        setLiveTelemetry((prev) => {
+            const updated = { ...(prev || {}), ...data };
+
+            // Gói telemetry có ev, còn lại là status
+            // Chỉ gói status (không có ev) mới được quyền xóa sos
+            const isTelemetryPacket = 'ev' in data;
+
+            if (!isTelemetryPacket && !('sos' in data) && 'sos' in updated) {
+                delete updated.sos;
+            }
+
+            return updated;
+        });
 
         if (data.lat != null && data.lon != null && LMap && mapRef.current && markerRef.current) {
             const pos = LMap.latLng(data.lat, data.lon);
@@ -636,7 +649,6 @@ const MonitorPage = () => {
             fetchAddressFromGoong(data.lat, data.lon);
         }
     };
-
     const DEVICE_FIELDS = [
         'tim',
         'lat',
@@ -874,8 +886,7 @@ const MonitorPage = () => {
     };
 
     const curStatus = selectedDevice?.status;
-    const isLocked = Number(liveTelemetry?.sos) === 1;
-
+    const isLocked = liveTelemetry?.sos === 1 || liveTelemetry?.sos === '1';
     let deviceStatusText = isLocked ? t.control.statusActivated : t.control.statusNotActivated;
     const deviceStatusClass = isLocked ? 'iky-monitor__tag-red' : 'iky-monitor__tag-green';
 
