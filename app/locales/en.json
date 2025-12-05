@@ -606,7 +606,8 @@
             "engineOn": "Ignition on",
             "vehicleParking": "Parking",
             "vehicleRunning": "Running {speed} km/h",
-            "vehicleUnknown": "Unknown"
+            "vehicleUnknown": "Unknown",
+            "version": "Version:"
         },
         "control": {
             "connectionStatus": "Connection status",

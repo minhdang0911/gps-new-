@@ -606,7 +606,8 @@
             "engineOn": "Mở máy",
             "vehicleParking": "Đỗ xe",
             "vehicleRunning": "Đang chạy {speed} km/h",
-            "vehicleUnknown": "Chưa chạy xe"
+            "vehicleUnknown": "Chưa chạy xe",
+            "version": "Phiên bản"
         },
         "control": {
             "connectionStatus": "Trạng thái kết nối",

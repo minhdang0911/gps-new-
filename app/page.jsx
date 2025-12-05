@@ -742,6 +742,7 @@ const MonitorPage = () => {
         const distance = mqttSrc.dst;
 
         const timeStr = src.tim ? parseTimToDate(src.tim)?.toLocaleString() : '--';
+        const fwr = mqttSrc?.fwr;
 
         const latVal = src.lat;
         const lonVal = src.lon;
@@ -749,7 +750,7 @@ const MonitorPage = () => {
         const accValNum = toNumberOrNull(mqttSrc.acc);
         const spdNum = toNumberOrNull(mqttSrc.spd);
         const vgpNum = toNumberOrNull(mqttSrc.vgp);
-        const gpsValNum = toNumberOrNull(mqttSrc.gps); // 👈 GPS từ MQTT
+        const gpsValNum = toNumberOrNull(mqttSrc.gps);
 
         let machineStatus = '--';
         if (accValNum === 1) {
@@ -780,6 +781,9 @@ const MonitorPage = () => {
             <>
                 <div>
                     {t.statusInfo.plate} {info.license_plate || '---'}
+                </div>
+                <div>
+                    {t.statusInfo.version} {fwr || '---'}
                 </div>
                 <div>
                     {t.statusInfo.vehicleType} {info.vehicle_category_id?.name || '---'}
