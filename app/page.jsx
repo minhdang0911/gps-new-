@@ -116,6 +116,38 @@ const callGoongWithRotation = async (lat, lon) => {
     return '';
 };
 
+// ===============================
+// 🔢 TÍNH KHOẢNG CÁCH 2 TỌA ĐỘ (MÉT)
+// ===============================
+const toRad = (deg) => (deg * Math.PI) / 180;
+
+const getDistanceMeters = (lat1, lon1, lat2, lon2) => {
+    if (
+        lat1 == null ||
+        lon1 == null ||
+        lat2 == null ||
+        lon2 == null ||
+        Number.isNaN(lat1) ||
+        Number.isNaN(lon1) ||
+        Number.isNaN(lat2) ||
+        Number.isNaN(lon2)
+    ) {
+        return null;
+    }
+
+    const R = 6371000; // bán kính Trái đất (m)
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c; // mét
+};
+
 const toLocalDateTimeInput = (date) => {
     const pad = (n) => String(n).padStart(2, '0');
     const year = date.getFullYear();
@@ -208,6 +240,10 @@ const MonitorPage = () => {
     const mapRef = useRef(null);
     const markerRef = useRef(null);
     const [markerScreenPos, setMarkerScreenPos] = useState(null);
+
+    // ✅ lưu tọa độ cuối cùng đã dùng để gọi API địa chỉ
+    const lastCoordsRef = useRef({ lat: null, lon: null });
+
     const router = useRouter();
 
     useEffect(() => {
@@ -340,7 +376,7 @@ const MonitorPage = () => {
     }, [deviceList, historyDeviceId, historyStart, historyEnd]);
 
     // =============================
-    // 🔄 FETCH ADDRESS (MULTI KEY GOONG + NOMINATIM)
+    // 🔄 FETCH ADDRESS (GOONG → VIETMAP → TOMTOM → MAPBOX → NOMINATIM)
     // =============================
     const fetchAddressFromGoong = async (latVal, lonVal) => {
         if (latVal == null || lonVal == null) return;
@@ -351,8 +387,18 @@ const MonitorPage = () => {
         const latNum = Number(latVal);
         const lonNum = Number(lonVal);
 
+        if (Number.isNaN(latNum) || Number.isNaN(lonNum)) {
+            setLoadingAddress(false);
+            setAddress('');
+            setAddressError(t.error.address);
+            return;
+        }
+
+        // lang chung cho các API hỗ trợ đa ngôn ngữ
+        const lang = isEn ? 'en' : 'vi';
+
         // ============================
-        // 1️⃣ GOONG
+        // 1️⃣ GOONG (chỉ tiếng Việt – không hỗ trợ EN)
         // ============================
         const tryGoong = async () => {
             try {
@@ -365,10 +411,9 @@ const MonitorPage = () => {
         };
 
         // ============================
-        // 2️⃣ VIETMAP
+        // 2️⃣ VIETMAP (chỉ tiếng Việt – không hỗ trợ EN)
         // ============================
         const tryVietMap = async () => {
-            // Lọc bỏ key null / undefined / ''
             const validKeys = VIETMAP_KEYS.filter((k) => k);
 
             if (validKeys.length === 0) return '';
@@ -376,12 +421,12 @@ const MonitorPage = () => {
             for (let i = 0; i < validKeys.length; i++) {
                 const key = validKeys[i];
 
+                // URL của bạn đang xài
                 const url = `https://api.vnmap.com.vn/geocoding?latlng=${latNum},${lonNum}&key=${key}`;
 
                 try {
                     const res = await fetch(url);
 
-                    // Nếu quota/forbidden → thử key tiếp theo
                     if (res.status === 403 || res.status === 429) {
                         console.warn(`VietMap key ${i} bị limit/quota/forbidden`);
                         continue;
@@ -389,7 +434,7 @@ const MonitorPage = () => {
 
                     if (!res.ok) {
                         console.warn(`VietMap key ${i} lỗi HTTP`, res.status);
-                        continue; // đổi key
+                        continue;
                     }
 
                     const data = await res.json();
@@ -404,21 +449,55 @@ const MonitorPage = () => {
                     }
                 } catch (err) {
                     console.error(`VietMap key ${i} exception:`, err);
-                    // tiếp tục thử key khác
                 }
             }
 
-            // Không có key nào hoạt động
             return '';
         };
 
         // ============================
-        // 3️⃣ MAPBOX
+        // 3️⃣ TOMTOM (có EN / VI)
+        // ============================
+        const tryTomTom = async () => {
+            if (!TOMTOM_TOKEN) return '';
+
+            const ttLang = isEn ? 'en-US' : 'vi-VN';
+            const url = `https://api.tomtom.com/search/2/reverseGeocode/${latNum},${lonNum}.json?key=${TOMTOM_TOKEN}&language=${ttLang}`;
+
+            try {
+                const res = await fetch(url);
+
+                if (res.status === 429 || res.status === 403) {
+                    console.warn('TomTom bị limit/quota/forbidden');
+                    return '';
+                }
+
+                if (!res.ok) {
+                    console.error('TomTom API error:', res.status);
+                    return '';
+                }
+
+                const data = await res.json();
+
+                // freeformAddress là string đẹp nhất
+                const addr = data?.addresses?.[0]?.address?.freeformAddress || '';
+
+                return addr || '';
+            } catch (e) {
+                console.error('TomTom failed:', e);
+                return '';
+            }
+        };
+
+        // ============================
+        // 4️⃣ MAPBOX (có EN / VI)
         // ============================
         const tryMapbox = async () => {
             if (!MAPBOX_TOKEN) return '';
 
-            const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lonNum},${latNum}.json?access_token=${MAPBOX_TOKEN}&language=vi&limit=1`;
+            const mbLang = isEn ? 'en' : 'vi';
+            // Mapbox: thứ tự lon,lat
+            const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lonNum},${latNum}.json?access_token=${MAPBOX_TOKEN}&language=${mbLang}&limit=1`;
 
             try {
                 const res = await fetch(url);
@@ -443,10 +522,10 @@ const MonitorPage = () => {
         };
 
         // ============================
-        // 4️⃣ NOMINATIM (cuối)
+        // 5️⃣ NOMINATIM (có EN / VI qua accept-language)
         // ============================
         const tryNominatim = async () => {
-            const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latNum}&lon=${lonNum}&zoom=18&addressdetails=1`;
+            const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latNum}&lon=${lonNum}&zoom=18&addressdetails=1&accept-language=${lang}`;
 
             try {
                 const res = await fetch(url);
@@ -466,24 +545,18 @@ const MonitorPage = () => {
         };
 
         // ============================
-        // CHUỖI FALLBACK
+        // 🔁 CHUỖI FALLBACK
         // ============================
         try {
             let addr = '';
 
-            // GOONG
+            // ĐÚNG THỨ TỰ BẠN YÊU CẦU
             addr = await tryGoong();
-
-            // nếu Goong fail → VIETMAP
             if (!addr) addr = await tryVietMap();
-
-            // nếu VietMap fail → MAPBOX
+            if (!addr) addr = await tryTomTom();
             if (!addr) addr = await tryMapbox();
-
-            // nếu Mapbox fail → NOMINATIM
             if (!addr) addr = await tryNominatim();
 
-            // kết quả cuối
             if (addr) {
                 setAddress(addr);
             } else {
@@ -579,6 +652,7 @@ const MonitorPage = () => {
         setCruiseError(null);
         setAddress('');
         setAddressError(null);
+        lastCoordsRef.current = { lat: null, lon: null };
 
         try {
             setLoadingBattery(true);
@@ -611,13 +685,13 @@ const MonitorPage = () => {
                 setLastCruise(cruise);
                 setCruiseError(null);
 
-                if (mapRef.current && markerRef.current && cruise.lat && cruise.lon) {
+                if (mapRef.current && markerRef.current && cruise.lat && cruise.lon && LMap) {
                     const newLatLng = LMap.latLng(cruise.lat, cruise.lon);
                     markerRef.current.setLatLng(newLatLng);
                     mapRef.current.setView(newLatLng, 16);
-                }
 
-                if (cruise.lat != null && cruise.lon != null) {
+                    // ✅ cập nhật tọa độ đã reverse geocode lần cuối
+                    lastCoordsRef.current = { lat: cruise.lat, lon: cruise.lon };
                     fetchAddressFromGoong(cruise.lat, cruise.lon);
                 }
             }
@@ -686,8 +760,7 @@ const MonitorPage = () => {
         return Number.isNaN(n) ? null : n;
     };
 
-    // 🔥 nhận MQTT → update liveTelemetry + map
-    // 🔥 nhận MQTT → update liveTelemetry + map
+    // 🔥 nhận MQTT → update liveTelemetry + map (kèm check tọa độ + khoảng cách để tránh gọi API thừa)
     const handleMqttMessage = (topic, data) => {
         if (!selectedDevice) return;
 
@@ -710,13 +783,37 @@ const MonitorPage = () => {
             return updated;
         });
 
+        // ✅ Chỉ handle tọa độ khi có lat, lon
         if (data.lat != null && data.lon != null && LMap && mapRef.current && markerRef.current) {
-            const pos = LMap.latLng(data.lat, data.lon);
-            markerRef.current.setLatLng(pos);
-            mapRef.current.setView(pos, 16);
-            fetchAddressFromGoong(data.lat, data.lon);
+            const latNum = Number(data.lat);
+            const lonNum = Number(data.lon);
+
+            if (!Number.isNaN(latNum) && !Number.isNaN(lonNum)) {
+                const pos = LMap.latLng(latNum, lonNum);
+                markerRef.current.setLatLng(pos);
+                mapRef.current.setView(pos, 16);
+
+                const prev = lastCoordsRef.current;
+                const MIN_MOVE_METERS = 15; // 👈 ngưỡng di chuyển tối thiểu để gọi lại API (chỉnh tùy ý)
+
+                let tooClose = false;
+
+                if (prev.lat != null && prev.lon != null) {
+                    const dist = getDistanceMeters(prev.lat, prev.lon, latNum, lonNum);
+                    if (dist != null && dist < MIN_MOVE_METERS) {
+                        tooClose = true;
+                    }
+                }
+
+                // 🔥 Chỉ gọi API reverse geocode nếu di chuyển đủ xa
+                if (!tooClose) {
+                    lastCoordsRef.current = { lat: latNum, lon: lonNum };
+                    fetchAddressFromGoong(latNum, lonNum);
+                }
+            }
         }
     };
+
     const DEVICE_FIELDS = [
         'tim',
         'lat',
