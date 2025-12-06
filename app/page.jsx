@@ -768,16 +768,22 @@ const MonitorPage = () => {
         if (arr[1] !== selectedDevice.imei) return;
 
         if (!data || typeof data !== 'object') return;
-
         setLiveTelemetry((prev) => {
             const updated = { ...(prev || {}), ...data };
 
-            // Gói telemetry có ev, còn lại là status
-            // Chỉ gói status (không có ev) mới được quyền xóa sos
             const isTelemetryPacket = 'ev' in data;
 
-            if (!isTelemetryPacket && !('sos' in data) && 'sos' in updated) {
-                delete updated.sos;
+            // Nếu là gói status (không có ev)
+            if (!isTelemetryPacket) {
+                // Xóa sos nếu gói mới không có sos
+                if (!('sos' in data) && 'sos' in updated) {
+                    delete updated.sos;
+                }
+
+                // Xóa acc nếu gói mới không có acc
+                if (!('acc' in data) && 'acc' in updated) {
+                    delete updated.acc;
+                }
             }
 
             return updated;

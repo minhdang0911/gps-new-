@@ -29,8 +29,8 @@ import {
 
 import { usePathname } from 'next/navigation';
 
-import * as XLSX from 'xlsx-js-style';
-import { saveAs } from 'file-saver';
+// ❗ ĐÃ BỎ import * as XLSX / file-saver ở đây
+// để chuyển sang dynamic import trong exportExcel
 
 import markerIcon from '../../assets/marker-red.png';
 import { getTodayForFileName } from '../../util/FormatDate';
@@ -103,30 +103,46 @@ export default function ManageDevicesPage() {
         driver: '',
     });
 
-    // VIEW MODE
-    const [viewMode, setViewMode] = useState('list'); // list | detail
+    // VIEW MODE: 'list' | 'detail'
+    const [viewMode, setViewMode] = useState('list');
     const [selectedDevice, setSelectedDevice] = useState(null);
 
-    // MODAL STATE
-    const [modalMode, setModalMode] = useState(null); // add | edit
+    // MODAL STATE: 'add' | 'edit' | null
+    const [modalMode, setModalMode] = useState(null);
     const [form] = Form.useForm();
 
     // MAP REF
     const mapRef = useRef(null);
 
+    // PAGINATION STATE
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(50);
+    const [total, setTotal] = useState(0);
+
     /* =========================
-        LOAD LIST
+        LOAD LIST (có pagination)
     ========================= */
-    const loadDevices = async () => {
+    const loadDevices = async (page = 1, limit = pageSize) => {
+        if (!token) return;
+
         try {
             setLoading(true);
             const res = await getDevices(token, {
-                page: 1,
-                limit: 200000,
+                page,
+                limit,
                 ...filters,
             });
+
             setDevices(res?.devices || []);
+
+            const totalFromApi =
+                res?.total ?? res?.pagination?.total ?? (Array.isArray(res?.devices) ? res.devices.length : 0);
+
+            setTotal(totalFromApi);
+            setCurrentPage(page);
+            setPageSize(limit);
         } catch (err) {
+            console.error(err);
             message.error(t.loadError);
         } finally {
             setLoading(false);
@@ -137,25 +153,21 @@ export default function ManageDevicesPage() {
         LOAD OPTIONS
     ========================= */
     const loadOptions = async () => {
+        if (!token) return;
         try {
-            const dc = await getDeviceCategories(token, { limit: 200000 });
+            const dc = await getDeviceCategories(token, { limit: 1000 });
             setDeviceCategories(dc.items || []);
 
-            const vc = await getVehicleCategories(token, { limit: 200000 });
+            const vc = await getVehicleCategories(token, { limit: 1000 });
             setVehicleCategories(vc.items || []);
 
-            const users = await getUserList({ limit: 300000 });
+            const users = await getUserList({ limit: 2000 });
             setUserOptions(users.items || []);
         } catch (err) {
+            console.error(err);
             message.error(t.configLoadError);
         }
     };
-
-    useEffect(() => {
-        if (!token) return;
-        loadDevices();
-        loadOptions();
-    }, [token]);
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -164,16 +176,25 @@ export default function ManageDevicesPage() {
         }
     }, []);
 
+    useEffect(() => {
+        if (!token) return;
+        loadDevices(1, pageSize);
+        loadOptions();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [token]);
+
     /* =========================
-        EXPORT EXCEL (xlsx-js-style)
+        EXPORT EXCEL (dynamic import)
     ========================= */
-    const exportExcel = () => {
+    const exportExcel = async () => {
         try {
             if (!devices.length) {
                 return message.warning(t.noData);
             }
 
-            // Giữ nguyên kiểu mapping VI cho file, cho chắc k hư rule cũ
+            const XLSX = await import('xlsx-js-style');
+            const { saveAs } = await import('file-saver');
+
             const excelData = devices.map((d) => ({
                 IMEI: d.imei,
                 'Loại thiết bị': d.device_category_id?.name || '-',
@@ -211,7 +232,7 @@ export default function ManageDevicesPage() {
 
             // HEADER ROW
             headers.forEach((h, idx) => {
-                const cellRef = XLSX.utils.encode_cell({ r: 1, c: idx }); // row index = 1 (dòng 2)
+                const cellRef = XLSX.utils.encode_cell({ r: 1, c: idx }); // row 2
                 if (!ws[cellRef]) return;
 
                 ws[cellRef].s = {
@@ -346,17 +367,8 @@ export default function ManageDevicesPage() {
         return /^(0[2-9][0-9]{8,9})$/.test(phone);
     };
 
-    useEffect(() => {
-        const loadLeaflet = async () => {
-            const L = await import('leaflet');
-            await import('leaflet/dist/leaflet.css');
-            setLMap(L);
-        };
-        loadLeaflet();
-    }, []);
-
     /* =========================
-        SAVE
+        SAVE (ADD / EDIT)
     ========================= */
     const handleSave = async () => {
         try {
@@ -380,13 +392,13 @@ export default function ManageDevicesPage() {
             if (modalMode === 'add') {
                 await createDevice(token, payload);
                 message.success(t.createSuccess);
-            } else {
+            } else if (modalMode === 'edit' && selectedDevice?._id) {
                 await updateDevice(token, selectedDevice._id, payload);
                 message.success(t.updateSuccess);
             }
 
             setModalMode(null);
-            loadDevices();
+            loadDevices(currentPage, pageSize);
         } catch (err) {
             message.error(extractErrorMsg(err));
         }
@@ -405,7 +417,7 @@ export default function ManageDevicesPage() {
                 try {
                     await deleteDevice(token, id);
                     message.success(t.deleteSuccess);
-                    loadDevices();
+                    loadDevices(currentPage, pageSize);
                 } catch (err) {
                     message.error(extractErrorMsg(err));
                 }
@@ -414,7 +426,7 @@ export default function ManageDevicesPage() {
     };
 
     /* =========================
-        SELECT DEVICE
+        SELECT DEVICE (DETAIL)
     ========================= */
     const handleSelectDevice = async (item) => {
         if (currentRole === 'customer') return message.warning(t.noPermissionDetail);
@@ -429,6 +441,7 @@ export default function ManageDevicesPage() {
             setCruiseInfo(cruise);
             setBatteryInfo(battery?.batteryStatus || null);
         } catch (err) {
+            console.error(err);
             message.error(isEn ? 'Failed to load device data' : 'Không tải được dữ liệu hành trình / pin');
         }
     };
@@ -438,43 +451,59 @@ export default function ManageDevicesPage() {
         setSelectedDevice(null);
         setCruiseInfo(null);
         setBatteryInfo(null);
-    };
-
-    /* =========================
-        INIT MAP
-    ========================= */
-    useEffect(() => {
-        if (viewMode !== 'detail' || !selectedDevice) return;
-        if (!cruiseInfo) return;
-        if (!LMap) return;
 
         if (mapRef.current) {
             mapRef.current.remove();
+            mapRef.current = null;
         }
+    };
 
-        const lat = cruiseInfo.lat || 10.75;
-        const lon = cruiseInfo.lon || 106.6;
+    /* =========================
+        INIT MAP (lazy-load Leaflet)
+    ========================= */
+    useEffect(() => {
+        const initMap = async () => {
+            if (viewMode !== 'detail' || !selectedDevice) return;
+            if (!cruiseInfo) return;
 
-        const map = LMap.map('iky-device-map', {
-            center: [lat, lon],
-            zoom: 16,
-            zoomControl: false,
-        });
+            let L = LMap;
+            if (!L) {
+                const leafletModule = await import('leaflet');
+                await import('leaflet/dist/leaflet.css');
+                L = leafletModule.default || leafletModule;
+                setLMap(L);
+            }
 
-        mapRef.current = map;
+            if (!L) return;
 
-        LMap.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+            if (mapRef.current) {
+                mapRef.current.remove();
+                mapRef.current = null;
+            }
 
-        const mk = LMap.marker([lat, lon], {
-            icon: LMap.icon({
-                iconUrl: markerIcon.src,
-                iconSize: [40, 40],
-                iconAnchor: [20, 40],
-            }),
-        }).addTo(map);
+            const lat = cruiseInfo.lat || 10.75;
+            const lon = cruiseInfo.lon || 106.6;
 
-        mk.bindPopup(
-            `
+            const map = L.map('iky-device-map', {
+                center: [lat, lon],
+                zoom: 16,
+                zoomControl: false,
+            });
+
+            mapRef.current = map;
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+            const mk = L.marker([lat, lon], {
+                icon: L.icon({
+                    iconUrl: markerIcon.src,
+                    iconSize: [40, 40],
+                    iconAnchor: [20, 40],
+                }),
+            }).addTo(map);
+
+            mk.bindPopup(
+                `
             <b>${t.imei}:</b> ${selectedDevice.imei}<br/>
             <b>${t.plate}:</b> ${selectedDevice.license_plate || '-'}<br/>
             <b>${t.deviceType}:</b> ${selectedDevice.device_category_id?.name || '-'}<br/>
@@ -482,10 +511,14 @@ export default function ManageDevicesPage() {
             <b>${t.acc}:</b> ${cruiseInfo?.acc === 1 ? t.running : t.stopped}<br/>
             <b>${t.battery}:</b> ${batteryInfo?.soc ?? '--'}%
         `,
-        );
+            );
 
-        setTimeout(() => map.invalidateSize(), 200);
-    }, [viewMode, selectedDevice, cruiseInfo, batteryInfo, LMap]);
+            setTimeout(() => map.invalidateSize(), 200);
+        };
+
+        initMap();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [viewMode, selectedDevice, cruiseInfo, batteryInfo, t]);
 
     /* =========================
         TABLE COLUMNS (SORTER)
@@ -494,12 +527,12 @@ export default function ManageDevicesPage() {
         {
             title: 'STT',
             width: 60,
-            render: (_, __, index) => index + 1,
+            render: (_, __, index) => (currentPage - 1) * pageSize + index + 1,
         },
         {
             title: 'IMEI',
             dataIndex: 'imei',
-            sorter: (a, b) => a.imei.localeCompare(b.imei),
+            sorter: (a, b) => (a.imei || '').localeCompare(b.imei || ''),
             render: (text, record) => (
                 <Button type="link" onClick={() => handleSelectDevice(record)}>
                     {text}
@@ -542,7 +575,7 @@ export default function ManageDevicesPage() {
         {
             title: t.createdDate,
             dataIndex: 'createdAt',
-            sorter: (a, b) => new Date(a.createdAt) - new Date(b.createdAt),
+            sorter: (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
             render: (v) => new Date(v).toLocaleString(isEn ? 'en-US' : 'vi-VN'),
         },
         {
@@ -570,7 +603,7 @@ export default function ManageDevicesPage() {
         RENDER LIST MODE
     ========================= */
     const renderList = () => (
-        <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
             <Row justify="space-between" align="middle">
                 <Col>
                     <Title level={4}>{t.title}</Title>
@@ -623,7 +656,7 @@ export default function ManageDevicesPage() {
                 </Row>
 
                 <Row justify="end" style={{ marginTop: 12 }}>
-                    <Button type="primary" icon={<SearchOutlined />} onClick={loadDevices}>
+                    <Button type="primary" icon={<SearchOutlined />} onClick={() => loadDevices(1, pageSize)}>
                         {t.search}
                     </Button>
                 </Row>
@@ -631,14 +664,22 @@ export default function ManageDevicesPage() {
 
             <Card>
                 <Text strong>
-                    {t.deviceList} ({devices.length})
+                    {t.deviceList} ({total || devices.length})
                 </Text>
                 <Table
                     dataSource={devices}
                     columns={columns}
                     rowKey="_id"
                     loading={loading}
-                    pagination={{ pageSize: 10 }}
+                    pagination={{
+                        current: currentPage,
+                        pageSize,
+                        total,
+                        showSizeChanger: true,
+                        onChange: (page, size) => {
+                            loadDevices(page, size || pageSize);
+                        },
+                    }}
                     style={{ marginTop: 12 }}
                     scroll={{ x: 900 }}
                 />
@@ -650,7 +691,7 @@ export default function ManageDevicesPage() {
         RENDER DETAIL MODE
     ========================= */
     const renderDetail = () => (
-        <Space orientation="vertical" style={{ width: '100%' }} size="middle">
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
             <Space wrap>
                 <Button icon={<ArrowLeftOutlined />} onClick={goBack}>
                     {t.back}

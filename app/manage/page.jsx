@@ -8,15 +8,18 @@ export default function ManageIndexPage() {
     const pathname = usePathname() || '';
 
     useEffect(() => {
-        // detect EN theo URL
+        // Chỉ chạy khi đang ở đúng trang /manage hoặc /manage/en
+        // Tránh redirect loop khi đã ở /manage/devices
         const segments = pathname.split('/').filter(Boolean);
-        const last = segments[segments.length - 1];
-        const isEn = last === 'en';
 
+        // Nếu pathname đã có "devices" thì không redirect nữa
+        if (segments.includes('devices')) return;
+
+        const isEn = segments.includes('en');
         const suffix = isEn ? '/en' : '';
 
         router.replace(`/manage/devices${suffix}`);
-    }, [pathname, router]);
+    }, [pathname]);
 
     return null;
 }
