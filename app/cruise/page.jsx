@@ -32,6 +32,7 @@ const GOONG_KEYS = [
     process.env.NEXT_PUBLIC_GOONG_API_KEY5,
     process.env.NEXT_PUBLIC_GOONG_API_KEY6,
     process.env.NEXT_PUBLIC_GOONG_API_KEY7,
+    process.env.NEXT_PUBLIC_GOONG_API_KEY8,
 ].filter(Boolean);
 
 const VIETMAP_KEYS = [
