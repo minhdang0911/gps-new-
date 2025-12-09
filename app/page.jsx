@@ -322,15 +322,18 @@ const MonitorPage = () => {
 
         updatePopupPosition();
 
-        marker.on('click', () => {
-            setShowPopup(true);
-        });
-
-        map.on('click', () => {
-            setShowPopup(false);
-        });
-
+        marker.on('click', () => setShowPopup(true));
+        map.on('click', () => setShowPopup(false));
         map.on('move zoom', updatePopupPosition);
+
+        // 🟢 quan trọng: sau khi zoom xong thì focus lại marker
+        map.on('zoomend', () => {
+            if (markerRef.current) {
+                const pos = markerRef.current.getLatLng();
+                // giữ nguyên level zoom hiện tại, chỉ pan về marker
+                map.setView(pos, map.getZoom(), { animate: false });
+            }
+        });
 
         const handleResize = () => {
             map.invalidateSize();
@@ -342,6 +345,7 @@ const MonitorPage = () => {
             window.removeEventListener('resize', handleResize);
             map.off('move', updatePopupPosition);
             map.off('zoom', updatePopupPosition);
+            map.off('zoomend'); // nhớ bỏ listener
             map.remove();
         };
     }, [LMap, lat, lng]);
