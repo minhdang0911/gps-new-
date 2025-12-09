@@ -7,7 +7,7 @@ import markerIconImg from '../assets/marker-red.png';
 
 import { getCruiseHistory } from '../lib/api/cruise';
 import { getDevices } from '../lib/api/devices';
-import cruiseCacheManager from '../lib/cache/CruiseCacheManager'; // Import cache manager
+import cruiseCacheManager from '../lib/cache/CruiseCacheManager';
 
 import vi from '../locales/vi.json';
 import en from '../locales/en.json';
@@ -17,12 +17,12 @@ import { formatDateFromDevice } from '../util/FormatDate';
 import { FixedSizeList as List } from 'react-window';
 import loading from '../assets/loading.gif';
 import Image from 'next/image';
-import { Tooltip } from 'antd';
+import { Tooltip, Select } from 'antd';
 
 const locales = { vi, en };
 
 // ===============================
-// 🔑 NHIỀU GOONG API KEY + XOAY VÒNG
+// 🔑 MULTI PROVIDER CONFIG
 // ===============================
 const GOONG_KEYS = [
     process.env.NEXT_PUBLIC_GOONG_API_KEY,
@@ -31,8 +31,25 @@ const GOONG_KEYS = [
     process.env.NEXT_PUBLIC_GOONG_API_KEY4,
     process.env.NEXT_PUBLIC_GOONG_API_KEY5,
     process.env.NEXT_PUBLIC_GOONG_API_KEY6,
+    process.env.NEXT_PUBLIC_GOONG_API_KEY7,
 ].filter(Boolean);
 
+const VIETMAP_KEYS = [
+    process.env.NEXT_PUBLIC_VIETMAP_API_KEY,
+    process.env.NEXT_PUBLIC_VIETMAP_API_KEY1,
+    process.env.NEXT_PUBLIC_VIETMAP_API_KEY2,
+    process.env.NEXT_PUBLIC_VIETMAP_API_KEY3,
+    process.env.NEXT_PUBLIC_VIETMAP_API_KEY4,
+].filter(Boolean);
+
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_API_KEY;
+const TOMTOM_TOKEN = process.env.NEXT_PUBLIC_TOMTOM_API_KEY || process.env.NEXT_PUBLIC_TOMTOM_API_KEY_1 || '';
+const TRACKASIA_KEY = process.env.NEXT_PUBLIC_TRACKASIA_API_KEY || '';
+const OPENCAGE_KEY = process.env.NEXT_PUBLIC_OPENCAGE_API_KEY || '';
+
+// ===============================
+// 🔑 NHIỀU GOONG API KEY + XOAY VÒNG
+// ===============================
 let goongKeyIndex = 0;
 
 const getCurrentGoongKey = () => {
@@ -50,6 +67,57 @@ const moveToNextGoongKey = () => {
 // ===============================
 const FETCH_PAGE_LIMIT = 1000;
 const VISUAL_MAX_POINTS_ON_MAP = 3000;
+
+// ====== util GPS dùng chung ======
+const EARTH_RADIUS_M = 6371000;
+
+const toRad = (v) => (v * Math.PI) / 180;
+
+const distanceMeters = (a, b) => {
+    const dLat = toRad(b.lat - a.lat);
+    const dLon = toRad(b.lon - a.lon);
+
+    const sinLat = Math.sin(dLat / 2);
+    const sinLon = Math.sin(dLon / 2);
+
+    const aa = sinLat * sinLat + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * sinLon * sinLon;
+
+    const c = 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
+    return EARTH_RADIUS_M * c;
+};
+
+// 🔥 gom điểm trong bán kính ~100m
+const MIN_CLUSTER_DIST_M = 100;
+
+const compressRouteByDistance = (points, thresholdM = MIN_CLUSTER_DIST_M) => {
+    if (!points || points.length === 0) return [];
+
+    const result = [];
+    let lastKept = null;
+
+    for (let i = 0; i < points.length; i++) {
+        const p = points[i];
+        if (typeof p.lat !== 'number' || typeof p.lon !== 'number') {
+            continue;
+        }
+
+        if (!lastKept) {
+            result.push(p);
+            lastKept = p;
+            continue;
+        }
+
+        const d = distanceMeters({ lat: lastKept.lat, lon: lastKept.lon }, { lat: p.lat, lon: p.lon });
+
+        // chỉ giữ nếu cách điểm trước đó >= threshold
+        if (d >= thresholdM) {
+            result.push(p);
+            lastKept = p;
+        }
+    }
+
+    return result;
+};
 
 const getVisualIndicesForMap = (list) => {
     const len = list.length;
@@ -71,8 +139,47 @@ const getVisualIndicesForMap = (list) => {
     return result;
 };
 
-// Goong Geocode
-const callGoongWithRotation = async (lat, lon) => {
+// Chọn địa chỉ đẹp nhất từ Goong v2
+const pickBestGoongV2Address = (results = []) => {
+    if (!Array.isArray(results) || results.length === 0) return '';
+
+    const poiCandidates = results.filter((r) => {
+        const name = (r.name || '').trim();
+        const addr = (r.address || r.formatted_address || '').trim();
+        const formatted = (r.formatted_address || '').trim();
+        const types = Array.isArray(r.types) ? r.types : [];
+
+        const isHouseNumberType = types.includes('house_number');
+        const startsWithDigit = /^\d/.test(name); // "38-40 Đường..." => coi là số nhà
+
+        // POI hợp lệ:
+        // - có name
+        // - name không bắt đầu bằng số
+        // - name khác address / formatted
+        // - không phải house_number
+        return name && !startsWithDigit && name !== addr && name !== formatted && !isHouseNumberType;
+    });
+
+    const chosen = poiCandidates[0] || results[0];
+
+    const name = (chosen.name || '').trim();
+    const formatted = (chosen.formatted_address || '').trim();
+    const addr = (chosen.address || '').trim();
+
+    // Nếu formatted_address đã đầy đủ thì dùng luôn
+    if (formatted) return formatted;
+
+    // Nếu không có formatted thì tự ghép
+    if (name && addr) return `${name}, ${addr}`;
+    if (addr) return addr;
+    if (name) return name;
+
+    return '';
+};
+
+// Goong Geocode (xoay key)
+// Goong Geocode v2 (xoay key) + ưu tiên POI (công ty, cây xăng, nhà sách...)
+const callGoongWithRotation = async (lat, lon, lang = 'vi') => {
     if (!GOONG_KEYS.length) return '';
 
     for (let i = 0; i < GOONG_KEYS.length; i++) {
@@ -80,42 +187,89 @@ const callGoongWithRotation = async (lat, lon) => {
         if (!apiKey) break;
 
         try {
-            const res = await fetch(`https://rsapi.goong.io/Geocode?latlng=${lat},${lon}&api_key=${apiKey}`);
+            const url =
+                `https://rsapi.goong.io/v2/geocode?latlng=${lat},${lon}` +
+                `&api_key=${apiKey}` +
+                `&limit=2` + // như bạn test: 2 là đủ 1 địa chỉ + 1 POI
+                `&has_deprecated_administrative_unit=true` +
+                `&language=${lang}`;
+
+            const res = await fetch(url);
 
             let data = null;
             try {
                 data = await res.json();
             } catch (e) {
+                console.warn('Parse JSON Goong v2 fail, đổi key...');
                 moveToNextGoongKey();
                 continue;
             }
 
-            if (res.status === 429 || res.status === 403) {
-                moveToNextGoongKey();
-                continue;
-            }
-
-            const status = data?.status || data?.error || data?.error_code;
-            if (status === 'OVER_QUERY_LIMIT' || status === 'REQUEST_DENIED' || status === 'PERMISSION_DENIED') {
+            // quota / forbidden
+            if (res.status === 429 || res.status === 403 || data?.error_code === 429 || data?.error_code === 403) {
+                console.warn('Goong v2 key bị limit/quota, đổi key...');
                 moveToNextGoongKey();
                 continue;
             }
 
             if (!res.ok) {
+                console.warn('Goong v2 HTTP error', res.status);
                 moveToNextGoongKey();
                 continue;
             }
 
-            const addr = data?.results?.[0]?.formatted_address || '';
+            const addr = pickBestGoongV2Address(data?.results || []);
             if (addr) return addr;
 
+            // không có địa chỉ → thử key khác
             moveToNextGoongKey();
-        } catch (e) {
+        } catch (err) {
+            console.error('Goong v2 exception với key hiện tại:', err);
             moveToNextGoongKey();
         }
     }
 
     return '';
+};
+
+// ⭐ Goong DistanceMatrix: tính quãng đường đường bộ A→B
+const getGoongRoadDistanceKm = async (startPoint, endPoint) => {
+    if (!GOONG_KEYS.length) return null;
+    const apiKey = getCurrentGoongKey();
+    if (!apiKey) return null;
+
+    const origins = `${startPoint.lat},${startPoint.lon}`;
+    const destinations = `${endPoint.lat},${endPoint.lon}`;
+
+    // 👉 dùng v2
+    const url = `https://rsapi.goong.io/v2/distancematrix?origins=${origins}&destinations=${destinations}&vehicle=car&api_key=${apiKey}`;
+
+    try {
+        const res = await fetch(url);
+        const data = await res.json().catch(() => null);
+
+        // quota / forbidden → chuyển key
+        if (res.status === 429 || res.status === 403 || data?.error_code === 429 || data?.error_code === 403) {
+            console.warn('Goong DistanceMatrix v2 limit/forbidden');
+            moveToNextGoongKey();
+            return null;
+        }
+
+        if (!res.ok || !data) {
+            console.warn('Goong DistanceMatrix v2 HTTP/body error', res.status);
+            return null;
+        }
+
+        // v2 vẫn rows/elements giống v1
+        const element = data?.rows?.[0]?.elements?.[0];
+        const meters = element?.distance?.value;
+
+        if (typeof meters !== 'number') return null;
+        return meters / 1000; // km
+    } catch (err) {
+        console.error('Goong DistanceMatrix v2 exception', err);
+        return null;
+    }
 };
 
 // popup HTML
@@ -165,6 +319,12 @@ const CruisePage = () => {
     const [activeIndex, setActiveIndex] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
     const [totalKm, setTotalKm] = useState(0);
+    const [deviceSearchText, setDeviceSearchText] = useState('');
+
+    // ⭐ quãng đường đường bộ (Goong)
+    const [roadKm, setRoadKm] = useState(null);
+    const [roadKmLoading, setRoadKmLoading] = useState(false);
+    const [roadKmError, setRoadKmError] = useState(null);
 
     const [deviceList, setDeviceList] = useState([]);
     const [selectedDeviceId, setSelectedDeviceId] = useState('');
@@ -188,6 +348,7 @@ const CruisePage = () => {
     const animationFrameRef = useRef(null);
     const popupRef = useRef(null);
     const highlightedMarkerRef = useRef(null);
+    const abLabelMarkersRef = useRef([]); // marker A/B
 
     const animStateRef = useRef({
         segmentIndex: 0,
@@ -196,6 +357,8 @@ const CruisePage = () => {
 
     const isPlayingRef = useRef(false);
     const listRef = useRef(null);
+
+    const addressCacheRef = useRef({});
 
     // load leaflet
     useEffect(() => {
@@ -207,7 +370,7 @@ const CruisePage = () => {
         loadLeaflet();
     }, []);
 
-    // Cleanup old cache on mount (ngầm, user không thấy)
+    // cleanup cache
     useEffect(() => {
         const cleanup = async () => {
             try {
@@ -256,14 +419,55 @@ const CruisePage = () => {
         popupRef.current.setLatLng([p.lat, p.lon]).setContent(buildPopupHtml(p, t)).openOn(mapRef.current);
     };
 
+    // 🔍 build options cho Select + highlight text trùng
+    const deviceOptions = React.useMemo(() => {
+        const keyword = deviceSearchText.trim().toLowerCase();
+
+        const highlightText = (text) => {
+            if (!keyword) return text;
+
+            const lower = text.toLowerCase();
+            const index = lower.indexOf(keyword);
+            if (index === -1) return text;
+
+            const before = text.slice(0, index);
+            const match = text.slice(index, index + keyword.length);
+            const after = text.slice(index + keyword.length);
+
+            return (
+                <>
+                    {before}
+                    <span className="iky-select-highlight">{match}</span>
+                    {after}
+                </>
+            );
+        };
+
+        return deviceList.map((d) => {
+            const plate = (d.license_plate || t.common.unknownPlate).trim();
+            const imei = d.imei || '---';
+            const phone = d.phone_number || '';
+
+            const rawLabel = `${plate} – ${imei}${phone ? ' – ' + phone : ''}`;
+
+            return {
+                value: d._id,
+                // dùng để filterOption
+                searchable: rawLabel.toLowerCase(),
+                // label hiển thị, có highlight
+                label: highlightText(rawLabel),
+            };
+        });
+    }, [deviceList, t, deviceSearchText]);
+
     const highlightMarker = (idx) => {
         if (!pointMarkersRef.current.length) return;
 
         if (highlightedMarkerRef.current) {
             highlightedMarkerRef.current.setStyle({
-                radius: 6,
+                radius: 4,
                 weight: 2,
-                color: '#22c55e',
+                color: '#ffffff',
                 fillColor: '#22c55e',
             });
         }
@@ -272,9 +476,9 @@ const CruisePage = () => {
         if (!mk) return;
 
         mk.setStyle({
-            radius: 10,
-            weight: 4,
-            color: '#facc15',
+            radius: 7,
+            weight: 2,
+            color: '#ffffff',
             fillColor: '#facc15',
         });
 
@@ -286,6 +490,9 @@ const CruisePage = () => {
         listRef.current.scrollToItem(idx, 'center');
     };
 
+    // fetch address + cache
+    // fetch address + cache
+    // fetch address + cache
     const fetchAddressForPoint = async (idx) => {
         if (!routeData.length) return;
         const point = routeData[idx];
@@ -299,56 +506,148 @@ const CruisePage = () => {
         const lonNum = Number(lon);
         if (Number.isNaN(latNum) || Number.isNaN(lonNum)) return;
 
+        const key = `${latNum.toFixed(6)},${lonNum.toFixed(6)}`;
+
+        const cachedAddr = addressCacheRef.current[key];
+        if (cachedAddr) {
+            setRouteData((prev) => {
+                const clone = [...prev];
+                clone[idx] = { ...clone[idx], address: cachedAddr };
+                return clone;
+            });
+            return;
+        }
+
         setLoadingAddress(true);
         setAddressError(null);
 
+        const lang = isEn ? 'en' : 'vi';
+
+        // ================================
+        // PROVIDERS (CÓ LANGUAGE)
+        // ================================
+
+        // 1️⃣ Goong
         const tryGoong = async () => {
-            const addr = await callGoongWithRotation(latNum, lonNum);
-            return addr;
-        };
-
-        const tryNominatim = async () => {
-            const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latNum}&lon=${lonNum}&zoom=18&addressdetails=1`;
-            const res = await fetch(url);
-            if (!res.ok) throw new Error('Nominatim error');
-            const data = await res.json();
-            return data?.display_name || '';
-        };
-
-        try {
-            let addr = '';
-
             try {
-                addr = await tryGoong();
-            } catch (e) {
-                console.error('Goong failed (all keys), fallback Nominatim:', e);
+                return (await callGoongWithRotation(latNum, lonNum, lang)) || '';
+            } catch {
+                return '';
             }
+        };
 
-            if (!addr) {
+        // 2️⃣ VietMap (không hỗ trợ language)
+        const tryVietMap = async () => {
+            for (let i = 0; i < VIETMAP_KEYS.length; i++) {
+                const keyVm = VIETMAP_KEYS[i];
+                const url = `https://api.vnmap.com.vn/geocoding?latlng=${latNum},${lonNum}&key=${keyVm}`;
                 try {
-                    addr = await tryNominatim();
-                } catch (e2) {
-                    console.error('Nominatim failed:', e2);
-                }
+                    const res = await fetch(url);
+                    if (res.status === 403 || res.status === 429) continue;
+                    if (!res.ok) continue;
+                    const data = await res.json();
+                    const addr = data?.results?.[0]?.formatted_address || '';
+                    if (addr) return addr;
+                } catch {}
             }
+            return '';
+        };
 
-            if (!addr) {
-                setAddressError(t.error.addressFailed);
-                return;
+        // 3️⃣ TrackAsia (không hỗ trợ language)
+        const tryTrackAsia = async () => {
+            if (!TRACKASIA_KEY) return '';
+            const url = `https://maps.track-asia.com/api/v2/geocode/json?latlng=${latNum},${lonNum}&key=${TRACKASIA_KEY}`;
+            try {
+                const res = await fetch(url);
+                if (!res.ok) return '';
+                const data = await res.json();
+                return data?.results?.[0]?.formatted_address || '';
+            } catch {
+                return '';
             }
+        };
 
-            setRouteData((prev) => {
-                if (!prev || !prev[idx]) return prev;
-                const clone = [...prev];
-                clone[idx] = { ...clone[idx], address: addr };
-                return clone;
-            });
-        } catch (err) {
-            console.error('Fetch address error (cruise):', err);
-            setAddressError(t.error.addressFailed);
-        } finally {
-            setLoadingAddress(false);
+        // 4️⃣ OpenCage (CÓ language)
+        const tryOpenCage = async () => {
+            if (!OPENCAGE_KEY) return '';
+            const url = `https://api.opencagedata.com/geocode/v1/json?q=${latNum}+${lonNum}&language=${lang}&key=${OPENCAGE_KEY}`;
+            try {
+                const res = await fetch(url);
+                if (!res.ok) return '';
+                const data = await res.json();
+                return data?.results?.[0]?.formatted || '';
+            } catch {
+                return '';
+            }
+        };
+
+        // 5️⃣ TomTom (CÓ language)
+        const tryTomTom = async () => {
+            if (!TOMTOM_TOKEN) return '';
+            const ttLang = lang === 'en' ? 'en-US' : 'vi-VN';
+            const url = `https://api.tomtom.com/search/2/reverseGeocode/${latNum},${lonNum}.json?language=${ttLang}&key=${TOMTOM_TOKEN}`;
+            try {
+                const res = await fetch(url);
+                if (!res.ok) return '';
+                const data = await res.json();
+                return data?.addresses?.[0]?.address?.freeformAddress || '';
+            } catch {
+                return '';
+            }
+        };
+
+        // 6️⃣ Mapbox (CÓ language)
+        const tryMapbox = async () => {
+            if (!MAPBOX_TOKEN) return '';
+            const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lonNum},${latNum}.json?language=${lang}&limit=1&access_token=${MAPBOX_TOKEN}`;
+            try {
+                const res = await fetch(url);
+                if (!res.ok) return '';
+                const data = await res.json();
+                return data?.features?.[0]?.place_name || '';
+            } catch {
+                return '';
+            }
+        };
+
+        // 7️⃣ Nominatim (CÓ language)
+        const tryNominatim = async () => {
+            const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latNum}&lon=${lonNum}&zoom=18&addressdetails=1&accept-language=${lang}`;
+            try {
+                const res = await fetch(url);
+                if (!res.ok) return '';
+                const data = await res.json();
+                return data?.display_name || '';
+            } catch {
+                return '';
+            }
+        };
+
+        // ===========================
+        // THỰC THI TUẦN TỰ ƯU TIÊN
+        // ===========================
+        const providers = [tryGoong, tryVietMap, tryTrackAsia, tryOpenCage, tryTomTom, tryMapbox, tryNominatim];
+
+        let addr = '';
+
+        for (const fn of providers) {
+            addr = await fn();
+            if (addr) break;
         }
+
+        if (!addr) {
+            setAddressError(t.error.addressFailed);
+        }
+
+        addressCacheRef.current[key] = addr;
+
+        setRouteData((prev) => {
+            const clone = [...prev];
+            clone[idx] = { ...clone[idx], address: addr };
+            return clone;
+        });
+
+        setLoadingAddress(false);
     };
 
     const handleSelectPoint = (idx) => {
@@ -463,7 +762,9 @@ const CruisePage = () => {
         }
     };
 
-    // Init map
+    // ===============================
+    // Init map  ⭐ FIX NỀN XÁM  ⭐
+    // ===============================
     useEffect(() => {
         if (!LMap) return;
 
@@ -473,16 +774,21 @@ const CruisePage = () => {
         const map = LMap.map('iky-cruise-map', {
             center: [initialLat, initialLon],
             zoom: 15,
+            minZoom: 3,
+            maxZoom: 22,
         });
 
         mapRef.current = map;
 
-        LMap.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        LMap.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxNativeZoom: 19,
+            maxZoom: 22,
+        }).addTo(map);
 
         return () => map.remove();
     }, [LMap]);
 
-    // Distance A→Z
+    // Distance A→Z (Haversine, trên route đã nén)
     useEffect(() => {
         if (routeData.length < 2) {
             setTotalKm(0);
@@ -495,30 +801,22 @@ const CruisePage = () => {
             return;
         }
 
-        const toRad = (v) => (v * Math.PI) / 180;
-        const R = 6371000;
-
         const A = coords[0];
         const Z = coords[coords.length - 1];
 
-        const dLat = toRad(Z.lat - A.lat);
-        const dLon = toRad(Z.lon - A.lon);
+        const meters = distanceMeters({ lat: A.lat, lon: A.lon }, { lat: Z.lat, lon: Z.lon });
 
-        const a =
-            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(toRad(A.lat)) * Math.cos(toRad(Z.lat)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        const km = (R * c) / 1000;
-
-        setTotalKm(km);
+        setTotalKm(meters / 1000);
     }, [routeData]);
 
+    // ===============================
     // Render route on map
+    // ===============================
     useEffect(() => {
         const map = mapRef.current;
         if (!map || !LMap) return;
 
+        // cleanup polyline + moving marker
         if (polylineRef.current) {
             map.removeLayer(polylineRef.current);
             polylineRef.current = null;
@@ -527,53 +825,63 @@ const CruisePage = () => {
             map.removeLayer(movingMarkerRef.current);
             movingMarkerRef.current = null;
         }
+
+        // cleanup point markers
         pointMarkersRef.current.forEach((m) => m && map.removeLayer(m));
         pointMarkersRef.current = [];
+
+        // cleanup A/B markers
+        abLabelMarkersRef.current.forEach((m) => m && map.removeLayer(m));
+        abLabelMarkersRef.current = [];
+
         highlightedMarkerRef.current = null;
 
         if (!routeData.length) return;
 
-        const visualIndices = getVisualIndicesForMap(routeData);
+        const isValidPoint = (p) => p && typeof p.lat === 'number' && typeof p.lon === 'number';
 
-        const latlngs = visualIndices
-            .map((idx) => {
-                const p = routeData[idx];
-                if (typeof p.lat === 'number' && typeof p.lon === 'number') {
-                    return [p.lat, p.lon];
-                }
-                return null;
-            })
-            .filter(Boolean);
+        const firstIdx = routeData.findIndex(isValidPoint);
+        if (firstIdx === -1) return;
 
-        if (!latlngs.length) return;
+        let lastIdx = firstIdx;
+        for (let i = routeData.length - 1; i >= 0; i--) {
+            if (isValidPoint(routeData[i])) {
+                lastIdx = i;
+                break;
+            }
+        }
 
-        polylineRef.current = LMap.polyline(latlngs, {
-            color: '#f97316',
-            weight: 4,
-            opacity: 0.9,
-        }).addTo(map);
+        const hasMultiPoints = firstIdx !== lastIdx;
 
-        const firstIdx = visualIndices[0];
-        const lastIdx = visualIndices[visualIndices.length - 1];
+        let visualIndices = getVisualIndicesForMap(routeData);
+        if (!visualIndices.includes(firstIdx)) visualIndices.unshift(firstIdx);
+        if (!visualIndices.includes(lastIdx)) visualIndices.push(lastIdx);
+        visualIndices = [...new Set(visualIndices)].sort((a, b) => a - b);
+
+        const latlngs = [];
 
         visualIndices.forEach((idx) => {
             const p = routeData[idx];
-            if (p.lat == null || p.lon == null) return;
+            if (!isValidPoint(p)) return;
 
             const isStart = idx === firstIdx;
             const isEnd = idx === lastIdx;
 
+            latlngs.push([p.lat, p.lon]);
+
             const marker = LMap.circleMarker([p.lat, p.lon], {
-                radius: isStart || isEnd ? 7 : 6,
-                color: isEnd ? '#ef4444' : '#22c55e',
+                radius: isStart || isEnd ? 6 : 4,
+                weight: 2,
+                color: '#ffffff',
                 fillColor: isEnd ? '#ef4444' : '#22c55e',
                 fillOpacity: 1,
-                weight: 2,
             }).addTo(map);
 
             marker.bringToFront();
+            pointMarkersRef.current[idx] = marker;
 
-            if (isStart || isEnd) {
+            // chỉ vẽ A/B nếu có ít nhất 2 điểm hợp lệ
+            if (hasMultiPoints && (isStart || isEnd)) {
                 const label = isStart ? 'A' : 'B';
                 const divIcon = LMap.divIcon({
                     className: 'iky-cruise-ab-icon',
@@ -581,17 +889,39 @@ const CruisePage = () => {
                     iconSize: [18, 18],
                     iconAnchor: [9, 9],
                 });
-                LMap.marker([p.lat, p.lon], { icon: divIcon }).addTo(map);
-            }
 
-            pointMarkersRef.current[idx] = marker;
+                const abMarker = LMap.marker([p.lat, p.lon], {
+                    icon: divIcon,
+                }).addTo(map);
+                abLabelMarkersRef.current.push(abMarker);
+
+                if (abMarker.setZIndexOffset) {
+                    abMarker.setZIndexOffset(1000);
+                }
+
+                abMarker.on('click', () => {
+                    handlePointClick(idx);
+                });
+            }
 
             marker.on('click', () => {
                 handlePointClick(idx);
             });
         });
 
-        const firstPoint = routeData[0];
+        if (!latlngs.length) return;
+
+        polylineRef.current = LMap.polyline(latlngs, {
+            color: '#f97316',
+            weight: 2,
+            opacity: 0.6,
+            lineCap: 'round',
+            lineJoin: 'round',
+            interactive: false,
+        }).addTo(map);
+        polylineRef.current.bringToBack();
+
+        const firstPoint = routeData[firstIdx];
         if (!firstPoint || firstPoint.lat == null || firstPoint.lon == null) return;
 
         const customIcon = LMap.icon({
@@ -600,15 +930,18 @@ const CruisePage = () => {
             iconAnchor: [18, 36],
         });
 
-        movingMarkerRef.current = LMap.marker([firstPoint.lat, firstPoint.lon], {
-            icon: customIcon,
-        }).addTo(map);
+        movingMarkerRef.current = LMap.marker([firstPoint.lat, firstPoint.lon], { icon: customIcon }).addTo(map);
 
         setIsPlaying(false);
         isPlayingRef.current = false;
-        animStateRef.current = { segmentIndex: 0, t: 0 };
+        animStateRef.current = { segmentIndex: firstIdx, t: 0 };
+        const bounds = polylineRef.current.getBounds();
 
-        map.fitBounds(polylineRef.current.getBounds(), { padding: [40, 40] });
+        map.fitBounds(bounds, {
+            padding: [40, 40],
+            maxZoom: 19,
+        });
+
         map.invalidateSize();
         map.scrollWheelZoom.enable();
         map.dragging.enable();
@@ -624,7 +957,7 @@ const CruisePage = () => {
         popupRef.current.setLatLng([p.lat, p.lon]).setContent(buildPopupHtml(p, t));
     }, [routeData, activeIndex, t]);
 
-    // fetch address cho point đang active
+    // fetch address point active khi không play
     useEffect(() => {
         if (!routeData.length) return;
         if (isPlayingRef.current) return;
@@ -633,28 +966,28 @@ const CruisePage = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeIndex, routeData]);
 
-    // scroll list + highlight marker khi activeIndex đổi
+    // scroll list + highlight marker
     useEffect(() => {
         if (!routeData.length) return;
         smoothScrollToItem(activeIndex);
         highlightMarker(activeIndex);
     }, [activeIndex, routeData]);
 
-    // animation loop cho marker đỏ
+    // animation loop
     useEffect(() => {
         if (!routeData.length || !movingMarkerRef.current) return;
 
         isPlayingRef.current = isPlaying;
 
         if (!isPlaying) {
-            if (animationFrameRef.current) {
+            if (animationFrameRef.current !== null) {
                 cancelAnimationFrame(animationFrameRef.current);
                 animationFrameRef.current = null;
             }
             return;
         }
 
-        if (animationFrameRef.current) {
+        if (animationFrameRef.current !== null) {
             cancelAnimationFrame(animationFrameRef.current);
         }
 
@@ -710,16 +1043,14 @@ const CruisePage = () => {
         animationFrameRef.current = requestAnimationFrame(step);
 
         return () => {
-            if (animationFrameRef.current) {
+            if (animationFrameRef.current !== null) {
                 cancelAnimationFrame(animationFrameRef.current);
                 animationFrameRef.current = null;
             }
         };
     }, [isPlaying, routeData]);
 
-    // ===============================
-    // 🚀 LOAD ROUTE VỚI CACHE (1 nút duy nhất)
-    // ===============================
+    // LOAD ROUTE
     const handleLoadRoute = async () => {
         if (typeof window === 'undefined') return;
 
@@ -751,11 +1082,13 @@ const CruisePage = () => {
             setError(null);
             setIsPlaying(false);
             isPlayingRef.current = false;
+            addressCacheRef.current = {};
+            setRoadKm(null);
+            setRoadKmError(null);
 
             const apiStart = toApiDateTime(start);
             const apiEnd = toApiDateTime(end);
 
-            // Hàm fetch một page từ API
             const fetchPageFn = async (page, limit) => {
                 return await getCruiseHistory(token, {
                     imei: selectedImei,
@@ -766,7 +1099,6 @@ const CruisePage = () => {
                 });
             };
 
-            // Dùng smartLoadRoute (cache ngầm, user không cần biết)
             const result = await cruiseCacheManager.smartLoadRoute(
                 selectedImei,
                 apiStart,
@@ -804,13 +1136,37 @@ const CruisePage = () => {
                 address: '',
             }));
 
-            setRouteData(mapped);
+            // ⭐ NÉN ĐIỂM: gom các điểm lệch trong bán kính ~100m thành 1 điểm
+            const compressed = compressRouteByDistance(mapped, MIN_CLUSTER_DIST_M);
+
+            if (!compressed || compressed.length === 0) {
+                setRouteData([]);
+                setError(t.error.noData);
+                return;
+            }
+
+            setRouteData(compressed);
             setActiveIndex(0);
+
+            // ⭐ gọi Goong DistanceMatrix tính quãng đường đường bộ A→B
+            const valid = compressed.filter((p) => typeof p.lat === 'number' && typeof p.lon === 'number');
+            if (valid.length >= 2) {
+                setRoadKmLoading(true);
+                const startPoint = valid[0];
+                const endPoint = valid[valid.length - 1];
+                const km = await getGoongRoadDistanceKm(startPoint, endPoint);
+                if (km != null) {
+                    setRoadKm(km);
+                } else {
+                    setRoadKmError('Không lấy được quãng đường đường bộ từ Goong');
+                }
+            }
         } catch (e) {
             console.error(e);
             setError(t.error.loadFailed);
         } finally {
             setLoadingRoute(false);
+            setRoadKmLoading(false);
         }
     };
 
@@ -837,8 +1193,7 @@ const CruisePage = () => {
         highlightMarker(0);
     };
 
-    // Row cho react-window
-    const Row = ({ index, style }) => {
+    const RowItem = ({ index, style }) => {
         const p = routeData[index];
 
         if (!p) return null;
@@ -883,21 +1238,28 @@ const CruisePage = () => {
                     <div className="iky-cruise__left-header">{t.title}</div>
 
                     <div className="iky-cruise__form">
+                        {/* Search xe */}
                         <div className="iky-cruise__form-row">
                             <label>{t.form.selectVehicle}</label>
-                            <select value={selectedDeviceId} onChange={handleDeviceChange} disabled={loadingDevices}>
-                                {loadingDevices && <option>{t.form.loadingDevices}</option>}
-                                {!loadingDevices && (
-                                    <>
-                                        <option value="">{t.form.selectVehiclePlaceholder}</option>
-                                        {deviceList.map((d) => (
-                                            <option key={d._id} value={d._id}>
-                                                {d.license_plate || t.common.unknownPlate}
-                                            </option>
-                                        ))}
-                                    </>
-                                )}
-                            </select>
+
+                            <Select
+                                showSearch
+                                style={{ width: '100%' }}
+                                placeholder={t.form.searchVehiclePlaceholder || 'Nhập biển số / IMEI / SĐT'}
+                                loading={loadingDevices}
+                                value={selectedDeviceId || undefined}
+                                // cập nhật text đang gõ để highlight
+                                onSearch={(value) => setDeviceSearchText(value)}
+                                // khi chọn 1 xe
+                                onChange={(value) => {
+                                    setSelectedDeviceId(value);
+                                    const device = deviceList.find((d) => d._id === value);
+                                    setSelectedImei(device?.imei || '');
+                                }}
+                                // filter theo label (biển / imei / sđt)
+                                filterOption={(input, option) => option?.searchable?.includes(input.toLowerCase())}
+                                options={deviceOptions}
+                            />
                         </div>
 
                         <div className="iky-cruise__form-row iky-cruise__quick-row">
@@ -935,7 +1297,6 @@ const CruisePage = () => {
                             <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
                         </div>
 
-                        {/* ✅ Chỉ còn 1 nút Tải lộ trình */}
                         <button className="iky-cruise__load-btn" onClick={handleLoadRoute} disabled={loadingRoute}>
                             {loadingRoute ? t.form.loadingRoute : t.form.loadRoute}
                         </button>
@@ -944,6 +1305,11 @@ const CruisePage = () => {
                         {addressError && routeData.length > 0 && (
                             <div className="iky-cruise__error" style={{ marginTop: 4 }}>
                                 {addressError}
+                            </div>
+                        )}
+                        {roadKmError && (
+                            <div className="iky-cruise__error" style={{ marginTop: 4 }}>
+                                {roadKmError}
                             </div>
                         )}
                     </div>
@@ -957,11 +1323,17 @@ const CruisePage = () => {
                                 </span>
                             </div>
 
-                            <div className="iky-cruise__distance">
+                            {/* Khoảng cách đường thẳng A→B (Haversine) */}
+                            {/* <div className="iky-cruise__distance">
                                 <span>{t.result.totalDistance}</span>
                                 <span>
                                     {totalKm.toFixed(3)} {t.result.unitKm}
                                 </span>
+                            </div> */}
+
+                            <div className="iky-cruise__distance">
+                                <span>{t.result.totalDistance}</span>
+                                <span>{roadKm?.toFixed(3)} km</span>
                             </div>
 
                             <div className="iky-cruise__controls">
@@ -1002,7 +1374,7 @@ const CruisePage = () => {
                                         ref={listRef}
                                         itemKey={itemKey}
                                     >
-                                        {Row}
+                                        {RowItem}
                                     </List>
                                 </div>
                             </div>

@@ -18,7 +18,9 @@
         "running": "Xe đang chạy",
         "over50": "Xe quá 50km/h",
         "over80": "Xe quá 80km/h",
-        "notify": "Thông báo"
+        "notify": "Thông báo",
+        "lastCruise": "Báo cáo vị trí cập nhật cuối",
+        "lastCruiseShort": "Vị trí cuối"
     },
     "support": {
         "badge": "Trung tâm hỗ trợ IKY",
@@ -73,8 +75,214 @@
         "usageShort": "Sử dụng",
         "charging": "Báo cáo sạc",
         "chargingShort": "Sạc",
-        "trip": "Báo cáo hành trình",
-        "tripShort": "Hành trình"
+        "trip": "Báo cáo phiên hành trình",
+        "tripShort": "Hành trình",
+        "battery": "Báo cáo pin",
+        "batteryShort": "Pin",
+        "tripReport": "Báo cáo chuyến",
+        "tripReportShort": "Chuyến",
+        "lastCruise": "Báo cáo vị trí cập nhật cuối",
+        "lastCruiseShort": "Vị trí cuối"
+    },
+    "batteryReport": {
+        "title": "Báo cáo pin",
+        "subtitle": "Tổng quan dữ liệu pin theo thiết bị",
+
+        "filter": {
+            "title": "Bộ lọc",
+
+            "imei": "IMEI",
+            "imeiPlaceholder": "Nhập IMEI",
+
+            "batteryId": "Mã pin (Battery ID)",
+            "batteryIdPlaceholder": "Nhập mã pin",
+
+            "connectionStatus": "Trạng thái kết nối",
+            "connectionStatusPlaceholder": "Chọn trạng thái",
+
+            "utilization": "Trạng thái sử dụng",
+            "utilizationPlaceholder": "Chọn trạng thái",
+
+            "timeRange": "Khoảng ngày",
+            "search": "Tìm kiếm",
+            "reset": "Làm mới"
+        },
+
+        "table": {
+            "title": "Danh sách pin",
+            "total": "Tổng: {total} bản ghi",
+
+            "index": "STT",
+            "imei": "IMEI",
+            "batteryId": "Battery ID",
+            "date": "Ngày",
+
+            "currentBatteryPower": "Công suất pin hiện tại",
+            "socToday": "SOC hôm nay (%)",
+            "sohToday": "SOH hôm nay (%)",
+            "currentMaxPower": "Công suất cực đại hiện tại",
+
+            "voltageMaxToday": "Điện áp tối đa hôm nay",
+            "voltageMinToday": "Điện áp tối thiểu hôm nay",
+            "voltageAvgToday": "Điện áp trung bình hôm nay",
+
+            "tempMaxToday": "Nhiệt độ tối đa hôm nay",
+            "tempMinToday": "Nhiệt độ tối thiểu hôm nay",
+            "tempAvgToday": "Nhiệt độ trung bình hôm nay",
+
+            "batteryUsageToday": "Số phiên sử dụng pin hôm nay",
+            "usageDurationToday": "Thời gian sử dụng pin hôm nay",
+            "batteryConsumedToday": "Dung lượng pin tiêu thụ hôm nay",
+            "wattageConsumedToday": "Công suất tiêu thụ hôm nay (kWh)",
+
+            "chargingDurationToday": "Thời gian sạc hôm nay",
+            "consumedKwToday": "Điện năng tiêu thụ hôm nay (kWh)",
+            "consumedPercentToday": "Phần trăm tiêu thụ hôm nay",
+
+            "mileageToday": "Quãng đường hôm nay (km)",
+            "numberOfChargingToday": "Số lần sạc hôm nay",
+            "speedMaxToday": "Tốc độ tối đa hôm nay",
+
+            "connectionStatus": "Kết nối",
+            "utilization": "Sử dụng",
+
+            "realtime_soc": "SOC",
+            "realtime_soh": "SOH",
+            "realtime_voltage": "Điện áp",
+            "realtime_temperature": "Nhiệt độ",
+            "realtime_status": "Trạng thái",
+            "realtime_lat": "Vĩ độ",
+            "realtime_lon": "Kinh độ ",
+
+            "distributor_id": "Đại lý",
+            "createdAt": "Tạo lúc",
+            "updatedAt": "Cập nhật DB",
+            "last_update": "Cập nhật từ thiết bị",
+            "__v": "Phiên bản (__v)",
+
+            "lastLocation": "Vị trí cuối cùng",
+
+            "showTotal": "Tổng {total} bản ghi"
+        }
+    },
+    "tripReport": {
+        "title": "Báo cáo chuyến (Trip report)",
+        "subtitle": "Tổng quan số chuyến, quãng đường, trạng thái thiết bị theo ngày",
+
+        "filter": {
+            "title": "Bộ lọc",
+
+            "imei": "IMEI",
+            "imeiPlaceholder": "Nhập IMEI",
+
+            "motorcycleId": "Mã xe (Motorcycle ID)",
+            "motorcycleIdPlaceholder": "Nhập mã xe",
+
+            "connectionStatus": "Trạng thái kết nối",
+            "connectionStatusPlaceholder": "Chọn trạng thái",
+
+            "movementStatus": "Trạng thái di chuyển",
+            "movementStatusPlaceholder": "Chọn trạng thái",
+
+            "lockStatus": "Trạng thái khoá",
+            "lockStatusPlaceholder": "Chọn trạng thái",
+
+            "timeRange": "Khoảng ngày",
+            "search": "Tìm kiếm",
+            "reset": "Làm mới"
+        },
+
+        "table": {
+            "title": "Danh sách trip report",
+            "total": "Tổng: {total} bản ghi",
+
+            "index": "STT",
+            "date": "Ngày",
+            "imei": "IMEI",
+            "motorcycleId": "Motorcycle ID",
+
+            "mileageToday": "Quãng đường hôm nay (km)",
+            "numberOfTrips": "Số chuyến",
+            "ridingHours": "Giờ chạy (h)",
+            "speedMaxToday": "Tốc độ tối đa hôm nay",
+
+            "batteryConsumedToday": "Năng lượng pin tiêu thụ hôm nay",
+            "wattageConsumedToday": "Công suất tiêu thụ hôm nay (kWh)",
+
+            "connectionStatus": "Kết nối",
+            "movementStatus": "Trạng thái di chuyển",
+            "lockStatus": "Trạng thái khoá",
+
+            "realtime_lat": "Vĩ độ ",
+            "realtime_lon": "Kinh độ",
+
+            "distributor_id": "Đại lý",
+            "createdAt": "Tạo lúc",
+            "updatedAt": "Cập nhật DB",
+            "last_update": "Cập nhật từ thiết bị",
+
+            "showTotal": "Tổng {total} bản ghi"
+        }
+    },
+    "lastCruiseReport": {
+        "title": "Báo cáo vị trí cập nhật cuối (Last cruise)",
+        "subtitle": "Danh sách vị trí GPS cuối cùng của thiết bị",
+
+        "filter": {
+            "title": "Bộ lọc",
+
+            "dev": "IMEI",
+            "devPlaceholder": "Nhập IMEI",
+
+            "fwr": "Phiên bản firmware",
+            "fwrPlaceholder": "Nhập phiên bản firmware",
+
+            "gps": "Trạng thái GPS",
+            "gpsAll": "Tất cả",
+            "gpsNormal": "Bình thường",
+            "gpsLost": "Mất GPS",
+
+            "sos": "Cảnh báo khẩn cấp (SOS)",
+            "sosAll": "Tất cả",
+            "sosOn": "Đang bật",
+            "sosOff": "Đang tắt",
+
+            "timeRange": "Khoảng ngày (createdAt)",
+            "search": "Tìm kiếm",
+            "reset": "Làm mới",
+            "export": "Xuất Excel"
+        },
+
+        "table": {
+            "title": "Danh sách vị trí cuối",
+            "total": "Tổng: {total} bản ghi",
+
+            "index": "STT",
+            "dev": "IMEI",
+            "fwr": "Phiên bản",
+            "tim": "Thời gian thiết bị",
+            "lat": "Vĩ độ",
+            "lon": "Kinh độ",
+            "sat": "Số vệ tinh",
+            "gps": "Trạng thái GPS",
+            "sos": "SOS",
+            "acc": "ACC",
+            "vgp": "Tốc độ (GPS km/h)",
+            "createdAt": "Tạo lúc",
+            "updatedAt": "Cập nhật DB",
+
+            "gpsNormal": "Bình thường",
+            "gpsLost": "Mất GPS",
+            "sosOn": "Bật cảnh báo",
+            "sosOff": "Tắt cảnh báo",
+
+            "showTotal": "Tổng {total} bản ghi"
+        },
+
+        "excel": {
+            "title": "Báo cáo vị trí cập nhật cuối thiết bị",
+            "fileName": "last_cruise_report.xlsx"
+        }
     },
     "manageDevices": {
         "title": "Quản lý thiết bị",
@@ -647,7 +855,8 @@
             "from": "Từ ngày",
             "to": "Đến ngày",
             "loadRoute": "Tải lộ trình",
-            "loadingRoute": "Đang tải..."
+            "loadingRoute": "Đang tải...",
+            "searchVehicle ": "Tìm xe (biển/IMEI/SĐT)"
         },
         "table": {
             "time": "Thời gian",

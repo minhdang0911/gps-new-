@@ -18,7 +18,9 @@
         "running": "Running",
         "over50": "Over 50 km/h",
         "over80": "Over 80 km/h",
-        "notify": "Notification"
+        "notify": "Notification",
+        "lastCruise": "Last cruise report",
+        "lastCruiseShort": "Last cruise"
     },
 
     "support": {
@@ -74,8 +76,214 @@
         "usageShort": "Usage",
         "charging": "Charging Report",
         "chargingShort": "Charging",
-        "trip": "Trip Report",
-        "tripShort": "Trip"
+        "trip": "Trip Session Report",
+        "tripShort": "Trip",
+        "battery": "Battery Report",
+        "batteryShort": "Battery",
+        "tripReport": "Trip report",
+        "tripReportShort": "Trip rep.",
+        "lastCruise": "Last cruise report",
+        "lastCruiseShort": "Last cruise"
+    },
+    "batteryReport": {
+        "title": "Battery Report",
+        "subtitle": "Overview of battery data per device",
+
+        "filter": {
+            "title": "Filters",
+
+            "imei": "IMEI",
+            "imeiPlaceholder": "Enter IMEI",
+
+            "batteryId": "Battery ID",
+            "batteryIdPlaceholder": "Enter Battery ID",
+
+            "connectionStatus": "Connection status",
+            "connectionStatusPlaceholder": "Choose status",
+
+            "utilization": "Utilization",
+            "utilizationPlaceholder": "Choose utilization",
+
+            "timeRange": "Date range",
+            "search": "Search",
+            "reset": "Reset"
+        },
+
+        "table": {
+            "title": "Battery list",
+            "total": "Total: {total} records",
+
+            "index": "#",
+            "imei": "IMEI",
+            "batteryId": "Battery ID",
+            "date": "Date",
+
+            "currentBatteryPower": "Current battery power",
+            "socToday": "SoC Today",
+            "sohToday": "SoH Today",
+            "currentMaxPower": "Current maximum power",
+
+            "voltageMaxToday": "Voltage Maximum Today",
+            "voltageMinToday": "Voltage Minimum Today",
+            "voltageAvgToday": "Voltage Average Today",
+
+            "tempMaxToday": "Temperature Maximum Today",
+            "tempMinToday": "Temperature Minimum Today",
+            "tempAvgToday": "Temperature Average Today",
+
+            "batteryUsageToday": "Battery Usage Today",
+            "usageDurationToday": "Battery Usage Duration Today",
+            "batteryConsumedToday": "Battery Consumed Today",
+            "wattageConsumedToday": "Wattage Consumed Today",
+
+            "chargingDurationToday": "Charging Duration Today",
+            "consumedKwToday": "Energy consumed today (kWh)",
+            "consumedPercentToday": "Percent consumed today",
+
+            "mileageToday": "Mileage today",
+            "numberOfChargingToday": "Number of Charging Today",
+            "speedMaxToday": "Speed Maximum Today",
+
+            "connectionStatus": "Connection Status",
+            "utilization": "Utilization Status",
+
+            "realtime_soc": " SOC",
+            "realtime_soh": " SOH",
+            "realtime_voltage": "Voltage",
+            "realtime_temperature": "Temperature",
+            "realtime_status": "Status",
+            "realtime_lat": "Latitude",
+            "realtime_lon": "Longitude",
+
+            "distributor_id": "Distributor",
+            "createdAt": "Created at",
+            "updatedAt": "DB updated at",
+            "last_update": "Last Updated Time",
+            "__v": "Version (__v)",
+
+            "lastLocation": "Last Location",
+
+            "showTotal": "Total {total} records"
+        }
+    },
+    "tripReport": {
+        "title": "Trip report",
+        "subtitle": "Overview of trips, mileage and device status per day",
+
+        "filter": {
+            "title": "Filters",
+
+            "imei": "IMEI",
+            "imeiPlaceholder": "Enter IMEI",
+
+            "motorcycleId": "Motorcycle ID",
+            "motorcycleIdPlaceholder": "Enter motorcycle ID",
+
+            "connectionStatus": "Connection status",
+            "connectionStatusPlaceholder": "Choose status",
+
+            "movementStatus": "Movement status",
+            "movementStatusPlaceholder": "Choose status",
+
+            "lockStatus": "Lock status",
+            "lockStatusPlaceholder": "Choose status",
+
+            "timeRange": "Date range",
+            "search": "Search",
+            "reset": "Reset"
+        },
+
+        "table": {
+            "title": "Trip report list",
+            "total": "Total: {total} records",
+
+            "index": "#",
+            "date": "Date",
+            "imei": "IMEI",
+            "motorcycleId": "Motorcycle ID",
+
+            "mileageToday": "Mileage today",
+            "numberOfTrips": "Trip count",
+            "ridingHours": "Riding hours (h)",
+            "speedMaxToday": "Max speed today",
+
+            "batteryConsumedToday": "Battery energy consumed today",
+            "wattageConsumedToday": "Power consumed today (kWh)",
+
+            "connectionStatus": "Connection Status",
+            "movementStatus": "Movement status",
+            "lockStatus": "Lock status",
+
+            "realtime_lat": " Latitude",
+            "realtime_lon": " Longitude",
+
+            "distributor_id": "Distributor",
+            "createdAt": "Created at",
+            "updatedAt": "DB updated at",
+            "last_update": "Device last update",
+
+            "showTotal": "Total {total} records"
+        }
+    },
+    "lastCruiseReport": {
+        "title": "Last cruise report",
+        "subtitle": "Latest GPS position per device",
+
+        "filter": {
+            "title": "Filters",
+
+            "dev": "IMEI",
+            "devPlaceholder": "Enter IMEI",
+
+            "fwr": "Firmware version",
+            "fwrPlaceholder": "Enter firmware version",
+
+            "gps": "GPS status",
+            "gpsAll": "All",
+            "gpsNormal": "Normal",
+            "gpsLost": "No GPS",
+
+            "sos": "SOS (Emergency)",
+            "sosAll": "All",
+            "sosOn": "ON",
+            "sosOff": "OFF",
+
+            "timeRange": "Date range (createdAt)",
+            "search": "Search",
+            "reset": "Reset",
+            "export": "Export Excel"
+        },
+
+        "table": {
+            "title": "Last cruise list",
+            "total": "Total: {total} records",
+
+            "index": "#",
+            "dev": "IMEI",
+            "fwr": "Firmware",
+            "tim": "Device time",
+            "lat": "Latitude",
+            "lon": "Longitude",
+            "sat": "Satellites",
+            "gps": "GPS status",
+            "sos": "SOS",
+            "acc": "ACC",
+            "vgp": "Speed (GPS km/h)",
+            "createdAt": "Created at",
+            "updatedAt": "DB updated at",
+
+            "gpsNormal": "Normal",
+            "gpsLost": "No GPS",
+            "sosOn": "Emergency ON",
+            "sosOff": "Emergency OFF",
+
+            "showTotal": "Total {total} records"
+        },
+
+        "excel": {
+            "title": "Last cruise report",
+            "fileName": "last_cruise_report.xlsx"
+        }
     },
     "manageDevices": {
         "title": "Device Management",
@@ -647,7 +855,8 @@
             "from": "From",
             "to": "To",
             "loadRoute": "Load route",
-            "loadingRoute": "Loading route..."
+            "loadingRoute": "Loading route...",
+            "searchVehicle": "Search vehicle (plate/IMEI/phone)"
         },
         "table": {
             "time": "Time",

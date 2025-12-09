@@ -5,7 +5,6 @@ import { Form, Input, Button, Typography, message } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useRouter, usePathname } from 'next/navigation';
 import Image from 'next/image';
-
 import { login } from '../../lib/api/auth';
 import './Login.css';
 
@@ -27,8 +26,8 @@ const LoginPage = () => {
         const hasEn = last === 'en';
 
         if (hasEn) {
-            const baseSegments = segments.slice(0, -1);
-            const basePath = baseSegments.length ? '/' + baseSegments.join('/') : '/login';
+            const base = segments.slice(0, -1);
+            const basePath = base.length ? '/' + base.join('/') : '/login';
             return { isEnFromPath: true, normalizedPath: basePath };
         }
 
@@ -61,13 +60,12 @@ const LoginPage = () => {
 
         if (isEn || isEnFromPath) return;
         setIsEn(true);
+
         const newPath = normalizedPath === '/login' ? '/login/en' : `${normalizedPath}/en`;
         router.push(newPath);
     };
 
-    const getRandomDeviceId = () => {
-        return 'dev_' + Math.random().toString(36).substring(2, 12);
-    };
+    const getRandomDeviceId = () => 'dev_' + Math.random().toString(36).substring(2, 12);
 
     const onFinish = async (values) => {
         try {
@@ -86,13 +84,12 @@ const LoginPage = () => {
 
             router.push('/');
         } catch (err) {
-            console.error('Login error FE:', err);
-
-            const fallbackMsg = isEn
-                ? 'Login failed, please check your username/password'
-                : 'Đăng nhập thất bại, kiểm tra lại tài khoản / mật khẩu';
-
-            const msg = err?.response?.data?.error || err?.response?.data?.message || fallbackMsg;
+            const msg =
+                err?.response?.data?.error ||
+                err?.response?.data?.message ||
+                (isEn
+                    ? 'Login failed, please check your username/password'
+                    : 'Đăng nhập thất bại, kiểm tra lại tài khoản / mật khẩu');
 
             message.error(msg);
         } finally {
@@ -100,47 +97,34 @@ const LoginPage = () => {
         }
     };
 
-    const currentLangLabel = isEn ? 'EN' : 'VI';
-    const currentLangText = isEn ? 'English' : 'Tiếng Việt';
-
     return (
         <div className="iky-login">
             <div className="iky-login__card">
-                {/* LANG DROPDOWN */}
+                {/* LANGUAGE DROPDOWN */}
                 <div className="iky-login__lang-dropdown">
-                    <button
-                        type="button"
-                        className="iky-login__lang-trigger"
-                        onClick={() => setLangOpen((prev) => !prev)}
-                    >
-                        <span className="iky-login__lang-trigger-code">{currentLangLabel}</span>
-                        <span className="iky-login__lang-trigger-text">{currentLangText}</span>
-                        <span className="iky-login__lang-trigger-caret">▾</span>
+                    <button type="button" className="iky-login__lang-trigger" onClick={() => setLangOpen((p) => !p)}>
+                        <span>{isEn ? 'EN' : 'VI'}</span>
+                        <span>{isEn ? 'English' : 'Tiếng Việt'}</span>
+                        <span>▾</span>
                     </button>
 
                     {langOpen && (
                         <div className="iky-login__lang-menu">
                             <button
-                                type="button"
-                                className={'iky-login__lang-item' + (!isEn ? ' iky-login__lang-item--active' : '')}
                                 onClick={() => {
                                     setLangOpen(false);
                                     handleSwitchLang('vi');
                                 }}
                             >
-                                <span className="iky-login__lang-item-code">VI</span>
-                                <span className="iky-login__lang-item-text">Tiếng Việt</span>
+                                VI - Tiếng Việt
                             </button>
                             <button
-                                type="button"
-                                className={'iky-login__lang-item' + (isEn ? ' iky-login__lang-item--active' : '')}
                                 onClick={() => {
                                     setLangOpen(false);
                                     handleSwitchLang('en');
                                 }}
                             >
-                                <span className="iky-login__lang-item-code">EN</span>
-                                <span className="iky-login__lang-item-text">English</span>
+                                EN - English
                             </button>
                         </div>
                     )}
@@ -152,10 +136,8 @@ const LoginPage = () => {
                 </div>
 
                 <div className="iky-login__header">
-                    <Title level={3} className="iky-login__title">
-                        {isEn ? 'Welcome back' : 'Chào mừng trở lại'}
-                    </Title>
-                    <Text type="secondary" className="iky-login__subtitle">
+                    <Title level={3}>{isEn ? 'Welcome back' : 'Chào mừng trở lại'}</Title>
+                    <Text type="secondary">
                         {isEn ? 'Sign in to manage the GPS system' : 'Đăng nhập để quản lý hệ thống GPS'}
                     </Text>
                 </div>
@@ -164,54 +146,28 @@ const LoginPage = () => {
                     <Form.Item
                         label={isEn ? 'Username' : 'Tên đăng nhập'}
                         name="username"
-                        rules={[
-                            {
-                                required: true,
-                                message: isEn ? 'Please enter username' : 'Nhập tên đăng nhập',
-                            },
-                        ]}
+                        rules={[{ required: true, message: isEn ? 'Please enter username' : 'Nhập tên đăng nhập' }]}
                     >
-                        <Input
-                            size="large"
-                            prefix={<UserOutlined />}
-                            placeholder={isEn ? 'Enter username' : 'Nhập username'}
-                        />
+                        <Input size="large" prefix={<UserOutlined />} />
                     </Form.Item>
 
                     <Form.Item
                         label={isEn ? 'Password' : 'Mật khẩu'}
                         name="password"
-                        rules={[
-                            {
-                                required: true,
-                                message: isEn ? 'Please enter password' : 'Nhập mật khẩu',
-                            },
-                        ]}
+                        rules={[{ required: true, message: isEn ? 'Please enter password' : 'Nhập mật khẩu' }]}
                     >
-                        <Input.Password
-                            size="large"
-                            prefix={<LockOutlined />}
-                            placeholder={isEn ? 'Enter password' : 'Nhập mật khẩu'}
-                        />
+                        <Input.Password size="large" prefix={<LockOutlined />} />
                     </Form.Item>
 
-                    <Button
-                        type="primary"
-                        htmlType="submit"
-                        size="large"
-                        block
-                        loading={loading}
-                        className="iky-login__btn"
-                    >
+                    <Button type="primary" htmlType="submit" size="large" block loading={loading}>
                         {isEn ? 'Login' : 'Đăng nhập'}
                     </Button>
                 </Form>
 
                 <div className="iky-login__footer">
                     <Text>
-                        © {new Date().getFullYear()}
-                        <span style={{ marginLeft: 4, fontWeight: '600' }}>IKY GPS</span>.{' '}
-                        {isEn ? 'IKY Tracking System.' : 'Hệ thống giám sát IKY.'}
+                        © {new Date().getFullYear()} <b>IKY GPS</b>
+                        {isEn ? ' - IKY Tracking System.' : ' - Hệ thống giám sát IKY.'}
                     </Text>
                 </div>
             </div>

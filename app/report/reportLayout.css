@@ -3,7 +3,8 @@
    ============================================================ */
 
 .report-layout-desktop {
-    height: calc(100vh - 104px); /* trừ navbar + status bar */
+    min-height: 100%;
+    display: flex;
     background: #f3f4f6;
 }
 

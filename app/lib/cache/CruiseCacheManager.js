@@ -15,7 +15,7 @@ class CruiseCacheManager {
 
         // Khoảng thời gian cache được coi là "fresh"
         // VD: trong vòng 60 giây kể từ lúc cache thì lần load lại sẽ dùng cache
-        this.MAX_CACHE_AGE_MS = 60 * 3000;
+        this.MAX_CACHE_AGE_MS = 60 * 10000;
     }
 
     // Khởi tạo IndexedDB

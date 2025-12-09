@@ -42,6 +42,25 @@
     box-shadow: none;
     /* ❌ đừng dùng pointer-events: none nếu muốn thấy cursor */
 }
+
+/* Giới hạn width dòng địa chỉ trong popup monitor */
+.iky-monitor__location-row {
+    display: flex;
+    align-items: flex-start;
+}
+
+.iky-monitor__location-label {
+    flex: 0 0 auto;
+    margin-right: 4px;
+}
+
+.iky-monitor__location-text {
+    max-width: 400px;
+    white-space: normal; /* cho phép xuống dòng */
+    word-break: break-word; /* nếu từ quá dài thì bẻ từ */
+    overflow-wrap: anywhere; /* chống tràn */
+}
+
 .iky-monitor__connection {
     display: inline-flex;
     align-items: center;

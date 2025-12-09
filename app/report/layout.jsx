@@ -4,7 +4,14 @@ import React, { useMemo, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Layout, Menu, Typography, Grid } from 'antd';
-import { BarChartOutlined, ThunderboltOutlined, AimOutlined } from '@ant-design/icons';
+import {
+    BarChartOutlined,
+    ThunderboltOutlined,
+    AimOutlined,
+    CarOutlined,
+    EnvironmentOutlined,
+    DashboardOutlined,
+} from '@ant-design/icons';
 import './reportLayout.css';
 
 import vi from '../locales/vi.json';
@@ -65,20 +72,41 @@ const ReportLayout = ({ children }) => {
             short: t.tripShort,
             icon: <AimOutlined />,
         },
+        {
+            key: '/report/trip-report',
+            basePath: '/report/trip-report',
+            label: t.tripReport,
+            short: t.tripReportShort,
+            icon: <CarOutlined />,
+        },
+        {
+            key: '/report/last-cruise-list',
+            basePath: '/report/last-cruise-list',
+            label: t.lastCruise,
+            short: t.lastCruiseShort,
+            icon: <EnvironmentOutlined />,
+        },
+        {
+            key: '/report/battery-summary',
+            basePath: '/report/battery-summary',
+            label: t.battery,
+            short: t.batteryShort,
+            icon: <DashboardOutlined />,
+        },
     ];
 
     // Add /en to href when using English
-    const reportMenus = useMemo(() => {
-        return baseMenus.map((menu) => ({
-            ...menu,
-            href: isEn ? `${menu.basePath}/en` : menu.basePath,
-        }));
-    }, [isEn]);
+    const reportMenus = useMemo(
+        () =>
+            baseMenus.map((menu) => ({
+                ...menu,
+                href: isEn ? `${menu.basePath}/en` : menu.basePath,
+            })),
+        [isEn],
+    );
 
     // Get current selected key (remove /en for comparison)
-    const currentKey = useMemo(() => {
-        return pathname.replace(/\/en$/, '');
-    }, [pathname]);
+    const currentKey = useMemo(() => pathname.replace(/\/en$/, ''), [pathname]);
 
     if (isMobile) {
         // ===== MOBILE =====

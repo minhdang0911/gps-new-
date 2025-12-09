@@ -2,14 +2,15 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography } from 'antd';
-import { SearchOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography, message } from 'antd';
+import { SearchOutlined, ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
 import { getTripSessions } from '../../lib/api/tripSession';
 import '../usage-session/usageSession.css'; // xài chung style
 
 import { usePathname } from 'next/navigation';
 import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
+import * as XLSX from 'xlsx';
 
 const { RangePicker } = DatePicker;
 const { Title, Text } = Typography;
@@ -49,6 +50,21 @@ const TripSessionReportPage = () => {
     }, [isEnFromPath]);
 
     const t = isEn ? locales.en.tripSessionReport : locales.vi.tripSessionReport;
+
+    // ===== FORMAT DATETIME =====
+    const formatDateTime = (value) => {
+        if (!value) return '--';
+        const d = new Date(value);
+        return d.toLocaleString(isEn ? 'en-US' : 'vi-VN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false,
+        });
+    };
 
     // ===== API PARAMS =====
     const buildParams = (values, page, limit) => {
@@ -111,6 +127,35 @@ const TripSessionReportPage = () => {
         fetchData(pager.current, pager.pageSize);
     };
 
+    // ===== EXPORT EXCEL (trang hiện tại) =====
+    const handleExportExcel = () => {
+        if (!data || data.length === 0) {
+            message.warning(isEn ? 'No data to export' : 'Không có dữ liệu để xuất');
+            return;
+        }
+
+        const rows = data.map((item, index) => ({
+            [t.table.index]: (pagination.current - 1) * pagination.pageSize + index + 1,
+            [t.table.sessionId]: item.sessionId || '',
+            [t.table.tripCode]: item.tripCode || '',
+            [t.table.deviceId]: item.deviceId || '',
+            [t.table.imei]: item.imei || '',
+            [t.table.batteryId]: item.batteryId || '',
+            [t.table.soh]: item.soh ?? '',
+            [t.table.startTime]: formatDateTime(item.startTime),
+            [t.table.endTime]: formatDateTime(item.endTime),
+        }));
+
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(rows);
+        XLSX.utils.book_append_sheet(wb, ws, 'TripSession');
+
+        const fileName = isEn
+            ? `trip-session-report-${Date.now()}.xlsx`
+            : `bao-cao-phien-hanh-trinh-${Date.now()}.xlsx`;
+        XLSX.writeFile(wb, fileName);
+    };
+
     const columns = [
         {
             title: t.table.index,
@@ -152,14 +197,20 @@ const TripSessionReportPage = () => {
             title: t.table.startTime,
             dataIndex: 'startTime',
             ellipsis: true,
+            render: (value) => formatDateTime(value),
         },
         {
             title: t.table.endTime,
             dataIndex: 'endTime',
             ellipsis: true,
+            render: (value) => formatDateTime(value),
         },
         // backend có thêm distance, duration... thì m add cột ở đây
     ];
+
+    const customLocale = {
+        emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu ',
+    };
 
     return (
         <div className="usage-report-page">
@@ -234,12 +285,18 @@ const TripSessionReportPage = () => {
                         size="small"
                         title={t.table.title}
                         extra={
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                                {t.table.total.replace('{total}', String(pagination.total))}
-                            </Text>
+                            <Space size={12}>
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                    {t.table.total.replace('{total}', String(pagination.total))}
+                                </Text>
+                                <Button icon={<DownloadOutlined />} size="small" onClick={handleExportExcel}>
+                                    {isEn ? 'Export Excel' : 'Xuất Excel'}
+                                </Button>
+                            </Space>
                         }
                     >
                         <Table
+                            locale={customLocale}
                             rowKey={(record) => record._id || record.sessionId || record.tripCode}
                             columns={columns}
                             dataSource={data}

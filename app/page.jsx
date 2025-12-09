@@ -28,6 +28,9 @@ const GOONG_API_KEY = process.env.NEXT_PUBLIC_GOONG_API_KEY;
 // 🔑 MAPBOX
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_API_KEY;
 const VIETMAP_TOKEN = process.env.NEXT_PUBLIC_VIETMAP_API_KEY;
+const TOMTOM_TOKEN = process.env.NEXT_PUBLIC_TOMTOM_API_KEY;
+const TRACKASIA_KEY = process.env.NEXT_PUBLIC_TRACKASIA_API_KEY;
+const OPENCAGE_KEY = process.env.NEXT_PUBLIC_OPENCAGE_API_KEY; // 👈 thêm OpenCage
 
 // ===============================
 // 🔑 NHIỀU GOONG API KEY + XOAY VÒNG
@@ -39,6 +42,7 @@ const GOONG_KEYS = [
     process.env.NEXT_PUBLIC_GOONG_API_KEY4,
     process.env.NEXT_PUBLIC_GOONG_API_KEY5,
     process.env.NEXT_PUBLIC_GOONG_API_KEY6,
+    process.env.NEXT_PUBLIC_GOONG_API_KEY7,
 ].filter(Boolean);
 
 const VIETMAP_KEYS = [
@@ -61,16 +65,58 @@ const moveToNextGoongKey = () => {
     goongKeyIndex = (goongKeyIndex + 1) % GOONG_KEYS.length;
 };
 
-const callGoongWithRotation = async (lat, lon) => {
+// Chọn địa chỉ đẹp nhất từ Goong v2
+const pickBestGoongV2Address = (results = []) => {
+    if (!Array.isArray(results) || results.length === 0) return '';
+
+    const poiCandidates = results.filter((r) => {
+        const name = (r.name || '').trim();
+        const addr = (r.address || r.formatted_address || '').trim();
+        const formatted = (r.formatted_address || '').trim();
+        const types = Array.isArray(r.types) ? r.types : [];
+
+        const isHouseNumberType = types.includes('house_number');
+
+        const startsWithDigit = /^\d/.test(name);
+
+        return name && !startsWithDigit && name !== addr && name !== formatted && !isHouseNumberType;
+    });
+
+    const chosen = poiCandidates[0] || results[0];
+
+    const name = (chosen.name || '').trim();
+    const formatted = (chosen.formatted_address || '').trim();
+    const addr = (chosen.address || '').trim();
+
+    // Nếu formatted_address đã có đầy đủ (thường là "CÔNG TY..., 38-40 Đường...")
+    if (formatted) return formatted;
+
+    // Nếu không có formatted thì tự ghép
+    if (name && addr) return `${name}, ${addr}`;
+    if (addr) return addr;
+    if (name) return name;
+
+    return '';
+};
+
+// ✅ Goong có hỗ trợ language, nên cho nhận lang
+// ✅ Goong v2 + xoay key + ưu tiên POI (công ty, cây xăng, nhà sách...)
+const callGoongWithRotation = async (lat, lon, lang = 'vi') => {
     if (!GOONG_KEYS.length) return '';
 
-    // Thử tối đa số lần = số lượng key
     for (let i = 0; i < GOONG_KEYS.length; i++) {
         const apiKey = getCurrentGoongKey();
         if (!apiKey) break;
 
         try {
-            const res = await fetch(`https://rsapi.goong.io/Geocode?latlng=${lat},${lon}&api_key=${apiKey}`);
+            const url =
+                `https://rsapi.goong.io/v2/geocode?latlng=${lat},${lon}` +
+                `&api_key=${apiKey}` +
+                `&limit=2` + // như bạn test thấy ổn
+                `&has_deprecated_administrative_unit=true` +
+                `&language=${lang}`;
+
+            const res = await fetch(url);
 
             // Nếu bị limit/quota/forbidden → chuyển qua key khác
             if (res.status === 429 || res.status === 403) {
@@ -80,25 +126,22 @@ const callGoongWithRotation = async (lat, lon) => {
             }
 
             if (!res.ok) {
-                // Lỗi khác (500, 400, ...) → cũng cho key này nghỉ, thử key tiếp theo
-                console.error('Goong API error với key hiện tại:', res.status);
+                console.error('Goong v2 API error với key hiện tại:', res.status);
                 moveToNextGoongKey();
                 continue;
             }
 
             const data = await res.json();
 
-            // Nếu Goong trả error trong body (tuỳ API thực tế)
             if (data.error || data.error_code) {
-                console.error('Goong trả error body:', data);
-                // Nếu có code limit thì đổi key luôn
+                console.error('Goong v2 trả error body:', data);
                 if (data.error_code === 429 || data.error_code === 403) {
                     moveToNextGoongKey();
                     continue;
                 }
             }
 
-            const addr = data?.results?.[0]?.formatted_address || '';
+            const addr = pickBestGoongV2Address(data?.results || []);
 
             if (addr) {
                 return addr;
@@ -107,7 +150,7 @@ const callGoongWithRotation = async (lat, lon) => {
             // Không có địa chỉ → coi như fail, nhảy key
             moveToNextGoongKey();
         } catch (e) {
-            console.error('Lỗi gọi Goong với key hiện tại:', e);
+            console.error('Lỗi gọi Goong v2 với key hiện tại:', e);
             moveToNextGoongKey();
         }
     }
@@ -376,9 +419,9 @@ const MonitorPage = () => {
     }, [deviceList, historyDeviceId, historyStart, historyEnd]);
 
     // =============================
-    // 🔄 FETCH ADDRESS (GOONG → VIETMAP → TOMTOM → MAPBOX → NOMINATIM)
+    // 🔄 FETCH ADDRESS (Goong → VietMap → TrackAsia → OpenCage → TomTom → Mapbox → Nominatim)
     // =============================
-    const fetchAddressFromGoong = async (latVal, lonVal) => {
+    const fetchAddress = async (latVal, lonVal) => {
         if (latVal == null || lonVal == null) return;
 
         setLoadingAddress(true);
@@ -394,15 +437,12 @@ const MonitorPage = () => {
             return;
         }
 
-        // lang chung cho các API hỗ trợ đa ngôn ngữ
         const lang = isEn ? 'en' : 'vi';
 
-        // ============================
-        // 1️⃣ GOONG (chỉ tiếng Việt – không hỗ trợ EN)
-        // ============================
+        // 1️⃣ Goong (xoay key, có language theo web)
         const tryGoong = async () => {
             try {
-                const addr = await callGoongWithRotation(latNum, lonNum);
+                const addr = await callGoongWithRotation(latNum, lonNum, lang);
                 return addr || '';
             } catch (e) {
                 console.error('Goong error:', e);
@@ -410,18 +450,12 @@ const MonitorPage = () => {
             }
         };
 
-        // ============================
-        // 2️⃣ VIETMAP (chỉ tiếng Việt – không hỗ trợ EN)
-        // ============================
+        // 2️⃣ VietMap (api.vnmap.com.vn)
         const tryVietMap = async () => {
-            const validKeys = VIETMAP_KEYS.filter((k) => k);
+            if (!VIETMAP_KEYS.length) return '';
 
-            if (validKeys.length === 0) return '';
-
-            for (let i = 0; i < validKeys.length; i++) {
-                const key = validKeys[i];
-
-                // URL của bạn đang xài
+            for (let i = 0; i < VIETMAP_KEYS.length; i++) {
+                const key = VIETMAP_KEYS[i];
                 const url = `https://api.vnmap.com.vn/geocoding?latlng=${latNum},${lonNum}&key=${key}`;
 
                 try {
@@ -438,7 +472,6 @@ const MonitorPage = () => {
                     }
 
                     const data = await res.json();
-
                     const addr = data?.results?.[0]?.formatted_address || '';
 
                     if (addr) {
@@ -455,9 +488,54 @@ const MonitorPage = () => {
             return '';
         };
 
-        // ============================
-        // 3️⃣ TOMTOM (có EN / VI)
-        // ============================
+        // 3️⃣ TrackAsia
+        const tryTrackAsia = async () => {
+            if (!TRACKASIA_KEY) return '';
+
+            const url = `https://maps.track-asia.com/api/v2/geocode/json?latlng=${latNum},${lonNum}&key=${TRACKASIA_KEY}`;
+
+            try {
+                const res = await fetch(url);
+
+                if (!res.ok) {
+                    console.warn('TrackAsia HTTP error:', res.status);
+                    return '';
+                }
+
+                const data = await res.json();
+                const addr = data?.results?.[0]?.formatted_address || '';
+                return addr || '';
+            } catch (e) {
+                console.error('TrackAsia failed:', e);
+                return '';
+            }
+        };
+
+        // 4️⃣ OpenCage (có language theo web)
+        const tryOpenCage = async () => {
+            if (!OPENCAGE_KEY) return '';
+
+            // q = "lat+lon", language: vi / en
+            const url = `https://api.opencagedata.com/geocode/v1/json?q=${latNum}+${lonNum}&key=${OPENCAGE_KEY}&language=${lang}`;
+
+            try {
+                const res = await fetch(url);
+
+                if (!res.ok) {
+                    console.warn('OpenCage HTTP error:', res.status);
+                    return '';
+                }
+
+                const data = await res.json();
+                const addr = data?.results?.[0]?.formatted || '';
+                return addr || '';
+            } catch (e) {
+                console.error('OpenCage failed:', e);
+                return '';
+            }
+        };
+
+        // 5️⃣ TomTom
         const tryTomTom = async () => {
             if (!TOMTOM_TOKEN) return '';
 
@@ -478,10 +556,7 @@ const MonitorPage = () => {
                 }
 
                 const data = await res.json();
-
-                // freeformAddress là string đẹp nhất
                 const addr = data?.addresses?.[0]?.address?.freeformAddress || '';
-
                 return addr || '';
             } catch (e) {
                 console.error('TomTom failed:', e);
@@ -489,14 +564,11 @@ const MonitorPage = () => {
             }
         };
 
-        // ============================
-        // 4️⃣ MAPBOX (có EN / VI)
-        // ============================
+        // 6️⃣ Mapbox
         const tryMapbox = async () => {
             if (!MAPBOX_TOKEN) return '';
 
             const mbLang = isEn ? 'en' : 'vi';
-            // Mapbox: thứ tự lon,lat
             const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lonNum},${latNum}.json?access_token=${MAPBOX_TOKEN}&language=${mbLang}&limit=1`;
 
             try {
@@ -521,9 +593,7 @@ const MonitorPage = () => {
             }
         };
 
-        // ============================
-        // 5️⃣ NOMINATIM (có EN / VI qua accept-language)
-        // ============================
+        // 7️⃣ Nominatim (OSM)
         const tryNominatim = async () => {
             const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latNum}&lon=${lonNum}&zoom=18&addressdetails=1&accept-language=${lang}`;
 
@@ -544,18 +614,15 @@ const MonitorPage = () => {
             }
         };
 
-        // ============================
-        // 🔁 CHUỖI FALLBACK
-        // ============================
+        // 🔁 chạy lần lượt theo thứ tự ưu tiên
         try {
-            let addr = '';
+            const providers = [tryGoong, tryVietMap, tryTrackAsia, tryOpenCage, tryTomTom, tryMapbox, tryNominatim];
 
-            // ĐÚNG THỨ TỰ BẠN YÊU CẦU
-            addr = await tryGoong();
-            if (!addr) addr = await tryVietMap();
-            if (!addr) addr = await tryTomTom();
-            if (!addr) addr = await tryMapbox();
-            if (!addr) addr = await tryNominatim();
+            let addr = '';
+            for (const fn of providers) {
+                addr = await fn();
+                if (addr) break;
+            }
 
             if (addr) {
                 setAddress(addr);
@@ -692,7 +759,7 @@ const MonitorPage = () => {
 
                     // ✅ cập nhật tọa độ đã reverse geocode lần cuối
                     lastCoordsRef.current = { lat: cruise.lat, lon: cruise.lon };
-                    fetchAddressFromGoong(cruise.lat, cruise.lon);
+                    fetchAddress(cruise.lat, cruise.lon);
                 }
             }
         } catch {
@@ -814,7 +881,7 @@ const MonitorPage = () => {
                 // 🔥 Chỉ gọi API reverse geocode nếu di chuyển đủ xa
                 if (!tooClose) {
                     lastCoordsRef.current = { lat: latNum, lon: lonNum };
-                    fetchAddressFromGoong(latNum, lonNum);
+                    fetchAddress(latNum, lonNum);
                 }
             }
         }
@@ -925,7 +992,7 @@ const MonitorPage = () => {
         const distance = mqttSrc.dst;
 
         const timeStr = src.tim ? parseTimToDate(src.tim)?.toLocaleString() : '--';
-        const fwr = mqttSrc?.fwr;
+        const fwr = mqttSrc.fwr ?? src.fwr;
 
         const latVal = src.lat;
         const lonVal = src.lon;
@@ -996,8 +1063,9 @@ const MonitorPage = () => {
                     </div>
                 )}
 
-                <div>
-                    {t.statusInfo.location} {address || '--'}
+                <div className="iky-monitor__location-row">
+                    <span className="iky-monitor__location-label">{t.statusInfo.location}</span>
+                    <span className="iky-monitor__location-text">{address || '--'}</span>
                 </div>
                 <div>
                     {t.statusInfo.coordinate}{' '}

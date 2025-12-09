@@ -13,6 +13,7 @@ const GOONG_KEYS = [
     process.env.NEXT_PUBLIC_GOONG_API_KEY4,
     process.env.NEXT_PUBLIC_GOONG_API_KEY5,
     process.env.NEXT_PUBLIC_GOONG_API_KEY6,
+    process.env.NEXT_PUBLIC_GOONG_API_KEY7,
 ].filter(Boolean); // bỏ undefined / null
 
 let goongKeyIndex = 0;
@@ -27,8 +28,7 @@ const moveToNextGoongKey = () => {
     goongKeyIndex = (goongKeyIndex + 1) % GOONG_KEYS.length;
 };
 
-// Gọi autocomplete Goong với cơ chế xoay key
-const callGoongAutocompleteWithRotation = async (q, limit = 6) => {
+const callGoongAutocompleteWithRotation = async (q, limit = 10) => {
     if (!GOONG_KEYS.length) return null;
 
     for (let i = 0; i < GOONG_KEYS.length; i++) {
@@ -40,8 +40,11 @@ const callGoongAutocompleteWithRotation = async (q, limit = 6) => {
                 input: q,
                 limit: String(limit),
                 api_key: apiKey,
+                has_deprecated_administrative_unit: 'true', // V2 param
+                // more_compound: 'true', // nếu sau này cần thêm quận/xã/tỉnh chi tiết thì bật
             });
-            const url = `https://rsapi.goong.io/place/autocomplete?${params.toString()}`;
+
+            const url = `https://rsapi.goong.io/v2/place/autocomplete?${params.toString()}`;
 
             const res = await fetch(url);
 
@@ -60,9 +63,15 @@ const callGoongAutocompleteWithRotation = async (q, limit = 6) => {
                 continue;
             }
 
-            // 2. Body báo lỗi limit / denied
+            // 2. Body báo lỗi limit / denied (v1 & v2 đều có thể trả mấy field này)
             const status = data?.status || data?.error || data?.error_code;
-            if (status === 'OVER_QUERY_LIMIT' || status === 'REQUEST_DENIED' || status === 'PERMISSION_DENIED') {
+            if (
+                status === 'OVER_QUERY_LIMIT' ||
+                status === 'REQUEST_DENIED' ||
+                status === 'PERMISSION_DENIED' ||
+                status === 429 ||
+                status === 403
+            ) {
                 moveToNextGoongKey();
                 continue;
             }

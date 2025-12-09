@@ -38,8 +38,17 @@ export default function RootLayout({ children }) {
                     <MqttConnector />
                     <Navbar activeKey="monitor" />
                     <StatusBar />
-                    <main>{children}</main>
-                    <AppFooter />
+
+                    <div
+                        style={{
+                            minHeight: '100vh',
+                            display: 'flex',
+                            flexDirection: 'column',
+                        }}
+                    >
+                        <main style={{ flex: 1 }}>{children}</main>
+                        <AppFooter />
+                    </div>
                 </AntdRegistry>
             </body>
         </html>

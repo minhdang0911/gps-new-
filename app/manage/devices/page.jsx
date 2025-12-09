@@ -116,7 +116,7 @@ export default function ManageDevicesPage() {
 
     // PAGINATION STATE
     const [currentPage, setCurrentPage] = useState(1);
-    const [pageSize, setPageSize] = useState(50);
+    const [pageSize, setPageSize] = useState(10);
     const [total, setTotal] = useState(0);
 
     /* =========================
@@ -603,7 +603,7 @@ export default function ManageDevicesPage() {
         RENDER LIST MODE
     ========================= */
     const renderList = () => (
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
             <Row justify="space-between" align="middle">
                 <Col>
                     <Title level={4}>{t.title}</Title>

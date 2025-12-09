@@ -65,6 +65,11 @@
     background: #f9fafb;
 }
 
+.iky-select-highlight {
+    background-color: #fff2be; /* vàng nhạt kiểu Map4D */
+    font-weight: 600;
+}
+
 .iky-cruise__form-row input:focus,
 .iky-cruise__form-row select:focus {
     outline: none;
@@ -324,6 +329,8 @@
     margin-top: 2px;
 }
 
+/* tô màu phần text khớp trong dropdown */
+
 .iky-cruise-ab-icon {
     background: #2563eb;
     color: #fff;
@@ -334,6 +341,7 @@
     align-items: center;
     justify-content: center;
     box-shadow: 0 0 0 2px #eff6ff;
+    text-align: center;
 }
 
 /* =========================

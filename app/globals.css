@@ -17,9 +17,6 @@ body {
     -moz-osx-font-smoothing: grayscale;
 }
 
- 
- 
-
 body {
     background: var(--background);
     color: black !important;

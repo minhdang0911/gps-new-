@@ -9,29 +9,20 @@ import {
     EyeOutlined,
     DownloadOutlined,
 } from '@ant-design/icons';
-
 import { usePathname } from 'next/navigation';
-
 import { createUser, updateUser, deleteUser, getUserInfo, getUserList } from '../../lib/api/user';
-
 // Form tách riêng
 import UserForm from '../../components/UserForm';
-
 import './ManageUserPage.css';
-
 // Excel
 import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
 import { getTodayForFileName } from '../../util/FormatDate';
-
 import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
-
 const { Title } = Typography;
 const { Option } = Select;
-
 const locales = { vi, en };
-
 // default form data cho tạo mới
 const EMPTY_FORM = {
     username: '',
@@ -47,41 +38,32 @@ const EMPTY_FORM = {
     address_lat: null,
     address_lng: null,
 };
-
 export default function ManageUserPage() {
     const pathname = usePathname() || '/';
-
     const [currentRole, setCurrentRole] = useState(null);
     const [users, setUsers] = useState([]);
     const [loadingUsers, setLoadingUsers] = useState(false);
-
-    // Tách thành 3 ô search riêng
+    // Tách thành 3 ô search riêng + filter vai trò
     const [searchUsername, setSearchUsername] = useState('');
     const [searchEmail, setSearchEmail] = useState('');
     const [searchPhone, setSearchPhone] = useState('');
-
+    const [filterRole, setFilterRole] = useState(''); // '' = tất cả
     const [userModalVisible, setUserModalVisible] = useState(false);
     const [viewUserModalVisible, setViewUserModalVisible] = useState(false);
     const [viewUserData, setViewUserData] = useState(null);
-
     const [editingUser, setEditingUser] = useState(null);
     const [distributorOptions, setDistributorOptions] = useState([]);
-
     // Form data được lưu trong ref để KHÔNG làm re-render cả trang khi gõ
     const userFormDataRef = useRef(EMPTY_FORM);
-
     // ===== LANG DETECT =====
     const [isEn, setIsEn] = useState(false);
-
     const isEnFromPath = useMemo(() => {
         const segments = pathname.split('/').filter(Boolean);
         const last = segments[segments.length - 1];
         return last === 'en';
     }, [pathname]);
-
     useEffect(() => {
         if (typeof window === 'undefined') return;
-
         if (isEnFromPath) {
             setIsEn(true);
             localStorage.setItem('iky_lang', 'en');
@@ -90,9 +72,7 @@ export default function ManageUserPage() {
             setIsEn(saved === 'en');
         }
     }, [isEnFromPath]);
-
     const t = isEn ? locales.en.manageUser : locales.vi.manageUser;
-
     const roleLabelMap = isEn
         ? {
               administrator: 'Admin',
@@ -104,36 +84,35 @@ export default function ManageUserPage() {
               distributor: 'Đại lý',
               customer: 'Khách hàng',
           };
-
     // ===== INIT ROLE =====
     useEffect(() => {
         if (typeof window === 'undefined') return;
         const role = localStorage.getItem('role');
         setCurrentRole(role);
     }, []);
-
-    // Load users khi search thay đổi (debounce 500ms)
+    // Load users khi search hoặc filter thay đổi (debounce 500ms)
     useEffect(() => {
         const timer = setTimeout(() => {
             loadUsers();
         }, 500);
-
         return () => clearTimeout(timer);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [searchUsername, searchEmail, searchPhone]);
-
+    }, [searchUsername, searchEmail, searchPhone, filterRole]);
     const loadUsers = async () => {
         try {
             setLoadingUsers(true);
-
-            const res = await getUserList({
+            const params = {
                 username: searchUsername,
                 email: searchEmail,
                 phone: searchPhone,
                 page: 1,
                 limit: 50,
-            });
-
+            };
+            // Thêm filter role nếu có chọn
+            if (filterRole) {
+                params.position = filterRole;
+            }
+            const res = await getUserList(params);
             setUsers(res?.items || []);
         } catch (err) {
             console.log('LOAD USER ERROR', err);
@@ -142,7 +121,6 @@ export default function ManageUserPage() {
             setLoadingUsers(false);
         }
     };
-
     const loadDistributors = async () => {
         try {
             const res = await getUserList({
@@ -156,27 +134,21 @@ export default function ManageUserPage() {
             message.error(t.messages.loadDistributorsError);
         }
     };
-
     // OPEN CREATE USER
     const handleOpenAddUser = async () => {
         setEditingUser(null);
-
         // reset form data ref
         userFormDataRef.current = {
             ...EMPTY_FORM,
         };
-
         if (currentRole === 'administrator') {
             await loadDistributors();
         }
-
         setUserModalVisible(true);
     };
-
     // OPEN EDIT USER
     const handleOpenEditUser = async (record) => {
         setEditingUser(record);
-
         // map record -> form ref
         userFormDataRef.current = {
             username: record.username || '',
@@ -192,14 +164,11 @@ export default function ManageUserPage() {
             address_lat: record.address_lat || null,
             address_lng: record.address_lng || null,
         };
-
         if (currentRole === 'administrator') {
             await loadDistributors();
         }
-
         setUserModalVisible(true);
     };
-
     // VIEW USER DETAIL
     const handleViewUser = async (record) => {
         try {
@@ -211,11 +180,9 @@ export default function ManageUserPage() {
             message.error(t.messages.viewUserError);
         }
     };
-
     const handleSaveUser = async () => {
         try {
             const data = userFormDataRef.current || EMPTY_FORM;
-
             if (editingUser) {
                 const payload = {
                     name: data.name,
@@ -224,29 +191,23 @@ export default function ManageUserPage() {
                     address: data.address,
                     position: data.position,
                 };
-
                 if (currentRole === 'administrator' && data.position === 'customer') {
                     payload.distributor_id = data.distributor_id || null;
                 }
-
                 if (data.password && data.password.trim() !== '') {
                     payload.password = data.password;
                 }
-
                 if (data.place_id) payload.place_id = data.place_id;
                 if (data.place_raw) payload.address_raw = data.place_raw;
                 if (data.address_lat) payload.address_lat = data.address_lat;
                 if (data.address_lng) payload.address_lng = data.address_lng;
-
                 await updateUser(editingUser._id, payload);
                 message.success(t.messages.updateSuccess);
             } else {
                 const payload = { ...data };
-
                 if (currentRole !== 'administrator') {
                     delete payload.distributor_id;
                 }
-
                 const cleanPayload = {
                     username: payload.username,
                     password: payload.password,
@@ -256,30 +217,24 @@ export default function ManageUserPage() {
                     address: payload.address,
                     position: payload.position,
                 };
-
                 if (payload.distributor_id) cleanPayload.distributor_id = payload.distributor_id;
                 if (payload.place_id) cleanPayload.place_id = payload.place_id;
                 if (payload.place_raw) cleanPayload.address_raw = payload.place_raw;
                 if (payload.address_lat) cleanPayload.address_lat = payload.address_lat;
                 if (payload.address_lng) cleanPayload.address_lng = payload.address_lng;
-
                 await createUser(cleanPayload);
                 message.success(t.messages.createSuccess);
             }
-
             setUserModalVisible(false);
             loadUsers();
         } catch (err) {
             console.log('SAVE USER ERROR', err);
-
             const apiData = err?.response?.data;
-
             if (apiData && Array.isArray(apiData.errors) && apiData.errors.length) {
                 const joined = apiData.errors.join('\n');
                 message.error(joined);
                 return;
             }
-
             const singleMsg = apiData?.error || apiData?.message;
             if (singleMsg) {
                 if (Array.isArray(singleMsg)) {
@@ -289,7 +244,6 @@ export default function ManageUserPage() {
                 }
                 return;
             }
-
             if (apiData && typeof apiData === 'object') {
                 const collected = [];
                 Object.keys(apiData).forEach((k) => {
@@ -302,12 +256,10 @@ export default function ManageUserPage() {
                     return;
                 }
             }
-
             const fallback = err?.message || t.messages.saveFailedFallback;
             message.error(fallback);
         }
     };
-
     const handleDeleteUser = (record) => {
         Modal.confirm({
             title: t.messages.deleteConfirmTitle,
@@ -325,14 +277,12 @@ export default function ManageUserPage() {
             },
         });
     };
-
     // ===== EXPORT EXCEL =====
     const exportExcel = () => {
         if (!users.length) {
             message.warning(t.messages.exportNoData);
             return;
         }
-
         try {
             const excelData = users.map((u) => {
                 let distributorText = '';
@@ -343,7 +293,6 @@ export default function ManageUserPage() {
                         distributorText = `${u.distributor_id?.email || ''} (${u.distributor_id?.username || ''})`;
                     }
                 }
-
                 return {
                     [t.excel.columns.username]: u.username || '',
                     [t.excel.columns.name]: u.name || '',
@@ -356,10 +305,8 @@ export default function ManageUserPage() {
                         : '',
                 };
             });
-
             const ws = XLSX.utils.json_to_sheet(excelData, { origin: 'A2' });
             const headers = Object.keys(excelData[0]);
-
             const title = t.excel.title;
             ws['A1'] = { v: title, t: 's' };
             ws['!merges'] = [
@@ -374,7 +321,6 @@ export default function ManageUserPage() {
                 alignment: { horizontal: 'center', vertical: 'center' },
             };
             ws['!rows'] = [{ hpt: 26 }, { hpt: 22 }];
-
             headers.forEach((h, idx) => {
                 const ref = XLSX.utils.encode_cell({ r: 1, c: idx });
                 if (!ws[ref]) return;
@@ -390,14 +336,12 @@ export default function ManageUserPage() {
                     },
                 };
             });
-
             const range = XLSX.utils.decode_range(ws['!ref']);
             for (let R = range.s.r; R <= range.e.r; R++) {
                 for (let C = range.s.c; C <= range.e.c; C++) {
                     const ref = XLSX.utils.encode_cell({ r: R, c: C });
                     const cell = ws[ref];
                     if (!cell) continue;
-
                     cell.s = cell.s || {};
                     cell.s.alignment = { horizontal: 'center', vertical: 'center' };
                     cell.s.border = {
@@ -406,35 +350,29 @@ export default function ManageUserPage() {
                         left: { style: 'thin', color: { rgb: '000000' } },
                         right: { style: 'thin', color: { rgb: '000000' } },
                     };
-
                     if (R > 1 && R % 2 === 0) {
                         cell.s.fill = cell.s.fill || {};
                         cell.s.fill.fgColor = cell.s.fill.fgColor || { rgb: 'F9F9F9' };
                     }
                 }
             }
-
             ws['!cols'] = headers.map((key) => {
                 const maxLen = Math.max(key.length, ...excelData.map((row) => String(row[key] || '').length));
                 return { wch: maxLen + 4 };
             });
-
             ws['!autofilter'] = {
                 ref: XLSX.utils.encode_range({
                     s: { r: 1, c: 0 },
                     e: { r: range.e.r, c: range.e.c },
                 }),
             };
-
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, 'Users');
-
             const excelBuffer = XLSX.write(wb, {
                 bookType: 'xlsx',
                 type: 'array',
                 cellStyles: true,
             });
-
             saveAs(new Blob([excelBuffer]), `DanhSachNguoiDung_${getTodayForFileName()}.xlsx`);
             message.success(t.messages.exportSuccess);
         } catch (err) {
@@ -442,7 +380,6 @@ export default function ManageUserPage() {
             message.error(t.messages.exportFailed);
         }
     };
-
     // ===== COLUMNS + SORTER =====
     const userColumns = [
         {
@@ -480,11 +417,9 @@ export default function ManageUserPage() {
                     <Button size="small" icon={<EditOutlined />} onClick={() => handleOpenEditUser(record)}>
                         {t.actions.edit}
                     </Button>
-
                     <Button danger size="small" icon={<DeleteOutlined />} onClick={() => handleDeleteUser(record)}>
                         {t.actions.delete}
                     </Button>
-
                     <Button size="small" icon={<EyeOutlined />} onClick={() => handleViewUser(record)}>
                         {t.actions.view}
                     </Button>
@@ -492,9 +427,7 @@ export default function ManageUserPage() {
             ),
         },
     ];
-
     // ========== RENDER ==========
-
     return (
         <div className="user-page">
             <Card className="user-page__card">
@@ -503,12 +436,10 @@ export default function ManageUserPage() {
                     <Title level={4} className="user-page__title">
                         {t.title}
                     </Title>
-
                     <Space>
                         <Button icon={<DownloadOutlined />} onClick={exportExcel} disabled={!users.length}>
                             {t.buttons.export}
                         </Button>
-
                         <Button
                             type="primary"
                             icon={<PlusOutlined />}
@@ -519,11 +450,10 @@ export default function ManageUserPage() {
                         </Button>
                     </Space>
                 </div>
-
-                {/* SEARCH - Tách thành 3 ô riêng */}
+                {/* SEARCH + FILTER - Tách thành 3 ô search + 1 dropdown vai trò */}
                 <div className="user-page__search" style={{ marginBottom: 16 }}>
                     <Row gutter={[16, 16]}>
-                        <Col xs={24} sm={8}>
+                        <Col xs={24} sm={6}>
                             <Input
                                 placeholder={isEn ? 'Search by username' : 'Tìm theo tên đăng nhập'}
                                 prefix={<SearchOutlined />}
@@ -532,7 +462,7 @@ export default function ManageUserPage() {
                                 allowClear
                             />
                         </Col>
-                        <Col xs={24} sm={8}>
+                        <Col xs={24} sm={6}>
                             <Input
                                 placeholder={isEn ? 'Search by email' : 'Tìm theo email'}
                                 prefix={<SearchOutlined />}
@@ -541,7 +471,7 @@ export default function ManageUserPage() {
                                 allowClear
                             />
                         </Col>
-                        <Col xs={24} sm={8}>
+                        <Col xs={24} sm={6}>
                             <Input
                                 placeholder={isEn ? 'Search by phone' : 'Tìm theo số điện thoại'}
                                 prefix={<SearchOutlined />}
@@ -550,9 +480,21 @@ export default function ManageUserPage() {
                                 allowClear
                             />
                         </Col>
+                        <Col xs={24} sm={6}>
+                            <Select
+                                placeholder={isEn ? 'Filter by role' : 'Lọc theo vai trò'}
+                                value={filterRole || undefined}
+                                onChange={(val) => setFilterRole(val || '')}
+                                allowClear
+                                style={{ width: '100%' }}
+                            >
+                                <Option value="administrator">{roleLabelMap.administrator}</Option>
+                                <Option value="distributor">{roleLabelMap.distributor}</Option>
+                                <Option value="customer">{roleLabelMap.customer}</Option>
+                            </Select>
+                        </Col>
                     </Row>
                 </div>
-
                 {/* TABLE */}
                 <Table
                     rowKey="_id"
@@ -564,7 +506,6 @@ export default function ManageUserPage() {
                     size="middle"
                 />
             </Card>
-
             {/* ADD/EDIT MODAL */}
             <Modal
                 title={editingUser ? t.modal.editTitle : t.modal.createTitle}
@@ -574,19 +515,17 @@ export default function ManageUserPage() {
                 okText={t.modal.okText}
                 cancelText={t.modal.cancelText}
                 wrapClassName="user-modal"
-                destroyOnHidden
+                destroyOnClose
             >
                 <UserForm
                     initialData={userFormDataRef.current}
                     currentRole={currentRole}
                     distributors={distributorOptions}
-                    // chỉ update ref, không setState → không re-render cả trang
                     onChange={(data) => {
                         userFormDataRef.current = data;
                     }}
                 />
             </Modal>
-
             {/* VIEW USER */}
             <Modal
                 title={t.view.title}
@@ -594,7 +533,7 @@ export default function ManageUserPage() {
                 onCancel={() => setViewUserModalVisible(false)}
                 footer={<Button onClick={() => setViewUserModalVisible(false)}>{t.view.close}</Button>}
                 wrapClassName="user-modal"
-                destroyOnHidden
+                destroyOnClose
             >
                 {viewUserData ? (
                     <Descriptions column={1} bordered>

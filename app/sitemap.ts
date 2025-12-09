@@ -39,5 +39,12 @@ export default function sitemap() {
             changefreq: 'monthly',
             priority: 0.5,
         },
+
+        {
+            url: `${baseUrl}/support/en`,
+            lastModified: new Date(),
+            changefreq: 'monthly',
+            priority: 0.5,
+        },
     ];
 }

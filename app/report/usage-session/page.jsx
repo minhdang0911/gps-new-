@@ -1,9 +1,12 @@
+// app/report/usage-session/page.jsx
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography } from 'antd';
+import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography, message } from 'antd';
 import { SearchOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import * as XLSX from 'xlsx';
+
 import { getUsageSessions } from '../../lib/api/usageSession';
 import './usageSession.css';
 
@@ -20,6 +23,7 @@ const UsageSessionReportPage = () => {
     const [form] = Form.useForm();
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [exporting, setExporting] = useState(false);
     const [pagination, setPagination] = useState({
         current: 1,
         pageSize: 20,
@@ -86,8 +90,11 @@ const UsageSessionReportPage = () => {
             });
         } catch (err) {
             console.error('Lỗi lấy usage session: ', err);
-            // toast theo ngôn ngữ
-            // (t toàn để message ở JSON cho đồng bộ)
+            if (!isEn) {
+                message.error(t.messages?.loadError || 'Không tải được danh sách phiên sử dụng');
+            } else {
+                message.error(t.messages?.loadError || 'Failed to load usage sessions');
+            }
         } finally {
             setLoading(false);
         }
@@ -109,6 +116,55 @@ const UsageSessionReportPage = () => {
 
     const handleTableChange = (pager) => {
         fetchData(pager.current, pager.pageSize);
+    };
+
+    // ========= EXPORT EXCEL =========
+    const handleExportExcel = async () => {
+        try {
+            setExporting(true);
+
+            // gọi lại API với limit lớn để lấy full theo filter hiện tại
+            const values = form.getFieldsValue();
+            const params = buildParams(values, 1, 100000); // tuỳ bạn chỉnh limit
+            const res = await getUsageSessions(params);
+            const list = res.data || [];
+
+            if (!list.length) {
+                message.warning(
+                    !isEn ? t.excel?.noData || 'Không có dữ liệu để xuất' : t.excel?.noData || 'No data to export',
+                );
+                return;
+            }
+
+            // map sang dữ liệu export, dùng header theo ngôn ngữ
+            const rows = list.map((item, index) => ({
+                [t.table.index]: index + 1,
+                [t.table.sessionId]: item.sessionId,
+                [t.table.deviceId]: item.deviceId,
+                [t.table.batteryId]: item.batteryId,
+                [t.table.usageCode]: item.usageCode,
+                [t.table.soh]: item.soh,
+                [t.table.startTime]: item.startTime,
+                [t.table.endTime]: item.endTime,
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(rows);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'UsageSessions');
+
+            const filename = t.excel?.fileName || (!isEn ? 'bao_cao_usage_session.xlsx' : 'usage_session_report.xlsx');
+
+            XLSX.writeFile(wb, filename);
+
+            message.success(
+                !isEn ? t.excel?.success || 'Xuất Excel thành công' : t.excel?.success || 'Export Excel successfully',
+            );
+        } catch (err) {
+            console.error('Export usage session Excel error: ', err);
+            message.error(!isEn ? t.excel?.failed || 'Xuất Excel thất bại' : t.excel?.failed || 'Export Excel failed');
+        } finally {
+            setExporting(false);
+        }
     };
 
     const columns = [
@@ -154,6 +210,10 @@ const UsageSessionReportPage = () => {
             ellipsis: true,
         },
     ];
+
+    const customLocale = {
+        emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu ',
+    };
 
     return (
         <div className="usage-report-page">
@@ -233,9 +293,14 @@ const UsageSessionReportPage = () => {
                         size="small"
                         title={t.table.title}
                         extra={
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                                {t.table.total.replace('{total}', String(pagination.total))}
-                            </Text>
+                            <Space size={12}>
+                                <Text type="secondary" style={{ fontSize: 12 }}>
+                                    {t.table.total.replace('{total}', String(pagination.total))}
+                                </Text>
+                                <Button size="small" onClick={handleExportExcel} loading={exporting}>
+                                    {t.excel?.buttonText || (!isEn ? 'Xuất Excel' : 'Export Excel')}
+                                </Button>
+                            </Space>
                         }
                     >
                         <Table
@@ -243,6 +308,7 @@ const UsageSessionReportPage = () => {
                             columns={columns}
                             dataSource={data}
                             loading={loading}
+                            locale={customLocale}
                             pagination={{
                                 current: pagination.current,
                                 pageSize: pagination.pageSize,
