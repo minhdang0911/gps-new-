@@ -9,203 +9,34 @@ import { getLastCruise } from './lib/api/cruise';
 
 import markerIcon from './assets/marker-red.png';
 import { useRouter, usePathname } from 'next/navigation';
-import { message, Modal } from 'antd';
+import { message, Modal, Skeleton } from 'antd';
 import { CheckCircleFilled, LockFilled } from '@ant-design/icons';
+import { reverseGeocodeAddress } from './lib/address/reverseGeocode';
+import { parseTimToDate, toLocalDateTimeInput } from './util/time';
+import { getDistanceMeters } from './util/geo';
+import { toNumberOrNull } from './util/number';
 
-// 🔥 MQTT
 import MqttConnector from './components/MqttConnector';
 
-// 🔥 i18n giống StatusBar
+// i18n
 import vi from './locales/vi.json';
 import en from './locales/en.json';
 
 const locales = { vi, en };
-
 const { confirm } = Modal;
-
-// Giữ nguyên nếu bạn vẫn muốn dùng 1 key chính ở nơi khác
-const GOONG_API_KEY = process.env.NEXT_PUBLIC_GOONG_API_KEY;
-// 🔑 MAPBOX
-const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_API_KEY;
-const VIETMAP_TOKEN = process.env.NEXT_PUBLIC_VIETMAP_API_KEY;
-const TOMTOM_TOKEN = process.env.NEXT_PUBLIC_TOMTOM_API_KEY;
-const TRACKASIA_KEY = process.env.NEXT_PUBLIC_TRACKASIA_API_KEY;
-const OPENCAGE_KEY = process.env.NEXT_PUBLIC_OPENCAGE_API_KEY; // 👈 thêm OpenCage
-
-// ===============================
-// 🔑 NHIỀU GOONG API KEY + XOAY VÒNG
-// ===============================
-const GOONG_KEYS = [
-    process.env.NEXT_PUBLIC_GOONG_API_KEY,
-    process.env.NEXT_PUBLIC_GOONG_API_KEY1,
-    process.env.NEXT_PUBLIC_GOONG_API_KEY3,
-    process.env.NEXT_PUBLIC_GOONG_API_KEY4,
-    process.env.NEXT_PUBLIC_GOONG_API_KEY5,
-    process.env.NEXT_PUBLIC_GOONG_API_KEY6,
-    process.env.NEXT_PUBLIC_GOONG_API_KEY7,
-    process.env.NEXT_PUBLIC_GOONG_API_KEY8,
-].filter(Boolean);
-
-const VIETMAP_KEYS = [
-    process.env.NEXT_PUBLIC_VIETMAP_API_KEY,
-    process.env.NEXT_PUBLIC_VIETMAP_API_KEY1,
-    process.env.NEXT_PUBLIC_VIETMAP_API_KEY2,
-    process.env.NEXT_PUBLIC_VIETMAP_API_KEY3,
-    process.env.NEXT_PUBLIC_VIETMAP_API_KEY4,
-];
-
-let goongKeyIndex = 0;
-
-const getCurrentGoongKey = () => {
-    if (!GOONG_KEYS.length) return null;
-    return GOONG_KEYS[goongKeyIndex % GOONG_KEYS.length];
-};
-
-const moveToNextGoongKey = () => {
-    if (!GOONG_KEYS.length) return;
-    goongKeyIndex = (goongKeyIndex + 1) % GOONG_KEYS.length;
-};
-
-// Chọn địa chỉ đẹp nhất từ Goong v2
-const pickBestGoongV2Address = (results = []) => {
-    if (!Array.isArray(results) || results.length === 0) return '';
-
-    const poiCandidates = results.filter((r) => {
-        const name = (r.name || '').trim();
-        const addr = (r.address || r.formatted_address || '').trim();
-        const formatted = (r.formatted_address || '').trim();
-        const types = Array.isArray(r.types) ? r.types : [];
-
-        const isHouseNumberType = types.includes('house_number');
-
-        const startsWithDigit = /^\d/.test(name);
-
-        return name && !startsWithDigit && name !== addr && name !== formatted && !isHouseNumberType;
-    });
-
-    const chosen = poiCandidates[0] || results[0];
-
-    const name = (chosen.name || '').trim();
-    const formatted = (chosen.formatted_address || '').trim();
-    const addr = (chosen.address || '').trim();
-
-    // Nếu formatted_address đã có đầy đủ (thường là "CÔNG TY..., 38-40 Đường...")
-    if (formatted) return formatted;
-
-    // Nếu không có formatted thì tự ghép
-    if (name && addr) return `${name}, ${addr}`;
-    if (addr) return addr;
-    if (name) return name;
-
-    return '';
-};
-
-// ✅ Goong có hỗ trợ language, nên cho nhận lang
-// ✅ Goong v2 + xoay key + ưu tiên POI (công ty, cây xăng, nhà sách...)
-const callGoongWithRotation = async (lat, lon, lang = 'vi') => {
-    if (!GOONG_KEYS.length) return '';
-
-    for (let i = 0; i < GOONG_KEYS.length; i++) {
-        const apiKey = getCurrentGoongKey();
-        if (!apiKey) break;
-
-        try {
-            const url =
-                `https://rsapi.goong.io/v2/geocode?latlng=${lat},${lon}` +
-                `&api_key=${apiKey}` +
-                `&limit=2` + // như bạn test thấy ổn
-                `&has_deprecated_administrative_unit=true` +
-                `&language=${lang}`;
-
-            const res = await fetch(url);
-
-            // Nếu bị limit/quota/forbidden → chuyển qua key khác
-            if (res.status === 429 || res.status === 403) {
-                console.warn('Goong key bị limit hoặc forbidden, đổi key khác...');
-                moveToNextGoongKey();
-                continue;
-            }
-
-            if (!res.ok) {
-                console.error('Goong v2 API error với key hiện tại:', res.status);
-                moveToNextGoongKey();
-                continue;
-            }
-
-            const data = await res.json();
-
-            if (data.error || data.error_code) {
-                console.error('Goong v2 trả error body:', data);
-                if (data.error_code === 429 || data.error_code === 403) {
-                    moveToNextGoongKey();
-                    continue;
-                }
-            }
-
-            const addr = pickBestGoongV2Address(data?.results || []);
-
-            if (addr) {
-                return addr;
-            }
-
-            // Không có địa chỉ → coi như fail, nhảy key
-            moveToNextGoongKey();
-        } catch (e) {
-            console.error('Lỗi gọi Goong v2 với key hiện tại:', e);
-            moveToNextGoongKey();
-        }
-    }
-
-    // Nếu chạy hết vòng mà vẫn không có địa chỉ
-    return '';
-};
-
-// ===============================
-// 🔢 TÍNH KHOẢNG CÁCH 2 TỌA ĐỘ (MÉT)
-// ===============================
-const toRad = (deg) => (deg * Math.PI) / 180;
-
-const getDistanceMeters = (lat1, lon1, lat2, lon2) => {
-    if (
-        lat1 == null ||
-        lon1 == null ||
-        lat2 == null ||
-        lon2 == null ||
-        Number.isNaN(lat1) ||
-        Number.isNaN(lon1) ||
-        Number.isNaN(lat2) ||
-        Number.isNaN(lon2)
-    ) {
-        return null;
-    }
-
-    const R = 6371000; // bán kính Trái đất (m)
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lon2 - lon1);
-
-    const a =
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c; // mét
-};
-
-const toLocalDateTimeInput = (date) => {
-    const pad = (n) => String(n).padStart(2, '0');
-    const year = date.getFullYear();
-    const month = pad(date.getMonth() + 1);
-    const day = pad(date.getDate());
-    const hours = pad(date.getHours());
-    const minutes = pad(date.getMinutes());
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
-};
 
 const MonitorPage = () => {
     // ----- LANG -----
     const pathname = usePathname() || '/';
     const [isEn, setIsEn] = useState(false);
+    const [deprecatedAddress, setDeprecatedAddress] = useState('');
+    const [role, setRole] = useState('');
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const r = localStorage.getItem('role') || '';
+        setRole(r);
+    }, []);
 
     const isEnFromPath = useMemo(() => {
         const segments = pathname.split('/').filter(Boolean);
@@ -226,49 +57,38 @@ const MonitorPage = () => {
     }, [isEnFromPath]);
 
     const t = isEn ? locales.en.monitor : locales.vi.monitor;
+    const NA_TEXT = isEn ? 'N/A' : 'Chưa rõ';
 
     // ----- STATE GỐC -----
     const [leftTab, setLeftTab] = useState('monitor');
     const [showPopup, setShowPopup] = useState(false);
     const [detailTab, setDetailTab] = useState('status');
     const [LMap, setLMap] = useState(null);
-
     const [historyDeviceId, setHistoryDeviceId] = useState('');
     const [historyStart, setHistoryStart] = useState('');
     const [historyEnd, setHistoryEnd] = useState('');
     const [historyMessage, setHistoryMessage] = useState('');
     const [historyMessageType, setHistoryMessageType] = useState('');
-
     const [deviceList, setDeviceList] = useState([]);
     const [loadingDevices, setLoadingDevices] = useState(false);
-
     const [searchText, setSearchText] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
-
     const [selectedDevice, setSelectedDevice] = useState(null);
-
     const [batteryStatus, setBatteryStatus] = useState(null);
     const [loadingBattery, setLoadingBattery] = useState(false);
-
     const [deviceInfo, setDeviceInfo] = useState(null);
     const [loadingDeviceInfo, setLoadingDeviceInfo] = useState(false);
-
     const [lastCruise, setLastCruise] = useState(null);
     const [loadingCruise, setLoadingCruise] = useState(false);
     const [cruiseError, setCruiseError] = useState(null);
-
     const [lockLoading, setLockLoading] = useState(false);
     const [lockError, setLockError] = useState(null);
-    const [pendingAction, setPendingAction] = useState(null);
-
+    const [pendingAction, setPendingAction] = useState(null); // 'lock' | 'unlock'
     const [address, setAddress] = useState('');
     const [loadingAddress, setLoadingAddress] = useState(false);
     const [addressError, setAddressError] = useState(null);
-
     const [lat] = useState(10.7542506);
     const [lng] = useState(106.6170202);
-
-    // 🔥 dữ liệu realtime từ MQTT
     const [liveTelemetry, setLiveTelemetry] = useState(null);
     const mqttClientRef = useRef(null);
 
@@ -285,7 +105,7 @@ const MonitorPage = () => {
     const markerRef = useRef(null);
     const [markerScreenPos, setMarkerScreenPos] = useState(null);
 
-    // ✅ lưu tọa độ cuối cùng đã dùng để gọi API địa chỉ
+    // lưu tọa độ cuối cùng đã dùng để gọi API địa chỉ
     const lastCoordsRef = useRef({ lat: null, lon: null });
 
     const router = useRouter();
@@ -327,11 +147,10 @@ const MonitorPage = () => {
         map.on('click', () => setShowPopup(false));
         map.on('move zoom', updatePopupPosition);
 
-        // 🟢 quan trọng: sau khi zoom xong thì focus lại marker
+        // sau khi zoom xong thì focus lại marker
         map.on('zoomend', () => {
             if (markerRef.current) {
                 const pos = markerRef.current.getLatLng();
-                // giữ nguyên level zoom hiện tại, chỉ pan về marker
                 map.setView(pos, map.getZoom(), { animate: false });
             }
         });
@@ -346,7 +165,7 @@ const MonitorPage = () => {
             window.removeEventListener('resize', handleResize);
             map.off('move', updatePopupPosition);
             map.off('zoom', updatePopupPosition);
-            map.off('zoomend'); // nhớ bỏ listener
+            map.off('zoomend');
             map.remove();
         };
     }, [LMap, lat, lng]);
@@ -369,30 +188,6 @@ const MonitorPage = () => {
 
         fetchDevices();
     }, []);
-
-    // =============================
-    // 🔥 PARSE TIM (YYMMDDHHmmSS)
-    // =============================
-    const parseTimToDate = (tim) => {
-        if (!tim) return null;
-
-        const s = String(tim);
-        if (s.length !== 12) return null;
-
-        const yy = s.slice(0, 2);
-        const MM = s.slice(2, 4);
-        const dd = s.slice(4, 6);
-        const hh = s.slice(6, 8);
-        const mm = s.slice(8, 10);
-        const ss = s.slice(10, 12);
-
-        const yyyy = 2000 + Number(yy);
-
-        const date = new Date(`${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}`);
-
-        if (isNaN(date.getTime())) return null;
-        return date;
-    };
 
     useEffect(() => {
         if (deviceList.length > 0 && !selectedDevice) {
@@ -423,14 +218,13 @@ const MonitorPage = () => {
         }
     }, [deviceList, historyDeviceId, historyStart, historyEnd]);
 
-    // =============================
-    // 🔄 FETCH ADDRESS (Goong → VietMap → TrackAsia → OpenCage → TomTom → Mapbox → Nominatim)
-    // =============================
+    // FETCH ADDRESS
     const fetchAddress = async (latVal, lonVal) => {
         if (latVal == null || lonVal == null) return;
 
         setLoadingAddress(true);
         setAddressError(null);
+        setDeprecatedAddress('');
 
         const latNum = Number(latVal);
         const lonNum = Number(lonVal);
@@ -442,201 +236,23 @@ const MonitorPage = () => {
             return;
         }
 
-        const lang = isEn ? 'en' : 'vi';
-
-        // 1️⃣ Goong (xoay key, có language theo web)
-        const tryGoong = async () => {
-            try {
-                const addr = await callGoongWithRotation(latNum, lonNum, lang);
-                return addr || '';
-            } catch (e) {
-                console.error('Goong error:', e);
-                return '';
-            }
-        };
-
-        // 2️⃣ VietMap (api.vnmap.com.vn)
-        const tryVietMap = async () => {
-            if (!VIETMAP_KEYS.length) return '';
-
-            for (let i = 0; i < VIETMAP_KEYS.length; i++) {
-                const key = VIETMAP_KEYS[i];
-                const url = `https://api.vnmap.com.vn/geocoding?latlng=${latNum},${lonNum}&key=${key}`;
-
-                try {
-                    const res = await fetch(url);
-
-                    if (res.status === 403 || res.status === 429) {
-                        console.warn(`VietMap key ${i} bị limit/quota/forbidden`);
-                        continue;
-                    }
-
-                    if (!res.ok) {
-                        console.warn(`VietMap key ${i} lỗi HTTP`, res.status);
-                        continue;
-                    }
-
-                    const data = await res.json();
-                    const addr = data?.results?.[0]?.formatted_address || '';
-
-                    if (addr) {
-                        console.log(`VietMap key ${i} OK`);
-                        return addr;
-                    } else {
-                        console.warn(`VietMap key ${i} trả rỗng`);
-                    }
-                } catch (err) {
-                    console.error(`VietMap key ${i} exception:`, err);
-                }
-            }
-
-            return '';
-        };
-
-        // 3️⃣ TrackAsia
-        const tryTrackAsia = async () => {
-            if (!TRACKASIA_KEY) return '';
-
-            const url = `https://maps.track-asia.com/api/v2/geocode/json?latlng=${latNum},${lonNum}&key=${TRACKASIA_KEY}`;
-
-            try {
-                const res = await fetch(url);
-
-                if (!res.ok) {
-                    console.warn('TrackAsia HTTP error:', res.status);
-                    return '';
-                }
-
-                const data = await res.json();
-                const addr = data?.results?.[0]?.formatted_address || '';
-                return addr || '';
-            } catch (e) {
-                console.error('TrackAsia failed:', e);
-                return '';
-            }
-        };
-
-        // 4️⃣ OpenCage (có language theo web)
-        const tryOpenCage = async () => {
-            if (!OPENCAGE_KEY) return '';
-
-            // q = "lat+lon", language: vi / en
-            const url = `https://api.opencagedata.com/geocode/v1/json?q=${latNum}+${lonNum}&key=${OPENCAGE_KEY}&language=${lang}`;
-
-            try {
-                const res = await fetch(url);
-
-                if (!res.ok) {
-                    console.warn('OpenCage HTTP error:', res.status);
-                    return '';
-                }
-
-                const data = await res.json();
-                const addr = data?.results?.[0]?.formatted || '';
-                return addr || '';
-            } catch (e) {
-                console.error('OpenCage failed:', e);
-                return '';
-            }
-        };
-
-        // 5️⃣ TomTom
-        const tryTomTom = async () => {
-            if (!TOMTOM_TOKEN) return '';
-
-            const ttLang = isEn ? 'en-US' : 'vi-VN';
-            const url = `https://api.tomtom.com/search/2/reverseGeocode/${latNum},${lonNum}.json?key=${TOMTOM_TOKEN}&language=${ttLang}`;
-
-            try {
-                const res = await fetch(url);
-
-                if (res.status === 429 || res.status === 403) {
-                    console.warn('TomTom bị limit/quota/forbidden');
-                    return '';
-                }
-
-                if (!res.ok) {
-                    console.error('TomTom API error:', res.status);
-                    return '';
-                }
-
-                const data = await res.json();
-                const addr = data?.addresses?.[0]?.address?.freeformAddress || '';
-                return addr || '';
-            } catch (e) {
-                console.error('TomTom failed:', e);
-                return '';
-            }
-        };
-
-        // 6️⃣ Mapbox
-        const tryMapbox = async () => {
-            if (!MAPBOX_TOKEN) return '';
-
-            const mbLang = isEn ? 'en' : 'vi';
-            const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lonNum},${latNum}.json?access_token=${MAPBOX_TOKEN}&language=${mbLang}&limit=1`;
-
-            try {
-                const res = await fetch(url);
-
-                if (res.status === 429 || res.status === 403) {
-                    console.warn('Mapbox bị limit/quota/forbidden');
-                    return '';
-                }
-
-                if (!res.ok) {
-                    console.error('Mapbox API error:', res.status);
-                    return '';
-                }
-
-                const data = await res.json();
-                const addr = data?.features?.[0]?.place_name || '';
-                return addr || '';
-            } catch (e) {
-                console.error('Mapbox failed:', e);
-                return '';
-            }
-        };
-
-        // 7️⃣ Nominatim (OSM)
-        const tryNominatim = async () => {
-            const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latNum}&lon=${lonNum}&zoom=18&addressdetails=1&accept-language=${lang}`;
-
-            try {
-                const res = await fetch(url);
-
-                if (!res.ok) {
-                    console.error('Nominatim error status:', res.status);
-                    return '';
-                }
-
-                const data = await res.json();
-                const addr = data?.display_name || '';
-                return addr || '';
-            } catch (e) {
-                console.error('Nominatim failed:', e);
-                return '';
-            }
-        };
-
-        // 🔁 chạy lần lượt theo thứ tự ưu tiên
         try {
-            const providers = [tryGoong, tryVietMap, tryTrackAsia, tryOpenCage, tryTomTom, tryMapbox, tryNominatim];
+            const result = await reverseGeocodeAddress(latNum, lonNum, {
+                lang: isEn ? 'en' : 'vi',
+                isEn,
+            });
 
-            let addr = '';
-            for (const fn of providers) {
-                addr = await fn();
-                if (addr) break;
-            }
-
-            if (addr) {
-                setAddress(addr);
+            if (result && result.address) {
+                setAddress(result.address);
+                if (result.deprecatedAddress) {
+                    setDeprecatedAddress(result.deprecatedAddress);
+                }
             } else {
                 setAddress('');
                 setAddressError(t.error.address);
             }
         } catch (err) {
-            console.error('Fetch address error (all providers):', err);
+            console.error('Fetch address error:', err);
             setAddress('');
             setAddressError(t.error.address);
         } finally {
@@ -718,6 +334,7 @@ const MonitorPage = () => {
             return;
         }
 
+        // reset để hiển thị skeleton
         setBatteryStatus(null);
         setDeviceInfo(null);
         setLastCruise(null);
@@ -762,7 +379,6 @@ const MonitorPage = () => {
                     markerRef.current.setLatLng(newLatLng);
                     mapRef.current.setView(newLatLng, 16);
 
-                    // ✅ cập nhật tọa độ đã reverse geocode lần cuối
                     lastCoordsRef.current = { lat: cruise.lat, lon: cruise.lon };
                     fetchAddress(cruise.lat, cruise.lon);
                 }
@@ -825,14 +441,7 @@ const MonitorPage = () => {
 
     const isConnected = selectedDevice?.status === 10;
 
-    // helper normalize number
-    const toNumberOrNull = (val) => {
-        if (val == null) return null;
-        const n = Number(val);
-        return Number.isNaN(n) ? null : n;
-    };
-
-    // 🔥 nhận MQTT → update liveTelemetry + map (kèm check tọa độ + khoảng cách để tránh gọi API thừa)
+    // MQTT update
     const handleMqttMessage = (topic, data) => {
         if (!selectedDevice) return;
 
@@ -845,14 +454,11 @@ const MonitorPage = () => {
 
             const isTelemetryPacket = 'ev' in data;
 
-            // Nếu là gói status (không có ev)
             if (!isTelemetryPacket) {
-                // Xóa sos nếu gói mới không có sos
                 if (!('sos' in data) && 'sos' in updated) {
                     delete updated.sos;
                 }
 
-                // Xóa acc nếu gói mới không có acc
                 if (!('acc' in data) && 'acc' in updated) {
                     delete updated.acc;
                 }
@@ -861,7 +467,6 @@ const MonitorPage = () => {
             return updated;
         });
 
-        // ✅ Chỉ handle tọa độ khi có lat, lon
         if (data.lat != null && data.lon != null && LMap && mapRef.current && markerRef.current) {
             const latNum = Number(data.lat);
             const lonNum = Number(data.lon);
@@ -872,7 +477,7 @@ const MonitorPage = () => {
                 mapRef.current.setView(pos, 16);
 
                 const prev = lastCoordsRef.current;
-                const MIN_MOVE_METERS = 15; // 👈 ngưỡng di chuyển tối thiểu để gọi lại API (chỉnh tùy ý)
+                const MIN_MOVE_METERS = 15;
 
                 let tooClose = false;
 
@@ -883,7 +488,6 @@ const MonitorPage = () => {
                     }
                 }
 
-                // 🔥 Chỉ gọi API reverse geocode nếu di chuyển đủ xa
                 if (!tooClose) {
                     lastCoordsRef.current = { lat: latNum, lon: lonNum };
                     fetchAddress(latNum, lonNum);
@@ -892,29 +496,9 @@ const MonitorPage = () => {
         }
     };
 
-    const DEVICE_FIELDS = [
-        'tim',
-        'lat',
-        'lon',
-        'spd',
-        'dst',
-        'gps',
-        'sos',
-        'acc',
-        'mov',
-        'alm',
-        'pro',
-        'vib',
-        'mil',
-        'gic',
-        'onl',
-        'fwr',
-        'vgp',
-    ];
-
     const BATTERY_FIELDS = ['soc', 'soh', 'tavg', 'tmax', 'tmin', 'vavg', 'vmax', 'vmin', 'cur', 'ckw', 'ckwh', 'an1'];
 
-    // 🔋 dùng MQTT override batteryStatus
+    // RENDER BATTERY
     const renderBatteryInfo = () => {
         const src = liveTelemetry || {};
         const bs = batteryStatus || {};
@@ -927,7 +511,7 @@ const MonitorPage = () => {
 
         const formatAmp = (val) => {
             const n = toNumberOrNull(val);
-            if (n == null) return '--';
+            if (n == null) return NA_TEXT;
             const abs = Math.abs(n);
             const s = abs.toFixed(2).replace('.', ',');
             return `${s}A`;
@@ -956,28 +540,28 @@ const MonitorPage = () => {
             ? parseTimToDate(src.tim)?.toLocaleString()
             : bs.updatedAt
             ? new Date(bs.updatedAt).toLocaleString()
-            : '--';
+            : NA_TEXT;
 
         return (
             <>
                 <div>
-                    {t.battery.imei} {selectedDevice?.imei}
+                    {t.battery.imei} {selectedDevice?.imei || NA_TEXT}
                 </div>
                 <div>
-                    {t.battery.voltage} {voltage ?? '--'} V
+                    {t.battery.voltage} {voltage != null ? <>{voltage} V</> : NA_TEXT}
                 </div>
                 <div>{currentLine}</div>
                 <div>
-                    {t.battery.status} {mode}
+                    {t.battery.status} {mode || NA_TEXT}
                 </div>
                 <div>
-                    {t.battery.soc} {soc ?? '--'}%
+                    {t.battery.soc} {soc != null ? `${soc}%` : NA_TEXT}
                 </div>
                 <div>
-                    {t.battery.soh} {soh ?? '--'}%
+                    {t.battery.soh} {soh != null ? `${soh}%` : NA_TEXT}
                 </div>
                 <div>
-                    {t.battery.temperature} {temp ?? '--'}°C
+                    {t.battery.temperature} {temp != null ? `${temp}°C` : NA_TEXT}
                 </div>
                 <div>
                     {t.battery.updatedAt} {updatedAt}
@@ -986,6 +570,7 @@ const MonitorPage = () => {
         );
     };
 
+    // RENDER STATUS
     const renderStatusInfo = () => {
         if (!selectedDevice) return <>{t.statusInfo.pleaseSelect}</>;
 
@@ -996,29 +581,31 @@ const MonitorPage = () => {
         const speed = mqttSrc.spd;
         const distance = mqttSrc.dst;
 
-        const timeStr = src.tim ? parseTimToDate(src.tim)?.toLocaleString() : '--';
+        const timeStr = src.tim ? parseTimToDate(src.tim)?.toLocaleString() : NA_TEXT;
         const fwr = mqttSrc.fwr ?? src.fwr;
 
         const latVal = src.lat;
         const lonVal = src.lon;
 
-        const accValNum = toNumberOrNull(mqttSrc.acc);
+        const accValNum = toNumberOrNull(mqttSrc.acc != null ? mqttSrc.acc : src.acc);
         const spdNum = toNumberOrNull(mqttSrc.spd);
         const vgpNum = toNumberOrNull(mqttSrc.vgp);
-        const gpsValNum = toNumberOrNull(mqttSrc.gps);
 
-        let machineStatus = '--';
+        // ⭐ gps: ưu tiên MQTT, nếu chưa có thì dùng gps từ lastCruise (src)
+        const gpsValNum = toNumberOrNull(mqttSrc.gps != null ? mqttSrc.gps : src.gps);
+
+        let machineStatus = NA_TEXT;
         if (accValNum === 1) {
             machineStatus = t.statusInfo.engineOff;
-        } else {
+        } else if (accValNum === 0) {
             machineStatus = t.statusInfo.engineOn;
         }
 
-        let vehicleStatus = '--';
+        let vehicleStatus = NA_TEXT;
 
         if (accValNum === 1) {
             vehicleStatus = t.statusInfo.vehicleParking;
-        } else {
+        } else if (accValNum === 0) {
             let usedSpeed = null;
             if (spdNum != null) usedSpeed = spdNum;
             else if (vgpNum != null) usedSpeed = vgpNum;
@@ -1032,19 +619,21 @@ const MonitorPage = () => {
             }
         }
 
+        const unknownPlateText = (t.list && t.list.unknownPlate) || (isEn ? 'No plate number' : 'Chưa có biển số');
+
         return (
             <>
                 <div>
-                    {t.statusInfo.plate} {info.license_plate || '---'}
+                    {t.statusInfo.plate} {info.license_plate || unknownPlateText}
                 </div>
                 <div>
-                    {t.statusInfo.version} {fwr || '---'}
+                    {t.statusInfo.version} {fwr || NA_TEXT}
                 </div>
                 <div>
-                    {t.statusInfo.vehicleType} {info.vehicle_category_id?.name || '---'}
+                    {t.statusInfo.vehicleType} {info.vehicle_category_id?.name || NA_TEXT}
                 </div>
                 <div>
-                    {t.statusInfo.deviceType} {info.device_category_id?.name || '---'}
+                    {t.statusInfo.deviceType} {info.device_category_id?.name || NA_TEXT}
                 </div>
                 <div>
                     {t.statusInfo.atTime} {timeStr}
@@ -1070,8 +659,25 @@ const MonitorPage = () => {
 
                 <div className="iky-monitor__location-row">
                     <span className="iky-monitor__location-label">{t.statusInfo.location}</span>
-                    <span className="iky-monitor__location-text">{address || '--'}</span>
+                    <span className="iky-monitor__location-text">
+                        {loadingAddress
+                            ? isEn
+                                ? 'Resolving address...'
+                                : 'Đang xác định vị trí...'
+                            : addressError
+                            ? addressError
+                            : address || (isEn ? 'No location data' : 'Chưa có dữ liệu vị trí')}
+                    </span>
                 </div>
+                {deprecatedAddress && (
+                    <div className="iky-monitor__location-row">
+                        <span className="iky-monitor__location-label">
+                            {isEn ? 'Former address:' : 'Vị trí trước sáp nhập:'}
+                        </span>
+                        <span className="iky-monitor__location-text">{deprecatedAddress}</span>
+                    </div>
+                )}
+
                 <div>
                     {t.statusInfo.coordinate}{' '}
                     {latVal != null && lonVal != null ? (
@@ -1080,9 +686,15 @@ const MonitorPage = () => {
                             {gpsValNum === 1 && <span style={{ color: 'red', fontWeight: 600 }}>(*)</span>}
                         </>
                     ) : (
-                        '--'
+                        NA_TEXT
                     )}
                 </div>
+
+                {cruiseError && (
+                    <div className="iky-monitor__alert iky-monitor__alert--info" style={{ marginTop: 8 }}>
+                        {cruiseError}
+                    </div>
+                )}
             </>
         );
     };
@@ -1131,8 +743,15 @@ const MonitorPage = () => {
 
     const curStatus = selectedDevice?.status;
     const isLocked = liveTelemetry?.sos === 1 || liveTelemetry?.sos === '1';
-    let deviceStatusText = isLocked ? t.control.statusActivated : t.control.statusNotActivated;
+    const deviceStatusText = isLocked ? t.control.statusActivated : t.control.statusNotActivated;
     const deviceStatusClass = isLocked ? 'iky-monitor__tag-red' : 'iky-monitor__tag-green';
+
+    const isRefreshing = loadingDeviceInfo || loadingCruise || loadingBattery || loadingAddress;
+
+    const isStatusLoading =
+        !selectedDevice || loadingDeviceInfo || loadingCruise || (!deviceInfo && !lastCruise && !cruiseError);
+
+    const isBatteryLoading = !selectedDevice || loadingBattery || (!batteryStatus && !liveTelemetry);
 
     return (
         <>
@@ -1226,8 +845,23 @@ const MonitorPage = () => {
                                                         </div>
                                                         <div className="imei">IMEI: {d.imei}</div>
                                                         <div className="phone">
-                                                            {t.list.phoneLabel} {d.phone_number}
+                                                            {t.list.phoneLabel} {d.phone_number || NA_TEXT}
                                                         </div>
+                                                        {/* <div className="status-dot">
+                                                            <span
+                                                                className={
+                                                                    'iky-status-dot ' +
+                                                                    (isOnline
+                                                                        ? 'iky-status-dot--online'
+                                                                        : 'iky-status-dot--offline')
+                                                                }
+                                                            />
+                                                            <span className="iky-status-text">
+                                                                {isOnline
+                                                                    ? t.filter.statusOnline
+                                                                    : t.filter.statusOffline}
+                                                            </span>
+                                                        </div> */}
                                                     </div>
                                                 );
                                             })}
@@ -1319,18 +953,20 @@ const MonitorPage = () => {
                                         >
                                             {t.tabsDetail.status}
                                         </button>
-                                        <button
-                                            className={
-                                                'iky-monitor__popup-tab' +
-                                                (detailTab === 'control' ? ' iky-monitor__popup-tab--active' : '')
-                                            }
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setDetailTab('control');
-                                            }}
-                                        >
-                                            {t.tabsDetail.control}
-                                        </button>
+                                        {role !== 'reporter' && (
+                                            <button
+                                                className={
+                                                    'iky-monitor__popup-tab' +
+                                                    (detailTab === 'control' ? ' iky-monitor__popup-tab--active' : '')
+                                                }
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setDetailTab('control');
+                                                }}
+                                            >
+                                                {t.tabsDetail.control}
+                                            </button>
+                                        )}
                                         <button
                                             className={
                                                 'iky-monitor__popup-tab' +
@@ -1345,9 +981,18 @@ const MonitorPage = () => {
                                         </button>
                                     </div>
 
+                                    {/* Thanh nhỏ báo đang cập nhật */}
+                                    {isRefreshing && <div className="iky-monitor__refreshing-bar"></div>}
+
                                     <div className="iky-monitor__popup-body">
                                         {detailTab === 'status' && (
-                                            <div className="iky-monitor__popup-col">{renderStatusInfo()}</div>
+                                            <div className="iky-monitor__popup-col">
+                                                {isStatusLoading ? (
+                                                    <Skeleton active paragraph={{ rows: 8 }} />
+                                                ) : (
+                                                    renderStatusInfo()
+                                                )}
+                                            </div>
                                         )}
 
                                         {detailTab === 'control' && (
@@ -1408,11 +1053,23 @@ const MonitorPage = () => {
                                                             : t.control.unlockButton}
                                                     </button>
                                                 </div>
+
+                                                {lockError && (
+                                                    <div className="iky-monitor__alert iky-monitor__alert--error">
+                                                        {lockError}
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
 
                                         {detailTab === 'battery' && (
-                                            <div className="iky-monitor__popup-col">{renderBatteryInfo()}</div>
+                                            <div className="iky-monitor__popup-col">
+                                                {isBatteryLoading ? (
+                                                    <Skeleton active paragraph={{ rows: 7 }} />
+                                                ) : (
+                                                    renderBatteryInfo()
+                                                )}
+                                            </div>
                                         )}
                                     </div>
                                 </div>
@@ -1420,13 +1077,6 @@ const MonitorPage = () => {
                         )}
                     </div>
                 </section>
-
-                {showPopup && detailTab === 'battery' && (
-                    <aside className="iky-monitor__right">
-                        <h4 className="iky-monitor__right-title">{t.rightPanel.title}</h4>
-                        <div className="iky-monitor__battery-box">{renderBatteryInfo()}</div>
-                    </aside>
-                )}
             </div>
         </>
     );

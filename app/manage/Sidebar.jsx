@@ -81,7 +81,7 @@ export default function Sidebar() {
                         label: <Link href={`/manage/vehicle-category${suffix}`}>{t.vehicleCategory}</Link>,
                     },
                     {
-                        key: 'vehicle-customer',
+                        key: 'device-customer',
                         icon: (
                             <Tooltip title={t.deviceCustomer} placement="right">
                                 <ToolOutlined />

@@ -78,12 +78,15 @@ export default function ManageUserPage() {
               administrator: 'Admin',
               distributor: 'Distributor',
               customer: 'Customer',
+              reporter: 'Reporter', // người lập báo cáo
           }
         : {
               administrator: 'Quản trị',
               distributor: 'Đại lý',
               customer: 'Khách hàng',
+              reporter: 'Người báo cáo', // hoặc 'Người lập báo cáo' cho chuẩn hơn
           };
+
     // ===== INIT ROLE =====
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -515,7 +518,7 @@ export default function ManageUserPage() {
                 okText={t.modal.okText}
                 cancelText={t.modal.cancelText}
                 wrapClassName="user-modal"
-                destroyOnClose
+                destroyOnHidden
             >
                 <UserForm
                     initialData={userFormDataRef.current}
@@ -533,7 +536,7 @@ export default function ManageUserPage() {
                 onCancel={() => setViewUserModalVisible(false)}
                 footer={<Button onClick={() => setViewUserModalVisible(false)}>{t.view.close}</Button>}
                 wrapClassName="user-modal"
-                destroyOnClose
+                destroyOnHidden
             >
                 {viewUserData ? (
                     <Descriptions column={1} bordered>

@@ -6,24 +6,17 @@ export const getChargingSessions = async (payload = {}) => {
         limit: 20,
     };
 
-    const body = {
-        ...defaultPayload,
-        ...payload,
-    };
+    const body = { ...defaultPayload, ...payload };
 
-    // build x-www-form-urlencoded
-    const formData = new URLSearchParams();
+    // build query string
+    const query = new URLSearchParams();
     Object.entries(body).forEach(([key, value]) => {
         if (value !== undefined && value !== null && value !== '') {
-            formData.append(key, value);
+            query.append(key, value);
         }
     });
 
-    const res = await api.get('charging-session', formData, {
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-        },
-    });
+    const res = await api.get(`charging-session?${query.toString()}`);
 
     return res.data;
 };

@@ -23,7 +23,7 @@ const ChargingSessionReportPage = () => {
     const [loading, setLoading] = useState(false);
     const [pagination, setPagination] = useState({
         current: 1,
-        pageSize: 20,
+        pageSize: 10,
         total: 0,
     });
 
@@ -57,7 +57,7 @@ const ChargingSessionReportPage = () => {
             limit,
         };
 
-        if (values.sessionId) payload.sessionId = values.sessionId.trim();
+        if (values.chargeCode) payload.chargeCode = values.chargeCode.trim();
         if (values.batteryId) payload.batteryId = values.batteryId.trim();
         if (values.chargeCode) payload.chargeCode = values.chargeCode.trim();
         if (values.soh) payload.soh = values.soh;
@@ -70,7 +70,7 @@ const ChargingSessionReportPage = () => {
         return payload;
     };
 
-    const fetchData = async (page = 1, pageSize = 20) => {
+    const fetchData = async (page = 1, pageSize = 10) => {
         try {
             setLoading(true);
             const values = form.getFieldsValue();
@@ -81,7 +81,7 @@ const ChargingSessionReportPage = () => {
             setData(res.data || []);
             setPagination({
                 current: res.page || page,
-                pageSize: res.limit || pageSize,
+                pageSize: 10, // fix cứng
                 total: res.total || 0,
             });
         } catch (err) {
@@ -136,6 +136,16 @@ const ChargingSessionReportPage = () => {
             [t.table.batteryId]: item.batteryId || '',
             [t.table.chargeCode]: item.chargeCode || '',
             [t.table.soh]: item.soh ?? '',
+            'SOC Start': item.socStart ?? '',
+            'SOC End': item.socEnd ?? '',
+            'Temp Max': item.tempMax ?? '',
+            'Temp Min': item.tempMin ?? '',
+            'Temp Avg': item.tempAvg ?? '',
+            'Voltage Max': item.voltageMax ?? '',
+            'Voltage Min': item.voltageMin ?? '',
+            'Voltage Avg': item.voltageAvg ?? '',
+            'Charge Lat': item.chargeLat ?? '',
+            'Charge Lng': item.chargeLng ?? '',
             [t.table.startTime]: formatDateTime(item.start),
             [t.table.endTime]: formatDateTime(item.end),
         }));
@@ -153,40 +163,24 @@ const ChargingSessionReportPage = () => {
             title: t.table.index,
             dataIndex: 'index',
             width: 60,
-            render: (text, record, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
+            render: (_, __, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
         },
-        {
-            title: t.table.sessionId,
-            dataIndex: 'sessionId',
-            ellipsis: true,
-        },
-        {
-            title: t.table.batteryId,
-            dataIndex: 'batteryId',
-            ellipsis: true,
-        },
-        {
-            title: t.table.chargeCode,
-            dataIndex: 'chargeCode',
-            ellipsis: true,
-        },
-        {
-            title: t.table.soh,
-            dataIndex: 'soh',
-            width: 80,
-        },
-        {
-            title: t.table.startTime,
-            dataIndex: 'start',
-            ellipsis: true,
-            render: (value) => formatDateTime(value),
-        },
-        {
-            title: t.table.endTime,
-            dataIndex: 'end',
-            ellipsis: true,
-            render: (value) => formatDateTime(value),
-        },
+        // { title: t.table.sessionId, dataIndex: 'sessionId', ellipsis: true },
+        { title: t.table.batteryId, dataIndex: 'batteryId', ellipsis: true, width: 150 },
+        { title: t.table.chargeCode, dataIndex: 'chargeCode', ellipsis: true, width: 260 },
+        { title: t.table.soh, dataIndex: 'soh', width: 80 },
+        { title: t.table.socStart, dataIndex: 'socStart', width: 80 },
+        { title: t.table.socEnd, dataIndex: 'socEnd', width: 80 },
+        { title: t.table.tempMax, dataIndex: 'tempMax', width: 80 },
+        { title: t.table.tempMin, dataIndex: 'tempMin', width: 80 },
+        { title: t.table.tempAvg, dataIndex: 'tempAvg', width: 80 },
+        { title: t.table.voltageMax, dataIndex: 'voltageMax', width: 80 },
+        { title: t.table.voltageMin, dataIndex: 'voltageMin', width: 80 },
+        { title: t.table.voltageAvg, dataIndex: 'voltageAvg', width: 80 },
+        { title: t.table.chargeLat, dataIndex: 'chargeLat', width: 100 },
+        { title: t.table.chargeLng, dataIndex: 'chargeLng', width: 100 },
+        { title: t.table.startTime, dataIndex: 'start', ellipsis: true, render: (val) => formatDateTime(val) },
+        { title: t.table.endTime, dataIndex: 'end', ellipsis: true, render: (val) => formatDateTime(val) },
     ];
 
     const customLocale = {
@@ -207,10 +201,6 @@ const ChargingSessionReportPage = () => {
                 <Col xs={24} lg={7}>
                     <Card className="usage-filter-card" title={t.filter.title} size="small">
                         <Form form={form} layout="vertical" onFinish={onFinish}>
-                            <Form.Item label={t.filter.sessionId} name="sessionId">
-                                <Input placeholder={t.filter.sessionIdPlaceholder} allowClear />
-                            </Form.Item>
-
                             <Form.Item label={t.filter.batteryId} name="batteryId">
                                 <Input placeholder={t.filter.batteryIdPlaceholder} allowClear />
                             </Form.Item>

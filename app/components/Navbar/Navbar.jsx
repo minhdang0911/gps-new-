@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Image from 'next/image';
 import './Navbar.css';
 import { useRouter, usePathname } from 'next/navigation';
@@ -15,6 +15,7 @@ import logo from '../../assets/logo-iky.webp';
 
 import flagVi from '../../assets/flag-vi.png';
 import flagEn from '../../assets/flag-en.png';
+import { useAuthStore } from '../../stores/authStore';
 
 import { logoutApi } from '../../lib/api/auth';
 
@@ -30,18 +31,16 @@ const navItems = [
 const Navbar = () => {
     const router = useRouter();
     const pathname = usePathname() || '/';
+    const dropdownRef = useRef(null);
 
     const [openDropdown, setOpenDropdown] = useState(false);
-    const [displayName, setDisplayName] = useState('Tài khoản');
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const [isEn, setIsEn] = useState(false);
+    const [mounted, setMounted] = useState(false);
 
-    // username
-    useEffect(() => {
-        const username = typeof window !== 'undefined' ? localStorage.getItem('username') : null;
-        const email = typeof window !== 'undefined' ? localStorage.getItem('email') : null;
-        setDisplayName(username || email || 'Tài khoản');
-    }, []);
+    // ✅ Tất cả hooks phải được gọi trước bất kỳ return nào
+    const user = useAuthStore((state) => state.user);
+    const clearUser = useAuthStore((state) => state.clearUser);
 
     // tách /en khỏi pathname để lấy normalizedPath + flag en từ URL
     const { isEnFromPath, normalizedPath } = useMemo(() => {
@@ -58,9 +57,21 @@ const Navbar = () => {
         return { isEnFromPath: false, normalizedPath: pathname };
     }, [pathname]);
 
-    // quyết định ngôn ngữ:
-    // 1) nếu URL có /en -> EN + lưu vào localStorage
-    // 2) nếu không, lấy theo localStorage (nếu trước đó user chọn EN)
+    const computedActiveKey = useMemo(() => {
+        return (
+            navItems.find((item) => {
+                if (item.path === '/') return normalizedPath === '/';
+                return normalizedPath.startsWith(item.path);
+            })?.key || 'monitor'
+        );
+    }, [normalizedPath]);
+
+    // Mounted check
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
+    // quyết định ngôn ngữ
     useEffect(() => {
         if (typeof window === 'undefined') return;
 
@@ -73,27 +84,35 @@ const Navbar = () => {
         }
     }, [isEnFromPath, pathname]);
 
-    const computedActiveKey = useMemo(() => {
-        return (
-            navItems.find((item) => {
-                if (item.path === '/') return normalizedPath === '/';
-                return normalizedPath.startsWith(item.path);
-            })?.key || 'monitor'
-        );
-    }, [normalizedPath]);
+    // Đóng dropdown khi click outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setOpenDropdown(false);
+            }
+        };
 
+        if (openDropdown) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [openDropdown]);
+
+    // ✅ Tất cả hooks đã được gọi, giờ mới check early return
+    if (!mounted) return null;
     if (pathname === '/login' || pathname === '/login/en') return null;
+
+    // Lấy role (sau khi mounted)
+    const role = typeof window !== 'undefined' ? localStorage.getItem('role') : '';
 
     const handleClickItem = (item) => {
         let targetPath = item.path;
 
-        // nếu đang EN thì URL đẹp /xxx/en (middleware sẽ rewrite nội bộ)
         if (isEn) {
-            if (item.path === '/') {
-                targetPath = '/en';
-            } else {
-                targetPath = `${item.path}/en`;
-            }
+            targetPath = item.path === '/' ? '/en' : `${item.path}/en`;
         }
 
         router.push(targetPath);
@@ -106,23 +125,19 @@ const Navbar = () => {
             setIsLoggingOut(true);
             setOpenDropdown(false);
 
-            const response = await logoutApi();
-
-            if (response && response.message === 'Thành công') {
-                console.log('Đăng xuất thành công');
-            } else {
-                console.warn('Response không như mong đợi:', response);
-            }
+            await logoutApi();
         } catch (err) {
             console.error('Lỗi khi đăng xuất:', err);
         } finally {
+            // Xóa Zustand store
+            clearUser();
+
+            // Xóa token + dữ liệu
             if (typeof window !== 'undefined') {
                 localStorage.removeItem('accessToken');
                 localStorage.removeItem('refreshToken');
                 localStorage.removeItem('role');
-                localStorage.removeItem('username');
-                localStorage.removeItem('email');
-                localStorage.removeItem('currentUser');
+                localStorage.removeItem('iky_user');
             }
 
             setIsLoggingOut(false);
@@ -130,25 +145,22 @@ const Navbar = () => {
         }
     };
 
-    // 🔁 switch VI / EN
+    // switch VI / EN
     const handleSwitchLang = (lang) => {
-        if (typeof window !== 'undefined') {
-            localStorage.setItem('iky_lang', lang);
-        }
+        if (typeof window !== 'undefined') localStorage.setItem('iky_lang', lang);
 
-        if (lang === 'vi') {
-            if (!isEn && !isEnFromPath) return;
-            // quay về path gốc (không /en)
-            router.push(normalizedPath || '/');
-            return;
-        }
-
+        if (lang === 'vi') router.push(normalizedPath || '/');
         if (lang === 'en') {
-            if (isEn || isEnFromPath) return;
             const newPath = normalizedPath === '/' ? '/en' : `${normalizedPath}/en`;
             router.push(newPath);
         }
     };
+
+    // Lọc nav items nếu role là reporter
+    const filteredNavItems = navItems.filter((item) => {
+        if (role === 'reporter' && item.key === 'manage') return false;
+        return true;
+    });
 
     return (
         <header className="iky-nav">
@@ -157,7 +169,7 @@ const Navbar = () => {
             </div>
 
             <nav className="iky-nav__menu">
-                {navItems.map((item) => (
+                {filteredNavItems.map((item) => (
                     <button
                         key={item.key}
                         type="button"
@@ -172,7 +184,6 @@ const Navbar = () => {
                 ))}
             </nav>
 
-            {/* CỤM BÊN PHẢI: LANG + USER */}
             <div className="iky-nav__right">
                 <div className="iky-nav__lang">
                     <button
@@ -183,7 +194,6 @@ const Navbar = () => {
                         <Image src={flagVi} alt="Tiếng Việt" width={16} height={16} />
                         <span className="iky-nav__lang-text">VI</span>
                     </button>
-
                     <button
                         type="button"
                         className={'iky-nav__lang-btn' + (isEn ? ' iky-nav__lang-btn--active' : '')}
@@ -194,9 +204,9 @@ const Navbar = () => {
                     </button>
                 </div>
 
-                <div className="iky-nav__user" onClick={() => setOpenDropdown((prev) => !prev)}>
-                    <span className="iky-nav__user-name">{displayName}</span>
-                    <span className="iky-nav__user-sub">({displayName})</span>
+                <div className="iky-nav__user" ref={dropdownRef} onClick={() => setOpenDropdown((prev) => !prev)}>
+                    <span className="iky-nav__user-name">{user?.username || user?.email || 'Tài khoản'}</span>
+
                     {openDropdown ? (
                         <UpOutlined className="iky-nav__user-caret" />
                     ) : (
@@ -204,7 +214,7 @@ const Navbar = () => {
                     )}
 
                     {openDropdown && (
-                        <div className="iky-nav__dropdown">
+                        <div className="iky-nav__dropdown" onClick={(e) => e.stopPropagation()}>
                             <button className="iky-nav__dropdown-item">{isEn ? 'Profile' : 'Cá nhân'}</button>
                             <button className="iky-nav__dropdown-item" onClick={handleLogout} disabled={isLoggingOut}>
                                 {isLoggingOut

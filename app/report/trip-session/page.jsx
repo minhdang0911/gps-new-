@@ -23,7 +23,7 @@ const TripSessionReportPage = () => {
     const [loading, setLoading] = useState(false);
     const [pagination, setPagination] = useState({
         current: 1,
-        pageSize: 20,
+        pageSize: 10,
         total: 0,
     });
 
@@ -88,7 +88,7 @@ const TripSessionReportPage = () => {
         return params;
     };
 
-    const fetchData = async (page = 1, pageSize = 20) => {
+    const fetchData = async (page = 1, pageSize = 10) => {
         try {
             setLoading(true);
             const values = form.getFieldsValue();
@@ -99,7 +99,7 @@ const TripSessionReportPage = () => {
             setData(res.data || []);
             setPagination({
                 current: res.page || page,
-                pageSize: res.limit || pageSize,
+                pageSize: 10,
                 total: res.total || 0,
             });
         } catch (err) {
@@ -133,17 +133,19 @@ const TripSessionReportPage = () => {
             message.warning(isEn ? 'No data to export' : 'Không có dữ liệu để xuất');
             return;
         }
-
         const rows = data.map((item, index) => ({
             [t.table.index]: (pagination.current - 1) * pagination.pageSize + index + 1,
-            [t.table.sessionId]: item.sessionId || '',
             [t.table.tripCode]: item.tripCode || '',
-            [t.table.deviceId]: item.deviceId || '',
             [t.table.imei]: item.imei || '',
             [t.table.batteryId]: item.batteryId || '',
             [t.table.soh]: item.soh ?? '',
             [t.table.startTime]: formatDateTime(item.startTime),
             [t.table.endTime]: formatDateTime(item.endTime),
+            [t.table.distanceKm]: item.distanceKm ?? '',
+            [t.table.consumedKw]: item.consumedKw ?? '',
+            [t.table.socEnd]: item.socEnd ?? '',
+            [t.table.endLat]: item.endLat ?? '',
+            [t.table.endLng]: item.endLng ?? '',
         }));
 
         const wb = XLSX.utils.book_new();
@@ -163,30 +165,33 @@ const TripSessionReportPage = () => {
             width: 60,
             render: (text, record, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
         },
-        {
-            title: t.table.sessionId,
-            dataIndex: 'sessionId',
-            ellipsis: true,
-        },
+        // {
+        //     title: t.table.sessionId,
+        //     dataIndex: 'sessionId',
+        //     ellipsis: true,
+        // },
         {
             title: t.table.tripCode,
             dataIndex: 'tripCode',
             ellipsis: true,
+            width: 260,
         },
-        {
-            title: t.table.deviceId,
-            dataIndex: 'deviceId',
-            ellipsis: true,
-        },
+        // {
+        //     title: t.table.deviceId,
+        //     dataIndex: 'deviceId',
+        //     ellipsis: true,
+        // },
         {
             title: t.table.imei,
             dataIndex: 'imei',
             ellipsis: true,
+            width: 180,
         },
         {
             title: t.table.batteryId,
             dataIndex: 'batteryId',
             ellipsis: true,
+            width: 150,
         },
         {
             title: t.table.soh,
@@ -205,7 +210,31 @@ const TripSessionReportPage = () => {
             ellipsis: true,
             render: (value) => formatDateTime(value),
         },
-        // backend có thêm distance, duration... thì m add cột ở đây
+        {
+            title: t.table.distanceKm,
+            dataIndex: 'distanceKm',
+            width: 100,
+        },
+        {
+            title: t.table.consumedKw,
+            dataIndex: 'consumedKw',
+            width: 100,
+        },
+        {
+            title: t.table.socEnd,
+            dataIndex: 'socEnd',
+            width: 80,
+        },
+        {
+            title: t.table.endLat,
+            dataIndex: 'endLat',
+            width: 120,
+        },
+        {
+            title: t.table.endLng,
+            dataIndex: 'endLng',
+            width: 120,
+        },
     ];
 
     const customLocale = {
@@ -226,20 +255,12 @@ const TripSessionReportPage = () => {
                 <Col xs={24} lg={7}>
                     <Card className="usage-filter-card" title={t.filter.title} size="small">
                         <Form form={form} layout="vertical" onFinish={onFinish}>
-                            <Form.Item label={t.filter.sessionId} name="sessionId">
-                                <Input placeholder={t.filter.sessionIdPlaceholder} allowClear />
-                            </Form.Item>
-
                             <Form.Item label={t.filter.tripCode} name="tripCode">
                                 <Input placeholder={t.filter.tripCodePlaceholder} allowClear />
                             </Form.Item>
 
                             <Form.Item label={t.filter.batteryId} name="batteryId">
                                 <Input placeholder={t.filter.batteryIdPlaceholder} allowClear />
-                            </Form.Item>
-
-                            <Form.Item label={t.filter.deviceId} name="deviceId">
-                                <Input placeholder={t.filter.deviceIdPlaceholder} allowClear />
                             </Form.Item>
 
                             <Form.Item label={t.filter.imei} name="imei">

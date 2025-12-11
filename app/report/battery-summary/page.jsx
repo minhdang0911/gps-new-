@@ -74,6 +74,8 @@ const BatterySummaryReportPage = () => {
         current: 1,
         pageSize: 10,
     });
+    // chiều cao scroll cho table, chỉ dùng trong file này
+    const [tableScrollY, setTableScrollY] = useState(400);
 
     const pathname = usePathname() || '/';
     const [isEn, setIsEn] = useState(false);
@@ -96,6 +98,7 @@ const BatterySummaryReportPage = () => {
             setIsEn(saved === 'en');
         }
     }, [isEnFromPath]);
+
     const customLocale = {
         emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu ',
     };
@@ -209,6 +212,25 @@ const BatterySummaryReportPage = () => {
         fetchDistributors();
     }, []);
 
+    // ===== TÍNH CHIỀU CAO TABLE DỰA THEO VIEWPORT (chỉ trong file này) =====
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        const calcTableHeight = () => {
+            // ước lượng phần header + filter + padding
+            const reserved = 320; // px, chỉnh tuỳ UI nếu cần
+            const h = window.innerHeight - reserved;
+            setTableScrollY(h > 300 ? h : 300); // không thấp hơn 300px
+        };
+
+        calcTableHeight();
+        window.addEventListener('resize', calcTableHeight);
+
+        return () => {
+            window.removeEventListener('resize', calcTableHeight);
+        };
+    }, []);
+
     // ===== FILTER Ở FRONT-END =====
     const applyFilter = () => {
         const values = form.getFieldsValue();
@@ -272,7 +294,6 @@ const BatterySummaryReportPage = () => {
         });
     };
 
-    // ===== EXPORT EXCEL =====
     // ===== EXPORT EXCEL =====
     const handleExportExcel = () => {
         if (!data || data.length === 0) {
@@ -558,7 +579,7 @@ const BatterySummaryReportPage = () => {
                                 showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
                             }}
                             onChange={handleTableChange}
-                            scroll={{ x: 2600 }}
+                            scroll={{ x: 2600, y: tableScrollY }}
                         />
                     </Card>
                 </Col>

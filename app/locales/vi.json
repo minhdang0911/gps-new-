@@ -649,18 +649,35 @@
             "total": "Tổng: {total} bản ghi",
             "index": "#",
             "sessionId": "Mã phiên",
+            "vehicleId": "Xe",
             "deviceId": "Mã thiết bị",
             "batteryId": "Mã pin",
             "usageCode": "Mã usage",
+            "durationMinutes": "Thời lượng (phút)",
             "soh": "SOH",
+            "socStart": "SOC bắt đầu",
+            "socEnd": "SOC kết thúc",
+            "tempMax": "Nhiệt độ max",
+            "tempMin": "Nhiệt độ min",
+            "tempAvg": "Nhiệt độ trung bình",
+            "distanceKm": "Quãng đường (km)",
+            "speedMax": "Tốc độ max",
+            "speedAvg": "Tốc độ trung bình",
+            "consumedPercent": "% tiêu thụ",
+            "consumedKwh": "KWh tiêu thụ",
             "startTime": "Thời gian bắt đầu",
             "endTime": "Thời gian kết thúc",
+            "startLat": "Vĩ độ bắt đầu",
+            "startLng": "Kinh độ bắt đầu",
+            "endLat": "Vĩ độ kết thúc",
+            "endLng": "Kinh độ kết thúc",
             "showTotal": "Tổng {total} bản ghi"
         },
         "messages": {
             "loadError": "Không tải được danh sách phiên sử dụng"
         }
     },
+
     "chargingSessionReport": {
         "title": "Báo cáo sạc (Charging Session)",
         "subtitle": "Lọc theo session, pin, mã sạc, SOH, khoảng thời gian...",
@@ -686,9 +703,23 @@
             "batteryId": "Mã pin",
             "chargeCode": "Mã sạc",
             "soh": "SOH",
+            "socStart": "SOC bắt đầu",
+            "socEnd": "SOC kết thúc",
+            "tempMax": "Nhiệt độ max",
+            "tempMin": "Nhiệt độ min",
+            "tempAvg": "Nhiệt độ trung bình",
+            "voltageMax": "Điện áp max",
+            "voltageMin": "Điện áp min",
+            "voltageAvg": "Điện áp trung bình",
+            "chargeLat": "Vĩ độ sạc",
+            "chargeLng": "Kinh độ sạc",
             "startTime": "Thời gian bắt đầu",
             "endTime": "Thời gian kết thúc",
-            "showTotal": "Tổng {total} bản ghi"
+            "showTotal": "Tổng {total} bản ghi",
+            "distanceKm": "Quãng đường (km)",
+            "consumedKw": "Năng lượng tiêu thụ (kW)",
+            "endLat": "Vĩ độ kết thúc",
+            "endLng": "Kinh độ kết thúc"
         }
     },
     "tripSessionReport": {
@@ -724,6 +755,11 @@
             "soh": "SOH",
             "startTime": "Thời gian bắt đầu",
             "endTime": "Thời gian kết thúc",
+            "distanceKm": "Quãng đường (km)",
+            "consumedKw": "Năng lượng tiêu thụ (kW)",
+            "socEnd": "SOC cuối",
+            "endLat": "Vĩ độ kết thúc",
+            "endLng": "Kinh độ kết thúc",
             "showTotal": "Tổng {total} bản ghi"
         }
     },

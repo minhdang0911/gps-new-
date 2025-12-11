@@ -1,3 +1,27 @@
+.iky-monitor__refreshing-bar {
+    font-size: 12px;
+    padding: 4px 8px;
+    border-bottom: 1px solid #eee;
+    color: #666;
+    background: #fafafa;
+}
+
+.iky-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 4px;
+}
+
+.iky-status-dot--online {
+    background: #52c41a;
+}
+
+.iky-status-dot--offline {
+    background: #f5222d;
+}
+
 .iky-monitor {
     display: flex;
     height: calc(100vh - 104px);
@@ -506,7 +530,7 @@
         }
 
         .iky-monitor__popup-wrapper {
-            transform: translate(-50%, -105%);
+            transform: translate(-50%, -105%) !important;
             /* kéo popup gần marker hơn để ko chiếm map */
         }
 

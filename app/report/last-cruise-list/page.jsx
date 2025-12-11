@@ -433,7 +433,7 @@ const LastCruiseReportPage = () => {
                                 showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
                             }}
                             onChange={handleTableChange}
-                            scroll={{ x: 1500 }}
+                            scroll={{ x: 2200, y: 600 }}
                         />
                     </Card>
                 </Col>

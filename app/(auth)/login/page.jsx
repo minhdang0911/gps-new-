@@ -7,6 +7,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import Image from 'next/image';
 import { login } from '../../lib/api/auth';
 import './Login.css';
+import { useAuthStore } from '../../stores/authStore';
 
 import logo from '../../assets/ChatGPT Image 14_36_56 5 thg 12, 2025.png';
 
@@ -66,6 +67,7 @@ const LoginPage = () => {
     };
 
     const getRandomDeviceId = () => 'dev_' + Math.random().toString(36).substring(2, 12);
+    const setUser = useAuthStore((state) => state.setUser);
 
     const onFinish = async (values) => {
         try {
@@ -76,27 +78,22 @@ const LoginPage = () => {
 
             const res = await login(values.username, values.password, device);
 
+            // 🟢 Lưu vào authStore
+            setUser(res.user);
+
+            // 🟡 (Bạn vẫn có thể giữ token trong localStorage)
             localStorage.setItem('accessToken', res.accessToken);
             localStorage.setItem('refreshToken', res.refreshToken);
             localStorage.setItem('role', res?.user?.position || '');
-            localStorage.setItem('username', res?.user?.username || '');
-            localStorage.setItem('email', res?.user?.email || '');
 
             router.push('/');
         } catch (err) {
-            const msg =
-                err?.response?.data?.error ||
-                err?.response?.data?.message ||
-                (isEn
-                    ? 'Login failed, please check your username/password'
-                    : 'Đăng nhập thất bại, kiểm tra lại tài khoản / mật khẩu');
-
+            const msg = err?.response?.data?.message || 'Đăng nhập thất bại';
             message.error(msg);
         } finally {
             setLoading(false);
         }
     };
-
     return (
         <div className="iky-login">
             <div className="iky-login__card">

@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <script
+            defer
+            src="https://api.map4d.vn/sdk/map/js?version=2.0&key=2c86e1be6e055642c3ba70a98bcd7b29&callback=initMap"
+        ></script>
+    </head>
+    <style>
+        #map {
+            height: 100%;
+        }
+
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+    <body>
+        <div id="map"></div>
+    </body>
+    <script>
+        function initMap() {
+            let options = {
+                center: { lat: 10.7717117, lng: 106.701801 },
+                zoom: 18,
+                controls: true,
+            };
+            let map = new map4d.Map(document.getElementById('map'), options);
+
+            // Khởi tạo một POI
+            let poi = new map4d.POI({
+                position: { lat: 10.7717117, lng: 106.701801 },
+                title: 'Demo POI cafe',
+                type: 'cafe',
+            });
+
+            // Thêm POI vào bản đồ
+            poi.setMap(map);
+        }
+    </script>
+</html>

@@ -1,4 +1,3 @@
-// app/report/usage-session/page.jsx
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
@@ -6,14 +5,11 @@ import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typograp
 import { SearchOutlined, ReloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
-
+import { usePathname } from 'next/navigation';
 import { getUsageSessions } from '../../lib/api/usageSession';
 import './usageSession.css';
-
-import { usePathname } from 'next/navigation';
 import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
-
 const { RangePicker } = DatePicker;
 const { Title, Text } = Typography;
 
@@ -24,25 +20,21 @@ const UsageSessionReportPage = () => {
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(false);
     const [exporting, setExporting] = useState(false);
-    const [pagination, setPagination] = useState({
-        current: 1,
-        pageSize: 20,
-        total: 0,
-    });
+    const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 });
 
     const pathname = usePathname() || '/';
     const [isEn, setIsEn] = useState(false);
 
-    // detect /en cuối URL
     const isEnFromPath = useMemo(() => {
         const segments = pathname.split('/').filter(Boolean);
         const last = segments[segments.length - 1];
         return last === 'en';
     }, [pathname]);
 
+    const formatDateTime = (value) => (value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '-');
+
     useEffect(() => {
         if (typeof window === 'undefined') return;
-
         if (isEnFromPath) {
             setIsEn(true);
             localStorage.setItem('iky_lang', 'en');
@@ -53,20 +45,21 @@ const UsageSessionReportPage = () => {
     }, [isEnFromPath]);
 
     const t = isEn ? locales.en.usageSessionReport : locales.vi.usageSessionReport;
+    const buildParams = (values, page, limit, noPagination = false) => {
+        const params = {};
 
-    const buildParams = (values, page, limit) => {
-        const params = {
-            page,
-            limit,
-        };
+        if (!noPagination) {
+            params.page = page;
+            params.limit = limit;
+        }
 
-        if (values.sessionId) params.sessionId = values.sessionId.trim();
+        if (values.sessionId) params.usageCode = values.sessionId.trim();
         if (values.batteryId) params.batteryId = values.batteryId.trim();
         if (values.usageCode) params.usageCode = values.usageCode.trim();
         if (values.deviceId) params.deviceId = values.deviceId.trim();
         if (values.soh) params.soh = values.soh;
 
-        if (values.timeRange && values.timeRange.length === 2) {
+        if (values.timeRange?.length === 2) {
             params.startTime = values.timeRange[0].format('YYYY-MM-DD HH:mm:ss');
             params.endTime = values.timeRange[1].format('YYYY-MM-DD HH:mm:ss');
         }
@@ -79,22 +72,16 @@ const UsageSessionReportPage = () => {
             setLoading(true);
             const values = form.getFieldsValue();
             const params = buildParams(values, page, pageSize);
-
             const res = await getUsageSessions(params);
 
             setData(res.data || []);
-            setPagination({
-                current: res.page || page,
-                pageSize: res.limit || pageSize,
-                total: res.total || 0,
-            });
+            setPagination({ current: res.page || page, pageSize: res.limit || pageSize, total: res.total || 0 });
         } catch (err) {
             console.error('Lỗi lấy usage session: ', err);
-            if (!isEn) {
-                message.error(t.messages?.loadError || 'Không tải được danh sách phiên sử dụng');
-            } else {
-                message.error(t.messages?.loadError || 'Failed to load usage sessions');
-            }
+            message.error(
+                t.messages?.loadError ||
+                    (!isEn ? 'Không tải được danh sách phiên sử dụng' : 'Failed to load usage sessions'),
+            );
         } finally {
             setLoading(false);
         }
@@ -102,66 +89,67 @@ const UsageSessionReportPage = () => {
 
     useEffect(() => {
         fetchData(1, pagination.pageSize);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const onFinish = () => {
-        fetchData(1, pagination.pageSize);
-    };
-
+    const onFinish = () => fetchData(1, pagination.pageSize);
     const onReset = () => {
         form.resetFields();
         fetchData(1, pagination.pageSize);
     };
+    const handleTableChange = (pager) => fetchData(pager.current, pager.pageSize);
 
-    const handleTableChange = (pager) => {
-        fetchData(pager.current, pager.pageSize);
-    };
-
-    // ========= EXPORT EXCEL =========
     const handleExportExcel = async () => {
         try {
             setExporting(true);
-
-            // gọi lại API với limit lớn để lấy full theo filter hiện tại
             const values = form.getFieldsValue();
-            const params = buildParams(values, 1, 100000); // tuỳ bạn chỉnh limit
+            const params = buildParams(values, 1, 100000);
             const res = await getUsageSessions(params);
             const list = res.data || [];
 
             if (!list.length) {
-                message.warning(
-                    !isEn ? t.excel?.noData || 'Không có dữ liệu để xuất' : t.excel?.noData || 'No data to export',
-                );
+                message.warning(t.excel?.noData || (!isEn ? 'Không có dữ liệu để xuất' : 'No data to export'));
                 return;
             }
 
-            // map sang dữ liệu export, dùng header theo ngôn ngữ
             const rows = list.map((item, index) => ({
                 [t.table.index]: index + 1,
-                [t.table.sessionId]: item.sessionId,
-                [t.table.deviceId]: item.deviceId,
+                [t.table.sessionId]: item.usageCode,
+                [t.table.vehicleId]: item.vehicleId,
+                // [t.table.deviceId]: item.device_id,
                 [t.table.batteryId]: item.batteryId,
                 [t.table.usageCode]: item.usageCode,
+                [t.table.durationMinutes]: item.durationMinutes,
                 [t.table.soh]: item.soh,
-                [t.table.startTime]: item.startTime,
-                [t.table.endTime]: item.endTime,
+                [t.table.socStart]: item.socStart,
+                [t.table.socEnd]: item.socEnd,
+                [t.table.tempMax]: item.tempMax,
+                [t.table.tempMin]: item.tempMin,
+                [t.table.tempAvg]: item.tempAvg,
+                [t.table.distanceKm]: item.distanceKm,
+                [t.table.speedMax]: item.speedMax,
+                [t.table.speedAvg]: item.speedAvg,
+                [t.table.consumedPercent]: item.consumedPercent,
+                [t.table.consumedKwh]: item.consumedKwh,
+                [startTime]: formatDateTime(item.startTime),
+                [endTime]: formatDateTime(item.endTime),
+
+                [t.table.startLat]: item.startLat,
+                [t.table.startLng]: item.startLng,
+                [t.table.endLat]: item.endLat,
+                [t.table.endLng]: item.endLng,
             }));
 
             const ws = XLSX.utils.json_to_sheet(rows);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, 'UsageSessions');
-
-            const filename = t.excel?.fileName || (!isEn ? 'bao_cao_usage_session.xlsx' : 'usage_session_report.xlsx');
-
-            XLSX.writeFile(wb, filename);
-
-            message.success(
-                !isEn ? t.excel?.success || 'Xuất Excel thành công' : t.excel?.success || 'Export Excel successfully',
+            XLSX.writeFile(
+                wb,
+                t.excel?.fileName || (!isEn ? 'bao_cao_usage_session.xlsx' : 'usage_session_report.xlsx'),
             );
+            message.success(t.excel?.success || (!isEn ? 'Xuất Excel thành công' : 'Export Excel successfully'));
         } catch (err) {
             console.error('Export usage session Excel error: ', err);
-            message.error(!isEn ? t.excel?.failed || 'Xuất Excel thất bại' : t.excel?.failed || 'Export Excel failed');
+            message.error(t.excel?.failed || (!isEn ? 'Xuất Excel thất bại' : 'Export Excel failed'));
         } finally {
             setExporting(false);
         }
@@ -174,46 +162,30 @@ const UsageSessionReportPage = () => {
             width: 60,
             render: (text, record, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
         },
-        {
-            title: t.table.sessionId,
-            dataIndex: 'sessionId',
-            ellipsis: true,
-        },
-        {
-            title: t.table.deviceId,
-            dataIndex: 'deviceId',
-            ellipsis: true,
-        },
-        {
-            title: t.table.batteryId,
-            dataIndex: 'batteryId',
-            ellipsis: true,
-        },
-        {
-            title: t.table.usageCode,
-            dataIndex: 'usageCode',
-            ellipsis: true,
-        },
-        {
-            title: t.table.soh,
-            dataIndex: 'soh',
-            width: 80,
-        },
-        {
-            title: t.table.startTime,
-            dataIndex: 'startTime',
-            ellipsis: true,
-        },
-        {
-            title: t.table.endTime,
-            dataIndex: 'endTime',
-            ellipsis: true,
-        },
+        { title: t.table.sessionId, dataIndex: 'usageCode', ellipsis: true, width: 210 },
+        { title: t.table.vehicleId, dataIndex: 'vehicleId', ellipsis: true, width: 80 },
+        // { title: t.table.deviceId, dataIndex: 'device_id', ellipsis: true },
+        { title: t.table.batteryId, dataIndex: 'batteryId', ellipsis: true, width: 80 },
+        { title: t.table.usageCode, dataIndex: 'usageCode', ellipsis: true, width: 210 },
+        { title: t.table.durationMinutes, dataIndex: 'durationMinutes', width: 80 },
+        { title: t.table.soh, dataIndex: 'soh', width: 80 },
+        { title: t.table.socStart, dataIndex: 'socStart', width: 80 },
+        { title: t.table.socEnd, dataIndex: 'socEnd', width: 80 },
+        { title: t.table.tempMax, dataIndex: 'tempMax', width: 80 },
+        { title: t.table.tempMin, dataIndex: 'tempMin', width: 80 },
+        { title: t.table.tempAvg, dataIndex: 'tempAvg', width: 80 },
+        { title: t.table.distanceKm, dataIndex: 'distanceKm', width: 80 },
+        { title: t.table.speedMax, dataIndex: 'speedMax', width: 80 },
+        { title: t.table.speedAvg, dataIndex: 'speedAvg', width: 80 },
+        { title: t.table.consumedPercent, dataIndex: 'consumedPercent', width: 80 },
+        { title: t.table.consumedKwh, dataIndex: 'consumedKwh', width: 80 },
+        { title: t.table.startTime, dataIndex: 'startTime', ellipsis: true, render: formatDateTime, width: 160 },
+        { title: t.table.endTime, dataIndex: 'endTime', ellipsis: true, render: formatDateTime, width: 160 },
+        { title: t.table.startLat, dataIndex: 'startLat', width: 80 },
+        { title: t.table.startLng, dataIndex: 'startLng', width: 80 },
+        { title: t.table.endLat, dataIndex: 'endLat', width: 80 },
+        { title: t.table.endLng, dataIndex: 'endLng', width: 80 },
     ];
-
-    const customLocale = {
-        emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu ',
-    };
 
     return (
         <div className="usage-report-page">
@@ -225,50 +197,29 @@ const UsageSessionReportPage = () => {
             </div>
 
             <Row gutter={[16, 16]} className="usage-report-row">
-                {/* FILTER */}
                 <Col xs={24} lg={7}>
                     <Card className="usage-filter-card" title={t.filter.title} size="small">
-                        <Form
-                            form={form}
-                            layout="vertical"
-                            onFinish={onFinish}
-                            initialValues={
-                                {
-                                    // timeRange: [dayjs().startOf('day'), dayjs().endOf('day')],
-                                }
-                            }
-                        >
+                        <Form form={form} layout="vertical" onFinish={onFinish}>
                             <Form.Item label={t.filter.sessionId} name="sessionId">
                                 <Input placeholder={t.filter.sessionIdPlaceholder} allowClear />
                             </Form.Item>
-
                             <Form.Item label={t.filter.batteryId} name="batteryId">
                                 <Input placeholder={t.filter.batteryIdPlaceholder} allowClear />
                             </Form.Item>
-
                             <Form.Item label={t.filter.usageCode} name="usageCode">
                                 <Input placeholder={t.filter.usageCodePlaceholder} allowClear />
                             </Form.Item>
-
                             <Form.Item label={t.filter.deviceId} name="deviceId">
                                 <Input placeholder={t.filter.deviceIdPlaceholder} allowClear />
                             </Form.Item>
-
                             <Form.Item label={t.filter.soh} name="soh">
                                 <Input placeholder={t.filter.sohPlaceholder} allowClear />
                             </Form.Item>
-
                             <Form.Item label={t.filter.timeRange} name="timeRange">
                                 <RangePicker showTime style={{ width: '100%' }} format="YYYY-MM-DD HH:mm:ss" />
                             </Form.Item>
-
                             <Form.Item>
-                                <Space
-                                    style={{
-                                        width: '100%',
-                                        justifyContent: 'space-between',
-                                    }}
-                                >
+                                <Space style={{ width: '100%', justifyContent: 'space-between' }}>
                                     <Button
                                         type="primary"
                                         htmlType="submit"
@@ -286,7 +237,6 @@ const UsageSessionReportPage = () => {
                     </Card>
                 </Col>
 
-                {/* DATA TABLE */}
                 <Col xs={24} lg={17}>
                     <Card
                         className="usage-table-card"
@@ -304,11 +254,11 @@ const UsageSessionReportPage = () => {
                         }
                     >
                         <Table
-                            rowKey={(record) => record._id || record.sessionId}
+                            rowKey={(record) => record._id || record.usageCode}
                             columns={columns}
                             dataSource={data}
                             loading={loading}
-                            locale={customLocale}
+                            locale={{ emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu' }}
                             pagination={{
                                 current: pagination.current,
                                 pageSize: pagination.pageSize,
@@ -318,7 +268,7 @@ const UsageSessionReportPage = () => {
                                 showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
                             }}
                             onChange={handleTableChange}
-                            scroll={{ x: 800 }}
+                            scroll={{ x: 2200 }}
                         />
                     </Card>
                 </Col>
