@@ -128,12 +128,21 @@ const MonitorPage = () => {
             maxZoom: 19,
         }).addTo(map);
 
-        const customIcon = LMap.icon({
-            iconUrl: markerIcon.src,
-            iconAnchor: [18, 36],
-        });
+        // ===== marker icon: desktop vs mobile =====
+        const BASE_ANCHOR = [18, 36]; // như bạn đang dùng
+        const MOBILE_DELTA_Y = 10; // muốn xuống thêm bao nhiêu px trên mobile (tăng/giảm số này)
+        const MOBILE_ANCHOR = [18, -15]; // anchor.y nhỏ hơn => marker xuống
 
-        const marker = LMap.marker([lat, lng], { icon: customIcon }).addTo(map);
+        const makeIcon = (isMobile) =>
+            LMap.icon({
+                iconUrl: markerIcon.src,
+                iconAnchor: isMobile ? MOBILE_ANCHOR : BASE_ANCHOR,
+            });
+
+        const isMobileNow = () =>
+            typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+
+        const marker = LMap.marker([lat, lng], { icon: makeIcon(isMobileNow()) }).addTo(map);
         markerRef.current = marker;
 
         const updatePopupPosition = () => {
@@ -155,10 +164,20 @@ const MonitorPage = () => {
             }
         });
 
+        // ===== resize: update map + popup + icon on breakpoint change =====
+        let lastIsMobile = isMobileNow();
+
         const handleResize = () => {
             map.invalidateSize();
             updatePopupPosition();
+
+            const nowIsMobile = isMobileNow();
+            if (nowIsMobile !== lastIsMobile) {
+                lastIsMobile = nowIsMobile;
+                markerRef.current?.setIcon(makeIcon(nowIsMobile));
+            }
         };
+
         window.addEventListener('resize', handleResize);
 
         return () => {
@@ -594,14 +613,14 @@ const MonitorPage = () => {
         // ⭐ gps: ưu tiên MQTT, nếu chưa có thì dùng gps từ lastCruise (src)
         const gpsValNum = toNumberOrNull(mqttSrc.gps != null ? mqttSrc.gps : src.gps);
 
-        let machineStatus = NA_TEXT;
+        let machineStatus = t.statusInfo.engineOn;
         if (accValNum === 1) {
             machineStatus = t.statusInfo.engineOff;
         } else if (accValNum === 0) {
             machineStatus = t.statusInfo.engineOn;
         }
 
-        let vehicleStatus = NA_TEXT;
+        let vehicleStatus = t.statusInfo.vehicleStopped;
 
         if (accValNum === 1) {
             vehicleStatus = t.statusInfo.vehicleParking;
@@ -611,7 +630,7 @@ const MonitorPage = () => {
             else if (vgpNum != null) usedSpeed = vgpNum;
 
             if (usedSpeed == null) {
-                vehicleStatus = t.statusInfo.vehicleUnknown;
+                vehicleStatus = t.statusInfo.vehicleStopped;
             } else if (usedSpeed > 0) {
                 vehicleStatus = t.statusInfo.vehicleRunning.replace('{speed}', String(usedSpeed));
             } else {

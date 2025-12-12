@@ -844,6 +844,7 @@
             "engineOff": "Ignition off",
             "engineOn": "Ignition on",
             "vehicleParking": "Parking",
+            "vehicleStopped": "Stopped",
             "vehicleRunning": "Running {speed} km/h",
             "vehicleUnknown": "Unknown",
             "version": "Version:"

@@ -848,6 +848,7 @@
             "coordinate": "Tọa độ:",
             "engineOff": "Tắt máy",
             "engineOn": "Mở máy",
+            "vehicleStopped": "Dừng xe",
             "vehicleParking": "Đỗ xe",
             "vehicleRunning": "Đang chạy {speed} km/h",
             "vehicleUnknown": "Chưa chạy xe",

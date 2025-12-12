@@ -571,6 +571,13 @@
     .iky-monitor__map {
         height: 500px;
     }
+
+    .iky-monitor__popup-wrapper {
+        transform: translate(-50%, -95%) !important;
+    }
+    .leaflet-pane leaflet-marker-pane img {
+        margin-top: 19px !important;
+    }
 }
 
 .iky-monitor__device-list {
