@@ -10,12 +10,17 @@ export const useAuthStore = create(
             setUser: (user) => set({ user }),
             clearUser: () => set({ user: null }),
 
-            setHydrated: () => set({ hydrated: true }),
+            setHydrated: (v) => set({ hydrated: v }),
         }),
         {
             name: 'iky_user',
-            onRehydrateStorage: () => (state) => {
-                state.setHydrated(); // Gọi khi đã hydrate xong
+            partialize: (state) => ({ user: state.user }),
+            onRehydrateStorage: () => (state, error) => {
+                if (error) {
+                    console.error('rehydrate error', error);
+                }
+
+                state?.setHydrated(true);
             },
         },
     ),

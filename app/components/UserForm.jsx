@@ -5,7 +5,7 @@ import AddressAutoComplete from './AddressAutoComplete';
 
 const { Option } = Select;
 
-export default function UserForm({ initialData, currentRole, distributors, onChange }) {
+export default function UserForm({ initialData, currentRole, distributors, isEditing, onChange }) {
     const [formData, setFormData] = useState(initialData);
 
     useEffect(() => {
@@ -20,8 +20,12 @@ export default function UserForm({ initialData, currentRole, distributors, onCha
 
     return (
         <Form layout="vertical">
-            <Form.Item label="Tên đăng nhập">
-                <Input value={formData.username} onChange={(e) => update({ username: e.target.value })} />
+            <Form.Item label="Tên đăng nhập" extra={isEditing ? 'Không thể thay đổi tên đăng nhập' : null}>
+                <Input
+                    value={formData.username}
+                    disabled={isEditing}
+                    onChange={(e) => update({ username: e.target.value })}
+                />
             </Form.Item>
 
             <Form.Item label="Mật khẩu">
@@ -59,23 +63,37 @@ export default function UserForm({ initialData, currentRole, distributors, onCha
                         <>
                             <Option value="administrator">Admin</Option>
                             <Option value="distributor">Distributor</Option>
+                            <Option value="reporter">Reporter</Option> {/* ✅ thêm */}
                         </>
                     )}
+
+                    {/* nếu bạn muốn distributor cũng tạo/sửa được reporter thì mở block này */}
+                    {currentRole === 'distributor' && (
+                        <>
+                            <Option value="reporter">Reporter</Option> {/* ✅ thêm */}
+                        </>
+                    )}
+
                     <Option value="customer">Khách hàng</Option>
                 </Select>
             </Form.Item>
 
-            {currentRole === 'administrator' && formData.position === 'customer' && (
-                <Form.Item label="Đại lý">
-                    <Select value={formData.distributor_id} onChange={(v) => update({ distributor_id: v })}>
-                        {distributors.map((d) => (
-                            <Option key={d._id} value={d._id}>
-                                {d.email} ({d.username})
-                            </Option>
-                        ))}
-                    </Select>
-                </Form.Item>
-            )}
+            {currentRole === 'administrator' &&
+                (formData.position === 'customer' || formData.position === 'reporter') && (
+                    <Form.Item label="Đại lý" required rules={[{ required: true, message: 'Vui lòng chọn đại lý' }]}>
+                        <Select
+                            value={formData.distributor_id}
+                            onChange={(v) => update({ distributor_id: v })}
+                            placeholder="Chọn đại lý"
+                        >
+                            {distributors.map((d) => (
+                                <Option key={d._id} value={d._id}>
+                                    {d.email} ({d.username})
+                                </Option>
+                            ))}
+                        </Select>
+                    </Form.Item>
+                )}
         </Form>
     );
 }

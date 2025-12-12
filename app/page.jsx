@@ -837,7 +837,10 @@ const MonitorPage = () => {
                                 </div>
 
                                 <div className="iky-monitor__left-section iky-monitor__left-section--list">
-                                    <div className="iky-monitor__left-label">{t.list.label}</div>
+                                    <div className="iky-monitor__left-label">
+                                        {t.list.label}{' '}
+                                        <span className="iky-monitor__count">({filteredDevices.length})</span>
+                                    </div>
 
                                     <div className="iky-monitor__device-list">
                                         {loadingDevices && <div className="iky-loading">{t.list.loading}</div>}
@@ -847,9 +850,9 @@ const MonitorPage = () => {
                                         )}
 
                                         {!loadingDevices &&
-                                            filteredDevices.map((d) => {
-                                                const isOnline = d.status === 10;
+                                            filteredDevices.map((d, idx) => {
                                                 const isActive = selectedDevice?._id === d._id;
+
                                                 return (
                                                     <div
                                                         key={d._id}
@@ -859,28 +862,23 @@ const MonitorPage = () => {
                                                         }
                                                         onClick={() => handleSelectDevice(d)}
                                                     >
-                                                        <div className="plate">
-                                                            {d.license_plate || t.list.unknownPlate}
+                                                        <div className="iky-monitor__device-row">
+                                                            <span className="iky-monitor__stt-badge">{idx + 1}</span>
+
+                                                            <div className="iky-monitor__device-main">
+                                                                <div className="plate">
+                                                                    {d.license_plate || t.list.unknownPlate}
+                                                                </div>
+
+                                                                <div className="iky-monitor__meta">
+                                                                    <span className="imei">IMEI: {d.imei}</span>
+                                                                    <span className="dot">•</span>
+                                                                    <span className="phone">
+                                                                        {t.list.phoneLabel} {d.phone_number || NA_TEXT}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
                                                         </div>
-                                                        <div className="imei">IMEI: {d.imei}</div>
-                                                        <div className="phone">
-                                                            {t.list.phoneLabel} {d.phone_number || NA_TEXT}
-                                                        </div>
-                                                        {/* <div className="status-dot">
-                                                            <span
-                                                                className={
-                                                                    'iky-status-dot ' +
-                                                                    (isOnline
-                                                                        ? 'iky-status-dot--online'
-                                                                        : 'iky-status-dot--offline')
-                                                                }
-                                                            />
-                                                            <span className="iky-status-text">
-                                                                {isOnline
-                                                                    ? t.filter.statusOnline
-                                                                    : t.filter.statusOffline}
-                                                            </span>
-                                                        </div> */}
                                                     </div>
                                                 );
                                             })}
@@ -899,9 +897,9 @@ const MonitorPage = () => {
                                         onChange={(e) => setHistoryDeviceId(e.target.value)}
                                     >
                                         <option value="">{t.history.selectVehiclePlaceholder}</option>
-                                        {deviceList.map((d) => (
+                                        {deviceList.map((d, idx) => (
                                             <option key={d._id} value={d._id}>
-                                                {(d.license_plate || d.imei || t.history.unknown).trim()}
+                                                {idx + 1}. {(d.license_plate || d.imei || t.history.unknown).trim()}
                                                 {d.phone_number ? ` - ${d.phone_number}` : ''}
                                             </option>
                                         ))}

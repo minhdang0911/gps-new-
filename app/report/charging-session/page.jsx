@@ -5,12 +5,15 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography, message } from 'antd';
 import { SearchOutlined, ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
 import { getChargingSessions } from '../../lib/api/chargingSession';
-import '../usage-session/usageSession.css'; // xài chung style với usage
+import '../usage-session/usageSession.css';
 
 import { usePathname } from 'next/navigation';
 import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
 import * as XLSX from 'xlsx';
+
+// ✅ helper ở util đúng theo bạn
+import { buildImeiToLicensePlateMap, attachLicensePlate } from '../../util/deviceMap';
 
 const { RangePicker } = DatePicker;
 const { Title, Text } = Typography;
@@ -21,16 +24,21 @@ const ChargingSessionReportPage = () => {
     const [form] = Form.useForm();
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(false);
+
     const [pagination, setPagination] = useState({
         current: 1,
         pageSize: 10,
         total: 0,
     });
 
+    // ✅ 2 maps
+    const [imeiToPlate, setImeiToPlate] = useState(new Map());
+    const [plateToImeis, setPlateToImeis] = useState(new Map());
+    const [loadingDeviceMap, setLoadingDeviceMap] = useState(false);
+
     const pathname = usePathname() || '/';
     const [isEn, setIsEn] = useState(false);
 
-    // detect /en ở cuối URL
     const isEnFromPath = useMemo(() => {
         const segments = pathname.split('/').filter(Boolean);
         const last = segments[segments.length - 1];
@@ -51,24 +59,64 @@ const ChargingSessionReportPage = () => {
 
     const t = isEn ? locales.en.chargingSessionReport : locales.vi.chargingSessionReport;
 
-    const buildPayload = (values, page, limit) => {
-        const payload = {
-            page,
-            limit,
-        };
+    const getAuthToken = () => {
+        if (typeof window === 'undefined') return '';
+        return localStorage.getItem('token') || localStorage.getItem('accessToken') || '';
+    };
 
-        if (values.chargeCode) payload.chargeCode = values.chargeCode.trim();
-        if (values.batteryId) payload.batteryId = values.batteryId.trim();
+    const normalize = (s) =>
+        String(s || '')
+            .trim()
+            .toLowerCase();
+
+    const buildPayload = (values, page, limit) => {
+        const payload = { page, limit };
+
         if (values.chargeCode) payload.chargeCode = values.chargeCode.trim();
         if (values.soh) payload.soh = values.soh;
 
-        if (values.timeRange && values.timeRange.length === 2) {
+        // ✅ biển số -> imei (query backend theo imei)
+        if (values.license_plate) {
+            const key = normalize(values.license_plate);
+            const imeis = plateToImeis.get(key) || [];
+            payload.imei = imeis[0] || '__NO_MATCH__'; // nếu không match thì trả rỗng
+        }
+
+        if (values.timeRange?.length === 2) {
             payload.start = values.timeRange[0].format('YYYY-MM-DD HH:mm:ss');
             payload.end = values.timeRange[1].format('YYYY-MM-DD HH:mm:ss');
         }
 
         return payload;
     };
+
+    // ✅ load device maps 1 lần
+    useEffect(() => {
+        const loadMaps = async () => {
+            try {
+                setLoadingDeviceMap(true);
+                const token = getAuthToken();
+                if (!token) {
+                    setImeiToPlate(new Map());
+                    setPlateToImeis(new Map());
+                    return;
+                }
+
+                const { imeiToPlate, plateToImeis } = await buildImeiToLicensePlateMap(token);
+                setImeiToPlate(imeiToPlate);
+                setPlateToImeis(plateToImeis);
+            } catch (e) {
+                console.error('Load device map failed:', e);
+                setImeiToPlate(new Map());
+                setPlateToImeis(new Map());
+            } finally {
+                setLoadingDeviceMap(false);
+            }
+        };
+
+        loadMaps();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const fetchData = async (page = 1, pageSize = 10) => {
         try {
@@ -77,11 +125,15 @@ const ChargingSessionReportPage = () => {
             const payload = buildPayload(values, page, pageSize);
 
             const res = await getChargingSessions(payload);
+            const list = res.data || [];
 
-            setData(res.data || []);
+            // ✅ attach biển số
+            const enriched = attachLicensePlate(list, imeiToPlate);
+
+            setData(enriched);
             setPagination({
                 current: res.page || page,
-                pageSize: 10, // fix cứng
+                pageSize: 10,
                 total: res.total || 0,
             });
         } catch (err) {
@@ -91,14 +143,13 @@ const ChargingSessionReportPage = () => {
         }
     };
 
+    // fetch lần đầu + khi maps sẵn sàng
     useEffect(() => {
         fetchData(1, pagination.pageSize);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [imeiToPlate, plateToImeis]);
 
-    const onFinish = () => {
-        fetchData(1, pagination.pageSize);
-    };
+    const onFinish = () => fetchData(1, pagination.pageSize);
 
     const onReset = () => {
         form.resetFields();
@@ -129,11 +180,10 @@ const ChargingSessionReportPage = () => {
             return;
         }
 
-        // Dòng dữ liệu cho Excel (trang hiện tại)
         const rows = data.map((item, index) => ({
             [t.table.index]: (pagination.current - 1) * pagination.pageSize + index + 1,
-            [t.table.sessionId]: item.sessionId || '',
-            [t.table.batteryId]: item.batteryId || '',
+            imei: item.imei || '',
+            license_plate: item.license_plate || '',
             [t.table.chargeCode]: item.chargeCode || '',
             [t.table.soh]: item.soh ?? '',
             'SOC Start': item.socStart ?? '',
@@ -165,8 +215,8 @@ const ChargingSessionReportPage = () => {
             width: 60,
             render: (_, __, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
         },
-        // { title: t.table.sessionId, dataIndex: 'sessionId', ellipsis: true },
-        { title: t.table.batteryId, dataIndex: 'batteryId', ellipsis: true, width: 150 },
+        { title: 'IMEI', dataIndex: 'imei', ellipsis: true, width: 150 },
+        { title: isEn ? 'License plate' : 'Biển số', dataIndex: 'license_plate', ellipsis: true, width: 140 },
         { title: t.table.chargeCode, dataIndex: 'chargeCode', ellipsis: true, width: 260 },
         { title: t.table.soh, dataIndex: 'soh', width: 80 },
         { title: t.table.socStart, dataIndex: 'socStart', width: 80 },
@@ -183,9 +233,7 @@ const ChargingSessionReportPage = () => {
         { title: t.table.endTime, dataIndex: 'end', ellipsis: true, render: (val) => formatDateTime(val) },
     ];
 
-    const customLocale = {
-        emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu ',
-    };
+    const customLocale = { emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu ' };
 
     return (
         <div className="usage-report-page">
@@ -197,16 +245,15 @@ const ChargingSessionReportPage = () => {
             </div>
 
             <Row gutter={[16, 16]} className="usage-report-row">
-                {/* FILTER */}
                 <Col xs={24} lg={7}>
                     <Card className="usage-filter-card" title={t.filter.title} size="small">
                         <Form form={form} layout="vertical" onFinish={onFinish}>
-                            <Form.Item label={t.filter.batteryId} name="batteryId">
-                                <Input placeholder={t.filter.batteryIdPlaceholder} allowClear />
-                            </Form.Item>
-
                             <Form.Item label={t.filter.chargeCode} name="chargeCode">
                                 <Input placeholder={t.filter.chargeCodePlaceholder} allowClear />
+                            </Form.Item>
+
+                            <Form.Item label={isEn ? 'License plate' : 'Biển số'} name="license_plate">
+                                <Input placeholder={isEn ? 'Enter license plate' : 'Nhập biển số xe'} allowClear />
                             </Form.Item>
 
                             <Form.Item label={t.filter.soh} name="soh">
@@ -218,12 +265,7 @@ const ChargingSessionReportPage = () => {
                             </Form.Item>
 
                             <Form.Item>
-                                <Space
-                                    style={{
-                                        width: '100%',
-                                        justifyContent: 'space-between',
-                                    }}
-                                >
+                                <Space style={{ width: '100%', justifyContent: 'space-between' }}>
                                     <Button
                                         type="primary"
                                         htmlType="submit"
@@ -237,11 +279,20 @@ const ChargingSessionReportPage = () => {
                                     </Button>
                                 </Space>
                             </Form.Item>
+
+                            {/* <Text type="secondary" style={{ fontSize: 12 }}>
+                                {loadingDeviceMap
+                                    ? isEn
+                                        ? 'Loading devices…'
+                                        : 'Đang tải danh sách xe…'
+                                    : isEn
+                                    ? 'Devices loaded'
+                                    : 'Đã tải danh sách xe'}
+                            </Text> */}
                         </Form>
                     </Card>
                 </Col>
 
-                {/* DATA TABLE */}
                 <Col xs={24} lg={17}>
                     <Card
                         className="usage-table-card"
@@ -259,7 +310,9 @@ const ChargingSessionReportPage = () => {
                         }
                     >
                         <Table
-                            rowKey={(record) => record._id || record.sessionId}
+                            rowKey={(record) =>
+                                record._id || record.sessionId || `${record.imei}-${record.start}-${record.end}`
+                            }
                             columns={columns}
                             dataSource={data}
                             loading={loading}
@@ -273,7 +326,7 @@ const ChargingSessionReportPage = () => {
                                 showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
                             }}
                             onChange={handleTableChange}
-                            scroll={{ x: 800 }}
+                            scroll={{ x: 950 }}
                         />
                     </Card>
                 </Col>

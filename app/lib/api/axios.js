@@ -6,7 +6,8 @@ const api = axios.create({
     withCredentials: true,
 });
 
-// ===== TOKEN UTILS =====
+/* ================= TOKEN UTILS ================= */
+
 const getTokens = () => ({
     accessToken: localStorage.getItem('accessToken'),
     refreshToken: localStorage.getItem('refreshToken'),
@@ -17,31 +18,37 @@ const saveTokens = (access, refresh) => {
     if (refresh) localStorage.setItem('refreshToken', refresh);
 };
 
-// ===== REQUEST INTERCEPTOR =====
-api.interceptors.request.use((config) => {
-    const { accessToken } = getTokens();
+const clearTokens = () => {
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
+};
 
-    // Thêm Authorization cho tất cả request trừ /refresh
-    if (!config.url.includes('/refresh') && accessToken) {
-        config.headers.Authorization = `Bearer ${accessToken}`;
-    }
+/* ================= REQUEST INTERCEPTOR ================= */
 
-    return config;
-});
+api.interceptors.request.use(
+    (config) => {
+        const { accessToken } = getTokens();
 
-// ===== RESPONSE INTERCEPTOR - XỬ LÝ 401 =====
+        // Không gắn token cho refresh/login
+        if (accessToken && !config.url.includes('/refresh') && !config.url.includes('/login')) {
+            config.headers.Authorization = `Bearer ${accessToken}`;
+        }
+
+        return config;
+    },
+    (error) => Promise.reject(error),
+);
+
+/* ================= RESPONSE INTERCEPTOR ================= */
+
 let isRefreshing = false;
 let failedQueue = [];
 
 const processQueue = (error, token = null) => {
     failedQueue.forEach((prom) => {
-        if (error) {
-            prom.reject(error);
-        } else {
-            prom.resolve(token);
-        }
+        if (error) prom.reject(error);
+        else prom.resolve(token);
     });
-
     failedQueue = [];
 };
 
@@ -50,26 +57,24 @@ api.interceptors.response.use(
     async (error) => {
         const originalRequest = error.config;
 
-        // Nếu là lỗi của endpoint /refresh -> không xử lý
-        if (originalRequest.url.includes('/refresh')) {
+        // Bỏ qua login & refresh
+        if (originalRequest.url.includes('/login') || originalRequest.url.includes('/refresh')) {
             return Promise.reject(error);
         }
 
-        // ✅ XỬ LÝ 401: Token hết hạn
+        // Xử lý 401
         if (error.response?.status === 401 && !originalRequest._retry) {
             originalRequest._retry = true;
 
             const { refreshToken } = getTokens();
 
-            // Không có refreshToken -> logout
             if (!refreshToken) {
-                console.warn('❌ Không có refreshToken, redirect to login');
-                localStorage.clear();
+                clearTokens();
                 window.location.href = '/login';
                 return Promise.reject(error);
             }
 
-            // ✅ Nếu đang refresh -> xếp hàng chờ
+            // Nếu đang refresh → xếp hàng
             if (isRefreshing) {
                 return new Promise((resolve, reject) => {
                     failedQueue.push({ resolve, reject });
@@ -78,40 +83,28 @@ api.interceptors.response.use(
                         originalRequest.headers.Authorization = `Bearer ${token}`;
                         return api(originalRequest);
                     })
-                    .catch((err) => {
-                        return Promise.reject(err);
-                    });
+                    .catch((err) => Promise.reject(err));
             }
 
-            // ✅ Bắt đầu refresh token
             isRefreshing = true;
 
             try {
-                console.log('🔄 Token hết hạn (401), đang refresh...');
+                console.log('🔄 Refresh token...');
 
                 const data = await refreshTokenApi(refreshToken);
 
-                const newAccess = data.accessToken;
-                const newRefresh = data.refreshToken;
+                saveTokens(data.accessToken, data.refreshToken);
 
-                // Lưu token mới
-                saveTokens(newAccess, newRefresh);
+                processQueue(null, data.accessToken);
 
-                // Xử lý các request đang chờ
-                processQueue(null, newAccess);
-
-                // Retry request gốc với token mới
-                originalRequest.headers.Authorization = `Bearer ${newAccess}`;
-
-                console.log('✅ Token refreshed, retry request');
+                originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
 
                 return api(originalRequest);
             } catch (err) {
-                console.error('❌ Refresh token thất bại:', err);
+                console.error('❌ Refresh token thất bại');
 
-                // Refresh thất bại -> logout
                 processQueue(err, null);
-                localStorage.clear();
+                clearTokens();
                 window.location.href = '/login';
 
                 return Promise.reject(err);

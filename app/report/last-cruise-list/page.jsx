@@ -3,13 +3,16 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography, Select, message } from 'antd';
-import { SearchOutlined, ReloadOutlined, FileExcelOutlined, DownloadOutlined } from '@ant-design/icons';
+import { SearchOutlined, ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 import * as XLSX from 'xlsx';
 
 import { getLastCruiseList } from '../../lib/api/report';
 import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
+
+// ✅ helper
+import { buildImeiToLicensePlateMap } from '../../util/deviceMap';
 
 const { RangePicker } = DatePicker;
 const { Title, Text } = Typography;
@@ -27,10 +30,13 @@ const LastCruiseReportPage = () => {
         pageSize: 10,
     });
 
+    // ✅ maps
+    const [imeiToPlate, setImeiToPlate] = useState(new Map());
+    const [loadingDeviceMap, setLoadingDeviceMap] = useState(false);
+
     const pathname = usePathname() || '/';
     const [isEn, setIsEn] = useState(false);
 
-    // detect /en ở cuối URL
     const isEnFromPath = useMemo(() => {
         const segments = pathname.split('/').filter(Boolean);
         const last = segments[segments.length - 1];
@@ -52,9 +58,18 @@ const LastCruiseReportPage = () => {
     const rawLocale = isEn ? locales.en : locales.vi;
     const t = rawLocale.lastCruiseReport;
 
+    const getAuthToken = () => {
+        if (typeof window === 'undefined') return '';
+        return localStorage.getItem('token') || localStorage.getItem('accessToken') || '';
+    };
+
+    const normalize = (s) =>
+        String(s || '')
+            .trim()
+            .toLowerCase();
+
     // ===== helpers =====
     const parseTimToDate = (tim) => {
-        // tim: "251206162011" -> YY MM DD HH mm ss
         if (!tim || tim.length !== 12) return null;
 
         const yy = parseInt(tim.slice(0, 2), 10);
@@ -83,32 +98,58 @@ const LastCruiseReportPage = () => {
     };
 
     const formatGps = (gps) => {
-        // 1 = mất GPS, 0 hoặc undefined = bình thường
         const lost = Number(gps) === 1;
-        if (isEn) {
-            return lost ? t.table.gpsLost : t.table.gpsNormal;
-        }
         return lost ? t.table.gpsLost : t.table.gpsNormal;
     };
 
     const formatSos = (sos) => {
-        // 1 = bật, 0 hoặc undefined = tắt
         const on = Number(sos) === 1;
-        if (isEn) {
-            return on ? t.table.sosOn : t.table.sosOff;
-        }
         return on ? t.table.sosOn : t.table.sosOff;
     };
 
     const formatAcc = (acc) => {
         const isLocked = Number(acc) === 1;
-
-        if (isEn) {
-            return isLocked ? 'Vehicle locked' : 'Vehicle unlocked';
-        }
-
+        if (isEn) return isLocked ? 'Vehicle locked' : 'Vehicle unlocked';
         return isLocked ? 'Khóa xe tắt' : 'Khóa xe mở';
     };
+
+    // ✅ attach biển số từ dev (coi dev là imei)
+    const attachPlateToLastCruise = (list = [], map) => {
+        if (!map) return list.map((x) => ({ ...x, license_plate: '' }));
+
+        return list.map((item) => {
+            const imei = String(item?.dev || '').trim();
+            return {
+                ...item,
+                license_plate: map.get(imei) || '',
+            };
+        });
+    };
+
+    // ✅ load device map
+    useEffect(() => {
+        const loadMaps = async () => {
+            try {
+                setLoadingDeviceMap(true);
+                const token = getAuthToken();
+                if (!token) {
+                    setImeiToPlate(new Map());
+                    return;
+                }
+
+                const { imeiToPlate } = await buildImeiToLicensePlateMap(token);
+                setImeiToPlate(imeiToPlate);
+            } catch (e) {
+                console.error('Load device map failed:', e);
+                setImeiToPlate(new Map());
+            } finally {
+                setLoadingDeviceMap(false);
+            }
+        };
+
+        loadMaps();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // ===== fetch API (1 lần) =====
     const fetchData = async () => {
@@ -116,8 +157,11 @@ const LastCruiseReportPage = () => {
             setLoading(true);
             const res = await getLastCruiseList({});
             const list = res?.data || res || [];
-            setRawData(list);
-            setData(list);
+
+            const enriched = attachPlateToLastCruise(list, imeiToPlate);
+
+            setRawData(enriched);
+            setData(enriched);
             setPagination((prev) => ({
                 ...prev,
                 current: 1,
@@ -130,26 +174,33 @@ const LastCruiseReportPage = () => {
         }
     };
 
+    // ✅ refetch khi map sẵn sàng để attach biển số
     useEffect(() => {
         fetchData();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [imeiToPlate]);
 
     // ===== filter ở FE =====
     const applyFilter = () => {
         const values = form.getFieldsValue();
-        const { dev, fwr, gpsStatus, sosStatus, timeRange } = values;
+        const { dev, license_plate, fwr, gpsStatus, sosStatus, timeRange } = values;
 
         let filtered = [...rawData];
 
         if (dev) {
-            const key = dev.trim().toLowerCase();
-            filtered = filtered.filter((item) => (item.dev || '').toLowerCase().includes(key));
+            const key = normalize(dev);
+            filtered = filtered.filter((item) => normalize(item.dev).includes(key));
+        }
+
+        // ✅ filter biển số
+        if (license_plate) {
+            const key = normalize(license_plate);
+            filtered = filtered.filter((item) => normalize(item.license_plate).includes(key));
         }
 
         if (fwr) {
-            const key = fwr.trim().toLowerCase();
-            filtered = filtered.filter((item) => (item.fwr || '').toLowerCase().includes(key));
+            const key = normalize(fwr);
+            filtered = filtered.filter((item) => normalize(item.fwr).includes(key));
         }
 
         if (gpsStatus && gpsStatus !== 'all') {
@@ -188,9 +239,7 @@ const LastCruiseReportPage = () => {
         }));
     };
 
-    const onFinish = () => {
-        applyFilter();
-    };
+    const onFinish = () => applyFilter();
 
     const onReset = () => {
         form.resetFields();
@@ -220,6 +269,8 @@ const LastCruiseReportPage = () => {
             return {
                 [t.table.index]: index + 1,
                 [t.table.dev]: item.dev,
+                // ✅ thêm biển số vào excel
+                [isEn ? 'License plate' : 'Biển số']: item.license_plate || '',
                 [t.table.fwr]: item.fwr,
                 [t.table.tim]: timDate ? formatDateTime(timDate) : item.tim || '--',
                 [t.table.lat]: item.lat,
@@ -256,6 +307,13 @@ const LastCruiseReportPage = () => {
             width: 160,
             ellipsis: true,
         },
+        // ✅ cột biển số
+        {
+            title: isEn ? 'License plate' : 'Biển số',
+            dataIndex: 'license_plate',
+            width: 140,
+            ellipsis: true,
+        },
         {
             title: t.table.fwr,
             dataIndex: 'fwr',
@@ -272,50 +330,14 @@ const LastCruiseReportPage = () => {
                 return formatDateTime(d);
             },
         },
-        {
-            title: t.table.lat,
-            dataIndex: 'lat',
-            width: 130,
-        },
-        {
-            title: t.table.lon,
-            dataIndex: 'lon',
-            width: 130,
-        },
-        {
-            title: t.table.sat,
-            dataIndex: 'sat',
-            width: 100,
-        },
-        {
-            title: t.table.gps,
-            dataIndex: 'gps',
-            width: 140,
-            render: (value) => formatGps(value),
-        },
-        {
-            title: t.table.sos,
-            dataIndex: 'sos',
-            width: 140,
-            render: (value) => formatSos(value),
-        },
-        {
-            title: t.table.acc,
-            dataIndex: 'acc',
-            width: 120,
-            render: (value) => formatAcc(value),
-        },
-        {
-            title: t.table.vgp,
-            dataIndex: 'vgp',
-            width: 160,
-        },
-        {
-            title: t.table.createdAt,
-            dataIndex: 'createdAt',
-            width: 180,
-            render: formatDateTime,
-        },
+        { title: t.table.lat, dataIndex: 'lat', width: 130 },
+        { title: t.table.lon, dataIndex: 'lon', width: 130 },
+        { title: t.table.sat, dataIndex: 'sat', width: 100 },
+        { title: t.table.gps, dataIndex: 'gps', width: 140, render: (value) => formatGps(value) },
+        { title: t.table.sos, dataIndex: 'sos', width: 140, render: (value) => formatSos(value) },
+        { title: t.table.acc, dataIndex: 'acc', width: 120, render: (value) => formatAcc(value) },
+        { title: t.table.vgp, dataIndex: 'vgp', width: 160 },
+        { title: t.table.createdAt, dataIndex: 'createdAt', width: 180, render: formatDateTime },
     ];
 
     const totalRecords = data.length;
@@ -339,6 +361,11 @@ const LastCruiseReportPage = () => {
                         <Form form={form} layout="vertical" onFinish={onFinish}>
                             <Form.Item label={t.filter.dev} name="dev">
                                 <Input placeholder={t.filter.devPlaceholder} allowClear />
+                            </Form.Item>
+
+                            {/* ✅ filter biển số */}
+                            <Form.Item label={isEn ? 'License plate' : 'Biển số'} name="license_plate">
+                                <Input placeholder={isEn ? 'Enter license plate' : 'Nhập biển số xe'} allowClear />
                             </Form.Item>
 
                             <Form.Item label={t.filter.fwr} name="fwr">
@@ -366,12 +393,7 @@ const LastCruiseReportPage = () => {
                             </Form.Item>
 
                             <Form.Item>
-                                <Space
-                                    style={{
-                                        width: '100%',
-                                        justifyContent: 'space-between',
-                                    }}
-                                >
+                                <Space style={{ width: '100%', justifyContent: 'space-between' }}>
                                     <Button
                                         type="primary"
                                         htmlType="submit"
@@ -386,16 +408,15 @@ const LastCruiseReportPage = () => {
                                 </Space>
                             </Form.Item>
 
-                            {/* <Form.Item>
-                                <Button
-                                    block
-                                    icon={<FileExcelOutlined />}
-                                    onClick={handleExportExcel}
-                                    disabled={loading || data.length === 0}
-                                >
-                                    {t.filter.export}
-                                </Button>
-                            </Form.Item> */}
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                {loadingDeviceMap
+                                    ? isEn
+                                        ? 'Loading devices…'
+                                        : 'Đang tải danh sách xe…'
+                                    : isEn
+                                    ? 'Devices loaded'
+                                    : 'Đã tải danh sách xe'}
+                            </Text>
                         </Form>
                     </Card>
                 </Col>
@@ -433,7 +454,7 @@ const LastCruiseReportPage = () => {
                                 showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
                             }}
                             onChange={handleTableChange}
-                            scroll={{ x: 2200, y: 600 }}
+                            scroll={{ x: 2350, y: 600 }}
                         />
                     </Card>
                 </Col>

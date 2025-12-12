@@ -167,8 +167,7 @@
     },
     "tripReport": {
         "title": "Báo cáo chuyến (Trip report)",
-        "subtitle": "Tổng quan số chuyến, quãng đường, trạng thái thiết bị theo ngày",
-
+        "subtitle": "Tổng hợp theo ngày: số chuyến, tổng quãng đường, tiêu thụ điện và trạng thái thiết bị.",
         "filter": {
             "title": "Bộ lọc",
 
@@ -724,7 +723,8 @@
     },
     "tripSessionReport": {
         "title": "Báo cáo hành trình (Trip Session)",
-        "subtitle": "Lọc theo session, mã trip, thiết bị, IMEI, pin, SOH, khoảng thời gian...",
+        "subtitle": "Mỗi bản ghi tương ứng với một lần xe hoạt động, được tính từ khi xe bắt đầu chạy đến khi kết thúc chuyến.",
+
         "filter": {
             "title": "Bộ lọc",
             "sessionId": "Mã phiên (Session ID)",

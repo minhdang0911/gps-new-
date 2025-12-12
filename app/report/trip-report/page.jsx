@@ -6,7 +6,7 @@ import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typograp
 import { SearchOutlined, ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 
-import { getTripReport } from '../../lib/api/report'; // TODO: tự implement giống getBatteryReport
+import { getTripReport } from '../../lib/api/report';
 import { getUserList } from '../../lib/api/user';
 
 import vi from '../../locales/vi.json';
@@ -15,6 +15,9 @@ import * as XLSX from 'xlsx';
 
 import '../usage-session/usageSession.css';
 
+// ✅ helper
+import { buildImeiToLicensePlateMap, attachLicensePlate } from '../../util/deviceMap';
+
 const { RangePicker } = DatePicker;
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -22,10 +25,10 @@ const { Option } = Select;
 const locales = { vi, en };
 
 // ===== Helpers =====
-const formatDateTime = (value) => {
+const formatDateTime = (value, isEn = false) => {
     if (!value) return '--';
     const d = new Date(value);
-    return d.toLocaleString('vi-VN', {
+    return d.toLocaleString(isEn ? 'en-US' : 'vi-VN', {
         year: 'numeric',
         month: '2-digit',
         day: '2-digit',
@@ -38,7 +41,7 @@ const formatDateTime = (value) => {
 
 const formatStatus = (value, type, isEn) => {
     if (!value) return '--';
-    if (isEn) return value; // EN: giữ nguyên
+    if (isEn) return value;
 
     const v = String(value).toLowerCase();
 
@@ -66,13 +69,20 @@ const formatStatus = (value, type, isEn) => {
 const TripReportPage = () => {
     const [form] = Form.useForm();
     const [distributorMap, setDistributorMap] = useState({});
-    const [rawData, setRawData] = useState([]);
+
+    const [rawData, setRawData] = useState([]); // raw từ api, đã attach biển số
     const [data, setData] = useState([]);
+
     const [loading, setLoading] = useState(false);
     const [pagination, setPagination] = useState({
         current: 1,
         pageSize: 10,
     });
+
+    // ✅ device maps
+    const [imeiToPlate, setImeiToPlate] = useState(new Map());
+    const [plateToImeis, setPlateToImeis] = useState(new Map());
+    const [loadingDeviceMap, setLoadingDeviceMap] = useState(false);
 
     const pathname = usePathname() || '/';
     const [isEn, setIsEn] = useState(false);
@@ -96,8 +106,8 @@ const TripReportPage = () => {
         }
     }, [isEnFromPath]);
 
-    // locale
     const rawLocale = isEn ? locales.en : locales.vi;
+
     const defaultT = {
         title: 'Báo cáo chuyến (Trip report)',
         subtitle: 'Tổng quan số chuyến, quãng đường, trạng thái thiết bị theo ngày',
@@ -105,6 +115,8 @@ const TripReportPage = () => {
             title: 'Bộ lọc',
             imei: 'IMEI',
             imeiPlaceholder: 'Nhập IMEI',
+            licensePlate: 'Biển số',
+            licensePlatePlaceholder: 'Nhập biển số',
             motorcycleId: 'Mã xe (Motorcycle ID)',
             motorcycleIdPlaceholder: 'Nhập mã xe',
             connectionStatus: 'Trạng thái kết nối',
@@ -120,37 +132,41 @@ const TripReportPage = () => {
         table: {
             title: 'Danh sách trip report',
             total: 'Tổng: {total} bản ghi',
-
             index: 'STT',
             date: 'Ngày',
             imei: 'IMEI',
+            licensePlate: 'Biển số',
             motorcycleId: 'Motorcycle ID',
-
             mileageToday: 'Quãng đường hôm nay (km)',
             numberOfTrips: 'Số chuyến',
             ridingHours: 'Giờ chạy (h)',
             speedMaxToday: 'Tốc độ tối đa hôm nay',
-
             batteryConsumedToday: 'Năng lượng pin tiêu thụ',
             wattageConsumedToday: 'Công suất tiêu thụ (kWh)',
-
             connectionStatus: 'Kết nối',
             movementStatus: 'Trạng thái di chuyển',
             lockStatus: 'Trạng thái khoá',
-
             realtime_lat: 'Lat realtime',
             realtime_lon: 'Lon realtime',
-
             distributor_id: 'Distributor',
             createdAt: 'Tạo lúc',
             updatedAt: 'Cập nhật DB',
             last_update: 'Cập nhật thiết bị',
-
             showTotal: 'Tổng {total} bản ghi',
         },
     };
 
     const t = rawLocale.tripReport || defaultT;
+
+    const getAuthToken = () => {
+        if (typeof window === 'undefined') return '';
+        return localStorage.getItem('token') || localStorage.getItem('accessToken') || '';
+    };
+
+    const normalize = (s) =>
+        String(s || '')
+            .trim()
+            .toLowerCase();
 
     // ===== Distributor helpers =====
     const getDistributorLabel = (id) => {
@@ -175,15 +191,46 @@ const TripReportPage = () => {
         }
     };
 
+    // ✅ load device maps 1 lần
+    useEffect(() => {
+        const loadMaps = async () => {
+            try {
+                setLoadingDeviceMap(true);
+                const token = getAuthToken();
+                if (!token) {
+                    setImeiToPlate(new Map());
+                    setPlateToImeis(new Map());
+                    return;
+                }
+
+                const { imeiToPlate, plateToImeis } = await buildImeiToLicensePlateMap(token);
+                setImeiToPlate(imeiToPlate);
+                setPlateToImeis(plateToImeis);
+            } catch (e) {
+                console.error('Load device map failed:', e);
+                setImeiToPlate(new Map());
+                setPlateToImeis(new Map());
+            } finally {
+                setLoadingDeviceMap(false);
+            }
+        };
+
+        loadMaps();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     // ===== FETCH trip report (1 lần) =====
     const fetchData = async () => {
         try {
             setLoading(true);
-            const res = await getTripReport({}); // backend {{url}}trip-report
+            const res = await getTripReport({});
             const list = res?.data || res?.items || [];
 
-            setRawData(list);
-            setData(list);
+            // ✅ attach biển số
+            const enriched = attachLicensePlate(list, imeiToPlate);
+
+            setRawData(enriched);
+            setData(enriched);
             setPagination((prev) => ({
                 ...prev,
                 current: 1,
@@ -196,25 +243,35 @@ const TripReportPage = () => {
     };
 
     useEffect(() => {
-        fetchData();
         fetchDistributors();
     }, []);
+
+    // ✅ fetch lại khi imeiToPlate sẵn sàng (để attach biển số đúng)
+    useEffect(() => {
+        fetchData();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [imeiToPlate]);
 
     // ===== FILTER FE =====
     const applyFilter = () => {
         const values = form.getFieldsValue();
-        const { imei, motorcycleId, connectionStatus, movementStatus, lockStatus, timeRange } = values;
+        const { imei, license_plate, motorcycleId, connectionStatus, movementStatus, lockStatus, timeRange } = values;
 
         let filtered = [...rawData];
 
+        if (license_plate) {
+            const key = normalize(license_plate);
+            filtered = filtered.filter((item) => normalize(item.license_plate).includes(key));
+        }
+
         if (imei) {
-            const key = imei.trim().toLowerCase();
-            filtered = filtered.filter((item) => (item.imei || '').toLowerCase().includes(key));
+            const key = normalize(imei);
+            filtered = filtered.filter((item) => normalize(item.imei).includes(key));
         }
 
         if (motorcycleId) {
-            const key = motorcycleId.trim().toLowerCase();
-            filtered = filtered.filter((item) => (item.Motorcycle_id || '').toString().toLowerCase().includes(key));
+            const key = normalize(motorcycleId);
+            filtered = filtered.filter((item) => normalize(item.Motorcycle_id).includes(key));
         }
 
         if (connectionStatus) {
@@ -274,8 +331,9 @@ const TripReportPage = () => {
 
         const rows = data.map((item, index) => ({
             [t.table.index]: index + 1,
-            [t.table.date]: formatDateTime(item.date),
+            [t.table.date]: formatDateTime(item.date, isEn),
             [t.table.imei]: item.imei || '',
+            [t.table.licensePlate]: item.license_plate || '',
             [t.table.motorcycleId]: item.Motorcycle_id ?? '',
 
             [t.table.mileageToday]: item.mileageToday ?? '',
@@ -294,8 +352,8 @@ const TripReportPage = () => {
             [t.table.realtime_lon]: item.realtime_lon ?? '',
 
             [t.table.distributor_id]: getDistributorLabel(item.distributor_id),
-            [t.table.createdAt]: formatDateTime(item.createdAt),
-            [t.table.last_update]: formatDateTime(item.last_update),
+            [t.table.createdAt]: formatDateTime(item.createdAt, isEn),
+            [t.table.last_update]: formatDateTime(item.last_update, isEn),
         }));
 
         const ws = XLSX.utils.json_to_sheet(rows);
@@ -323,9 +381,13 @@ const TripReportPage = () => {
             title: t.table.date,
             dataIndex: 'date',
             width: 160,
-            render: (value) => formatDateTime(value),
+            render: (value) => formatDateTime(value, isEn),
         },
         { title: t.table.imei, dataIndex: 'imei', width: 150, ellipsis: true },
+
+        // ✅ biển số
+        { title: isEn ? 'License plate' : 'Biển số', dataIndex: 'license_plate', width: 140, ellipsis: true },
+
         {
             title: t.table.motorcycleId,
             dataIndex: 'Motorcycle_id',
@@ -369,9 +431,8 @@ const TripReportPage = () => {
             width: 200,
             render: (value) => getDistributorLabel(value),
         },
-        { title: t.table.createdAt, dataIndex: 'createdAt', width: 180, render: (v) => formatDateTime(v) },
-        // { title: t.table.updatedAt, dataIndex: 'updatedAt', width: 180, render: (v) => formatDateTime(v) },
-        { title: t.table.last_update, dataIndex: 'last_update', width: 180, render: (v) => formatDateTime(v) },
+        { title: t.table.createdAt, dataIndex: 'createdAt', width: 180, render: (v) => formatDateTime(v, isEn) },
+        { title: t.table.last_update, dataIndex: 'last_update', width: 180, render: (v) => formatDateTime(v, isEn) },
     ];
 
     const totalRecords = data.length;
@@ -390,6 +451,11 @@ const TripReportPage = () => {
                 <Col xs={24} lg={7}>
                     <Card className="usage-filter-card" title={t.filter.title} size="small">
                         <Form form={form} layout="vertical" onFinish={onFinish}>
+                            {/* ✅ thêm biển số */}
+                            <Form.Item label={t.filter.licensePlate} name="license_plate">
+                                <Input placeholder={t.filter.licensePlatePlaceholder} allowClear />
+                            </Form.Item>
+
                             <Form.Item label={t.filter.imei} name="imei">
                                 <Input placeholder={t.filter.imeiPlaceholder} allowClear />
                             </Form.Item>
@@ -424,12 +490,7 @@ const TripReportPage = () => {
                             </Form.Item>
 
                             <Form.Item>
-                                <Space
-                                    style={{
-                                        width: '100%',
-                                        justifyContent: 'space-between',
-                                    }}
-                                >
+                                <Space style={{ width: '100%', justifyContent: 'space-between' }}>
                                     <Button
                                         type="primary"
                                         htmlType="submit"
@@ -443,6 +504,16 @@ const TripReportPage = () => {
                                     </Button>
                                 </Space>
                             </Form.Item>
+
+                            {/* <Text type="secondary" style={{ fontSize: 12 }}>
+                                {loadingDeviceMap
+                                    ? isEn
+                                        ? 'Loading devices…'
+                                        : 'Đang tải danh sách xe…'
+                                    : isEn
+                                    ? 'Devices loaded'
+                                    : 'Đã tải danh sách xe'}
+                            </Text> */}
                         </Form>
                     </Card>
                 </Col>
@@ -479,7 +550,7 @@ const TripReportPage = () => {
                                 showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
                             }}
                             onChange={handleTableChange}
-                            scroll={{ x: 2200, y: 600 }}
+                            scroll={{ x: 2350, y: 600 }}
                         />
                     </Card>
                 </Col>

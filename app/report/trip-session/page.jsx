@@ -5,12 +5,15 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography, message } from 'antd';
 import { SearchOutlined, ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
 import { getTripSessions } from '../../lib/api/tripSession';
-import '../usage-session/usageSession.css'; // xài chung style
+import '../usage-session/usageSession.css';
 
 import { usePathname } from 'next/navigation';
 import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
 import * as XLSX from 'xlsx';
+
+// ✅ helper
+import { buildImeiToLicensePlateMap, attachLicensePlate } from '../../util/deviceMap';
 
 const { RangePicker } = DatePicker;
 const { Title, Text } = Typography;
@@ -21,11 +24,20 @@ const TripSessionReportPage = () => {
     const [form] = Form.useForm();
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(false);
+
+    // ✅ pageSize=10 cố định, phân trang theo total
+    const PAGE_SIZE = 10;
+
     const [pagination, setPagination] = useState({
         current: 1,
-        pageSize: 10,
+        pageSize: PAGE_SIZE,
         total: 0,
     });
+
+    // ✅ 2 maps
+    const [imeiToPlate, setImeiToPlate] = useState(new Map());
+    const [plateToImeis, setPlateToImeis] = useState(new Map());
+    const [loadingDeviceMap, setLoadingDeviceMap] = useState(false);
 
     // ===== LANG DETECT =====
     const pathname = usePathname() || '/';
@@ -51,6 +63,16 @@ const TripSessionReportPage = () => {
 
     const t = isEn ? locales.en.tripSessionReport : locales.vi.tripSessionReport;
 
+    const getAuthToken = () => {
+        if (typeof window === 'undefined') return '';
+        return localStorage.getItem('token') || localStorage.getItem('accessToken') || '';
+    };
+
+    const normalize = (s) =>
+        String(s || '')
+            .trim()
+            .toLowerCase();
+
     // ===== FORMAT DATETIME =====
     const formatDateTime = (value) => {
         if (!value) return '--';
@@ -66,18 +88,65 @@ const TripSessionReportPage = () => {
         });
     };
 
+    const formatDuration = (start, end) => {
+        if (!start || !end) return '--';
+        const s = new Date(start).getTime();
+        const e = new Date(end).getTime();
+        if (Number.isNaN(s) || Number.isNaN(e) || e < s) return '--';
+
+        const diff = Math.floor((e - s) / 1000);
+        const hh = String(Math.floor(diff / 3600)).padStart(2, '0');
+        const mm = String(Math.floor((diff % 3600) / 60)).padStart(2, '0');
+        const ss = String(diff % 60).padStart(2, '0');
+        return `${hh}:${mm}:${ss}`;
+    };
+
+    // ✅ load device maps 1 lần
+    useEffect(() => {
+        const loadMaps = async () => {
+            try {
+                setLoadingDeviceMap(true);
+                const token = getAuthToken();
+                if (!token) {
+                    setImeiToPlate(new Map());
+                    setPlateToImeis(new Map());
+                    return;
+                }
+
+                const { imeiToPlate, plateToImeis } = await buildImeiToLicensePlateMap(token);
+                setImeiToPlate(imeiToPlate);
+                setPlateToImeis(plateToImeis);
+            } catch (e) {
+                console.error('Load device map failed:', e);
+                setImeiToPlate(new Map());
+                setPlateToImeis(new Map());
+            } finally {
+                setLoadingDeviceMap(false);
+            }
+        };
+
+        loadMaps();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     // ===== API PARAMS =====
     const buildParams = (values, page, limit) => {
-        const params = {
-            page,
-            limit,
-        };
+        const params = { page, limit };
 
         if (values.sessionId) params.sessionId = values.sessionId.trim();
         if (values.tripCode) params.tripCode = values.tripCode.trim();
-        if (values.batteryId) params.batteryId = values.batteryId.trim();
+
         if (values.deviceId) params.deviceId = values.deviceId.trim();
-        if (values.imei) params.imei = values.imei.trim();
+
+        // ✅ ưu tiên search theo biển số: biển số -> imei -> query backend
+        if (values.license_plate) {
+            const key = normalize(values.license_plate);
+            const imeis = plateToImeis.get(key) || [];
+            params.imei = imeis[0] || '__NO_MATCH__';
+        } else if (values.imei) {
+            params.imei = values.imei.trim();
+        }
+
         if (values.soh) params.soh = values.soh;
 
         if (values.timeRange && values.timeRange.length === 2) {
@@ -88,43 +157,50 @@ const TripSessionReportPage = () => {
         return params;
     };
 
-    const fetchData = async (page = 1, pageSize = 10) => {
+    const fetchData = async (page = 1) => {
         try {
             setLoading(true);
             const values = form.getFieldsValue();
-            const params = buildParams(values, page, pageSize);
+            const params = buildParams(values, page, PAGE_SIZE);
 
             const res = await getTripSessions(params);
 
-            setData(res.data || []);
+            const list = res.data || [];
+            const enriched = attachLicensePlate(list, imeiToPlate);
+
+            setData(enriched);
+
+            // ✅ giữ pageSize=10, total dùng từ backend để phân trang
             setPagination({
                 current: res.page || page,
-                pageSize: 10,
+                pageSize: PAGE_SIZE,
                 total: res.total || 0,
             });
         } catch (err) {
             console.error('Lỗi lấy trip session: ', err);
+            message.error(isEn ? 'Failed to load data' : 'Không tải được dữ liệu');
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        fetchData(1, pagination.pageSize);
+        fetchData(1);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [imeiToPlate, plateToImeis]);
 
     const onFinish = () => {
-        fetchData(1, pagination.pageSize);
+        fetchData(1);
     };
 
     const onReset = () => {
         form.resetFields();
-        fetchData(1, pagination.pageSize);
+        fetchData(1);
     };
 
     const handleTableChange = (pager) => {
-        fetchData(pager.current, pager.pageSize);
+        // ✅ chỉ đổi trang, pageSize vẫn 10
+        fetchData(pager.current);
     };
 
     // ===== EXPORT EXCEL (trang hiện tại) =====
@@ -133,14 +209,20 @@ const TripSessionReportPage = () => {
             message.warning(isEn ? 'No data to export' : 'Không có dữ liệu để xuất');
             return;
         }
+
         const rows = data.map((item, index) => ({
             [t.table.index]: (pagination.current - 1) * pagination.pageSize + index + 1,
             [t.table.tripCode]: item.tripCode || '',
+
+            [isEn ? 'License plate' : 'Biển số']: item.license_plate || '',
             [t.table.imei]: item.imei || '',
             [t.table.batteryId]: item.batteryId || '',
             [t.table.soh]: item.soh ?? '',
-            [t.table.startTime]: formatDateTime(item.startTime),
-            [t.table.endTime]: formatDateTime(item.endTime),
+
+            [isEn ? 'Start time' : 'Thời gian bắt đầu']: formatDateTime(item.startTime),
+            [isEn ? 'End time' : 'Thời gian kết thúc']: formatDateTime(item.endTime),
+            [isEn ? 'Duration' : 'Thời lượng']: formatDuration(item.startTime, item.endTime),
+
             [t.table.distanceKm]: item.distanceKm ?? '',
             [t.table.consumedKw]: item.consumedKw ?? '',
             [t.table.socEnd]: item.socEnd ?? '',
@@ -165,27 +247,23 @@ const TripSessionReportPage = () => {
             width: 60,
             render: (text, record, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
         },
-        // {
-        //     title: t.table.sessionId,
-        //     dataIndex: 'sessionId',
-        //     ellipsis: true,
-        // },
         {
             title: t.table.tripCode,
             dataIndex: 'tripCode',
             ellipsis: true,
             width: 260,
         },
-        // {
-        //     title: t.table.deviceId,
-        //     dataIndex: 'deviceId',
-        //     ellipsis: true,
-        // },
         {
             title: t.table.imei,
             dataIndex: 'imei',
             ellipsis: true,
             width: 180,
+        },
+        {
+            title: isEn ? 'License plate' : 'Biển số',
+            dataIndex: 'license_plate',
+            ellipsis: true,
+            width: 140,
         },
         {
             title: t.table.batteryId,
@@ -198,18 +276,29 @@ const TripSessionReportPage = () => {
             dataIndex: 'soh',
             width: 80,
         },
+
+        // ✅ ĐÚNG: startTime / endTime
         {
-            title: t.table.startTime,
+            title: isEn ? 'Start time' : 'Thời gian bắt đầu',
             dataIndex: 'startTime',
             ellipsis: true,
+            width: 190,
             render: (value) => formatDateTime(value),
         },
         {
-            title: t.table.endTime,
+            title: isEn ? 'End time' : 'Thời gian kết thúc',
             dataIndex: 'endTime',
             ellipsis: true,
+            width: 190,
             render: (value) => formatDateTime(value),
         },
+        {
+            title: isEn ? 'Duration' : 'Thời lượng',
+            key: 'duration',
+            width: 110,
+            render: (_, record) => formatDuration(record.startTime, record.endTime),
+        },
+
         {
             title: t.table.distanceKm,
             dataIndex: 'distanceKm',
@@ -259,8 +348,8 @@ const TripSessionReportPage = () => {
                                 <Input placeholder={t.filter.tripCodePlaceholder} allowClear />
                             </Form.Item>
 
-                            <Form.Item label={t.filter.batteryId} name="batteryId">
-                                <Input placeholder={t.filter.batteryIdPlaceholder} allowClear />
+                            <Form.Item label={isEn ? 'License plate' : 'Biển số'} name="license_plate">
+                                <Input placeholder={isEn ? 'Enter license plate' : 'Nhập biển số xe'} allowClear />
                             </Form.Item>
 
                             <Form.Item label={t.filter.imei} name="imei">
@@ -276,12 +365,7 @@ const TripSessionReportPage = () => {
                             </Form.Item>
 
                             <Form.Item>
-                                <Space
-                                    style={{
-                                        width: '100%',
-                                        justifyContent: 'space-between',
-                                    }}
-                                >
+                                <Space style={{ width: '100%', justifyContent: 'space-between' }}>
                                     <Button
                                         type="primary"
                                         htmlType="submit"
@@ -295,6 +379,11 @@ const TripSessionReportPage = () => {
                                     </Button>
                                 </Space>
                             </Form.Item>
+
+                            {/* Optional status line */}
+                            {/* <Text type="secondary" style={{ fontSize: 12 }}>
+                {loadingDeviceMap ? (isEn ? 'Loading devices…' : 'Đang tải danh sách xe…') : isEn ? 'Devices loaded' : 'Đã tải danh sách xe'}
+              </Text> */}
                         </Form>
                     </Card>
                 </Col>
@@ -324,14 +413,13 @@ const TripSessionReportPage = () => {
                             loading={loading}
                             pagination={{
                                 current: pagination.current,
-                                pageSize: pagination.pageSize,
-                                total: pagination.total,
-                                showSizeChanger: true,
-                                pageSizeOptions: ['10', '20', '50', '100'],
+                                pageSize: pagination.pageSize, // =10
+                                total: pagination.total, // ✅ dùng total để phân trang
+                                showSizeChanger: false, // ✅ khóa vì pageSize=10 “chuẩn”
                                 showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
                             }}
                             onChange={handleTableChange}
-                            scroll={{ x: 800 }}
+                            scroll={{ x: 1100 }}
                         />
                     </Card>
                 </Col>

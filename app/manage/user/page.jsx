@@ -11,19 +11,18 @@ import {
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 import { createUser, updateUser, deleteUser, getUserInfo, getUserList } from '../../lib/api/user';
-// Form tách riêng
 import UserForm from '../../components/UserForm';
 import './ManageUserPage.css';
-// Excel
 import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
 import { getTodayForFileName } from '../../util/FormatDate';
 import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
+
 const { Title } = Typography;
 const { Option } = Select;
 const locales = { vi, en };
-// default form data cho tạo mới
+
 const EMPTY_FORM = {
     username: '',
     password: '',
@@ -38,32 +37,47 @@ const EMPTY_FORM = {
     address_lat: null,
     address_lng: null,
 };
+
 export default function ManageUserPage() {
     const pathname = usePathname() || '/';
     const [currentRole, setCurrentRole] = useState(null);
+
+    const isAdmin = currentRole === 'administrator';
+    const isDistributor = currentRole === 'distributor';
+    const canEdit = isAdmin || isDistributor;
+    const canView = isAdmin || isDistributor;
+    const canExport = isAdmin || isDistributor;
+    const canCreate = isAdmin;
+    const canDelete = isAdmin;
+
     const [users, setUsers] = useState([]);
     const [loadingUsers, setLoadingUsers] = useState(false);
-    // Tách thành 3 ô search riêng + filter vai trò
+
     const [searchUsername, setSearchUsername] = useState('');
     const [searchEmail, setSearchEmail] = useState('');
     const [searchPhone, setSearchPhone] = useState('');
-    const [filterRole, setFilterRole] = useState(''); // '' = tất cả
+    const [filterRole, setFilterRole] = useState('');
+
     const [userModalVisible, setUserModalVisible] = useState(false);
     const [viewUserModalVisible, setViewUserModalVisible] = useState(false);
     const [viewUserData, setViewUserData] = useState(null);
     const [editingUser, setEditingUser] = useState(null);
+
     const [distributorOptions, setDistributorOptions] = useState([]);
-    // Form data được lưu trong ref để KHÔNG làm re-render cả trang khi gõ
     const userFormDataRef = useRef(EMPTY_FORM);
+
     // ===== LANG DETECT =====
     const [isEn, setIsEn] = useState(false);
+
     const isEnFromPath = useMemo(() => {
         const segments = pathname.split('/').filter(Boolean);
         const last = segments[segments.length - 1];
         return last === 'en';
     }, [pathname]);
+
     useEffect(() => {
         if (typeof window === 'undefined') return;
+
         if (isEnFromPath) {
             setIsEn(true);
             localStorage.setItem('iky_lang', 'en');
@@ -72,19 +86,22 @@ export default function ManageUserPage() {
             setIsEn(saved === 'en');
         }
     }, [isEnFromPath]);
+
     const t = isEn ? locales.en.manageUser : locales.vi.manageUser;
+
+    // ✅ thêm reporter
     const roleLabelMap = isEn
         ? {
               administrator: 'Admin',
               distributor: 'Distributor',
+              reporter: 'Reporter',
               customer: 'Customer',
-              reporter: 'Reporter', // người lập báo cáo
           }
         : {
               administrator: 'Quản trị',
               distributor: 'Đại lý',
+              reporter: 'Giám sát',
               customer: 'Khách hàng',
-              reporter: 'Người báo cáo', // hoặc 'Người lập báo cáo' cho chuẩn hơn
           };
 
     // ===== INIT ROLE =====
@@ -93,17 +110,19 @@ export default function ManageUserPage() {
         const role = localStorage.getItem('role');
         setCurrentRole(role);
     }, []);
-    // Load users khi search hoặc filter thay đổi (debounce 500ms)
+
     useEffect(() => {
         const timer = setTimeout(() => {
             loadUsers();
         }, 500);
         return () => clearTimeout(timer);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [searchUsername, searchEmail, searchPhone, filterRole]);
+    }, [searchUsername, searchEmail, searchPhone, filterRole, currentRole]);
+
     const loadUsers = async () => {
         try {
             setLoadingUsers(true);
+
             const params = {
                 username: searchUsername,
                 email: searchEmail,
@@ -111,10 +130,11 @@ export default function ManageUserPage() {
                 page: 1,
                 limit: 50,
             };
-            // Thêm filter role nếu có chọn
+
             if (filterRole) {
                 params.position = filterRole;
             }
+
             const res = await getUserList(params);
             setUsers(res?.items || []);
         } catch (err) {
@@ -124,6 +144,7 @@ export default function ManageUserPage() {
             setLoadingUsers(false);
         }
     };
+
     const loadDistributors = async () => {
         try {
             const res = await getUserList({
@@ -137,22 +158,22 @@ export default function ManageUserPage() {
             message.error(t.messages.loadDistributorsError);
         }
     };
-    // OPEN CREATE USER
+
     const handleOpenAddUser = async () => {
+        if (!canCreate) return;
+
         setEditingUser(null);
-        // reset form data ref
-        userFormDataRef.current = {
-            ...EMPTY_FORM,
-        };
-        if (currentRole === 'administrator') {
-            await loadDistributors();
-        }
+        userFormDataRef.current = { ...EMPTY_FORM };
+
+        await loadDistributors();
         setUserModalVisible(true);
     };
-    // OPEN EDIT USER
+
     const handleOpenEditUser = async (record) => {
+        if (!canEdit) return;
+
         setEditingUser(record);
-        // map record -> form ref
+
         userFormDataRef.current = {
             username: record.username || '',
             password: '',
@@ -167,13 +188,14 @@ export default function ManageUserPage() {
             address_lat: record.address_lat || null,
             address_lng: record.address_lng || null,
         };
-        if (currentRole === 'administrator') {
-            await loadDistributors();
-        }
+
+        await loadDistributors();
         setUserModalVisible(true);
     };
-    // VIEW USER DETAIL
+
     const handleViewUser = async (record) => {
+        if (!canView) return;
+
         try {
             const res = await getUserInfo(record._id);
             setViewUserData(res.user);
@@ -183,9 +205,13 @@ export default function ManageUserPage() {
             message.error(t.messages.viewUserError);
         }
     };
+
     const handleSaveUser = async () => {
+        if (!canEdit) return;
+
         try {
             const data = userFormDataRef.current || EMPTY_FORM;
+
             if (editingUser) {
                 const payload = {
                     name: data.name,
@@ -194,23 +220,26 @@ export default function ManageUserPage() {
                     address: data.address,
                     position: data.position,
                 };
-                if (currentRole === 'administrator' && data.position === 'customer') {
+
+                if (data.position === 'customer' || data.position === 'reporter') {
                     payload.distributor_id = data.distributor_id || null;
                 }
+
                 if (data.password && data.password.trim() !== '') {
                     payload.password = data.password;
                 }
+
                 if (data.place_id) payload.place_id = data.place_id;
                 if (data.place_raw) payload.address_raw = data.place_raw;
                 if (data.address_lat) payload.address_lat = data.address_lat;
                 if (data.address_lng) payload.address_lng = data.address_lng;
+
                 await updateUser(editingUser._id, payload);
                 message.success(t.messages.updateSuccess);
             } else {
+                if (!canCreate) return;
+
                 const payload = { ...data };
-                if (currentRole !== 'administrator') {
-                    delete payload.distributor_id;
-                }
                 const cleanPayload = {
                     username: payload.username,
                     password: payload.password,
@@ -220,50 +249,41 @@ export default function ManageUserPage() {
                     address: payload.address,
                     position: payload.position,
                 };
+
                 if (payload.distributor_id) cleanPayload.distributor_id = payload.distributor_id;
                 if (payload.place_id) cleanPayload.place_id = payload.place_id;
                 if (payload.place_raw) cleanPayload.address_raw = payload.place_raw;
                 if (payload.address_lat) cleanPayload.address_lat = payload.address_lat;
                 if (payload.address_lng) cleanPayload.address_lng = payload.address_lng;
+
                 await createUser(cleanPayload);
                 message.success(t.messages.createSuccess);
             }
+
             setUserModalVisible(false);
             loadUsers();
         } catch (err) {
             console.log('SAVE USER ERROR', err);
+
             const apiData = err?.response?.data;
             if (apiData && Array.isArray(apiData.errors) && apiData.errors.length) {
-                const joined = apiData.errors.join('\n');
-                message.error(joined);
+                message.error(apiData.errors.join('\n'));
                 return;
             }
             const singleMsg = apiData?.error || apiData?.message;
             if (singleMsg) {
-                if (Array.isArray(singleMsg)) {
-                    message.error(singleMsg.join('\n'));
-                } else {
-                    message.error(String(singleMsg));
-                }
+                message.error(Array.isArray(singleMsg) ? singleMsg.join('\n') : String(singleMsg));
                 return;
             }
-            if (apiData && typeof apiData === 'object') {
-                const collected = [];
-                Object.keys(apiData).forEach((k) => {
-                    const v = apiData[k];
-                    if (Array.isArray(v)) collected.push(...v);
-                    else if (typeof v === 'string') collected.push(v);
-                });
-                if (collected.length) {
-                    message.error(collected.join('\n'));
-                    return;
-                }
-            }
+
             const fallback = err?.message || t.messages.saveFailedFallback;
             message.error(fallback);
         }
     };
+
     const handleDeleteUser = (record) => {
+        if (!canDelete) return;
+
         Modal.confirm({
             title: t.messages.deleteConfirmTitle,
             content: `${t.messages.deleteConfirmContentPrefix}${record.username}?`,
@@ -280,12 +300,15 @@ export default function ManageUserPage() {
             },
         });
     };
-    // ===== EXPORT EXCEL =====
+
     const exportExcel = () => {
+        if (!canExport) return;
+
         if (!users.length) {
             message.warning(t.messages.exportNoData);
             return;
         }
+
         try {
             const excelData = users.map((u) => {
                 let distributorText = '';
@@ -308,22 +331,21 @@ export default function ManageUserPage() {
                         : '',
                 };
             });
+
             const ws = XLSX.utils.json_to_sheet(excelData, { origin: 'A2' });
             const headers = Object.keys(excelData[0]);
-            const title = t.excel.title;
-            ws['A1'] = { v: title, t: 's' };
-            ws['!merges'] = [
-                {
-                    s: { r: 0, c: 0 },
-                    e: { r: 0, c: headers.length - 1 },
-                },
-            ];
+
+            ws['A1'] = { v: t.excel.title, t: 's' };
+            ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }];
+
             ws['A1'].s = {
                 font: { bold: true, sz: 18, color: { rgb: 'FFFFFF' } },
                 fill: { fgColor: { rgb: '4F81BD' } },
                 alignment: { horizontal: 'center', vertical: 'center' },
             };
+
             ws['!rows'] = [{ hpt: 26 }, { hpt: 22 }];
+
             headers.forEach((h, idx) => {
                 const ref = XLSX.utils.encode_cell({ r: 1, c: idx });
                 if (!ws[ref]) return;
@@ -339,6 +361,7 @@ export default function ManageUserPage() {
                     },
                 };
             });
+
             const range = XLSX.utils.decode_range(ws['!ref']);
             for (let R = range.s.r; R <= range.e.r; R++) {
                 for (let C = range.s.c; C <= range.e.c; C++) {
@@ -359,23 +382,28 @@ export default function ManageUserPage() {
                     }
                 }
             }
+
             ws['!cols'] = headers.map((key) => {
                 const maxLen = Math.max(key.length, ...excelData.map((row) => String(row[key] || '').length));
                 return { wch: maxLen + 4 };
             });
+
             ws['!autofilter'] = {
                 ref: XLSX.utils.encode_range({
                     s: { r: 1, c: 0 },
                     e: { r: range.e.r, c: range.e.c },
                 }),
             };
+
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, 'Users');
+
             const excelBuffer = XLSX.write(wb, {
                 bookType: 'xlsx',
                 type: 'array',
                 cellStyles: true,
             });
+
             saveAs(new Blob([excelBuffer]), `DanhSachNguoiDung_${getTodayForFileName()}.xlsx`);
             message.success(t.messages.exportSuccess);
         } catch (err) {
@@ -383,7 +411,7 @@ export default function ManageUserPage() {
             message.error(t.messages.exportFailed);
         }
     };
-    // ===== COLUMNS + SORTER =====
+
     const userColumns = [
         {
             title: t.table.username,
@@ -414,46 +442,70 @@ export default function ManageUserPage() {
         {
             title: t.table.actions,
             fixed: 'right',
-            width: 220,
+            width: 240,
             render: (_, record) => (
                 <Space>
-                    <Button size="small" icon={<EditOutlined />} onClick={() => handleOpenEditUser(record)}>
+                    <Button
+                        size="small"
+                        icon={<EditOutlined />}
+                        onClick={() => handleOpenEditUser(record)}
+                        disabled={!canEdit}
+                    >
                         {t.actions.edit}
                     </Button>
-                    <Button danger size="small" icon={<DeleteOutlined />} onClick={() => handleDeleteUser(record)}>
+
+                    <Button
+                        danger
+                        size="small"
+                        icon={<DeleteOutlined />}
+                        onClick={() => handleDeleteUser(record)}
+                        disabled={!canDelete}
+                    >
                         {t.actions.delete}
                     </Button>
-                    <Button size="small" icon={<EyeOutlined />} onClick={() => handleViewUser(record)}>
+
+                    <Button
+                        size="small"
+                        icon={<EyeOutlined />}
+                        onClick={() => handleViewUser(record)}
+                        disabled={!canView}
+                    >
                         {t.actions.view}
                     </Button>
                 </Space>
             ),
         },
     ];
-    // ========== RENDER ==========
+
     return (
         <div className="user-page">
             <Card className="user-page__card">
-                {/* HEADER */}
                 <div className="user-page__header">
                     <Title level={4} className="user-page__title">
                         {t.title}
                     </Title>
+
                     <Space>
-                        <Button icon={<DownloadOutlined />} onClick={exportExcel} disabled={!users.length}>
+                        <Button
+                            icon={<DownloadOutlined />}
+                            onClick={exportExcel}
+                            disabled={!canExport || !users.length}
+                        >
                             {t.buttons.export}
                         </Button>
+
                         <Button
                             type="primary"
                             icon={<PlusOutlined />}
                             onClick={handleOpenAddUser}
                             className="user-page__add-btn"
+                            disabled={!canCreate}
                         >
                             {t.buttons.add}
                         </Button>
                     </Space>
                 </div>
-                {/* SEARCH + FILTER - Tách thành 3 ô search + 1 dropdown vai trò */}
+
                 <div className="user-page__search" style={{ marginBottom: 16 }}>
                     <Row gutter={[16, 16]}>
                         <Col xs={24} sm={6}>
@@ -493,12 +545,13 @@ export default function ManageUserPage() {
                             >
                                 <Option value="administrator">{roleLabelMap.administrator}</Option>
                                 <Option value="distributor">{roleLabelMap.distributor}</Option>
+                                <Option value="reporter">{roleLabelMap.reporter}</Option> {/* ✅ thêm */}
                                 <Option value="customer">{roleLabelMap.customer}</Option>
                             </Select>
                         </Col>
                     </Row>
                 </div>
-                {/* TABLE */}
+
                 <Table
                     rowKey="_id"
                     columns={userColumns}
@@ -509,7 +562,7 @@ export default function ManageUserPage() {
                     size="middle"
                 />
             </Card>
-            {/* ADD/EDIT MODAL */}
+
             <Modal
                 title={editingUser ? t.modal.editTitle : t.modal.createTitle}
                 open={userModalVisible}
@@ -519,17 +572,19 @@ export default function ManageUserPage() {
                 cancelText={t.modal.cancelText}
                 wrapClassName="user-modal"
                 destroyOnHidden
+                okButtonProps={{ disabled: !canEdit }}
             >
                 <UserForm
                     initialData={userFormDataRef.current}
                     currentRole={currentRole}
                     distributors={distributorOptions}
+                    isEditing={!!editingUser}
                     onChange={(data) => {
                         userFormDataRef.current = data;
                     }}
                 />
             </Modal>
-            {/* VIEW USER */}
+
             <Modal
                 title={t.view.title}
                 open={viewUserModalVisible}

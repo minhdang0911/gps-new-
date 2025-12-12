@@ -61,7 +61,11 @@ export default function ManageDevicesPage() {
     const [token, setToken] = useState('');
     const [currentRole, setCurrentRole] = useState('');
 
-    // ===== LANG =====
+    // ===== LANG =====const canViewDetail = currentRole === 'administrator' || currentRole === 'distributor';
+    const canEditDevice = currentRole === 'administrator' || currentRole === 'distributor';
+    const canAddDevice = currentRole === 'administrator'; // giữ như cũ
+    const canDeleteDevice = currentRole === 'administrator'; // giữ như cũ
+
     const [isEn, setIsEn] = useState(false);
 
     // detect /en ở cuối path: /manage/devices/en
@@ -318,8 +322,7 @@ export default function ManageDevicesPage() {
         ADD
     ========================= */
     const openAdd = () => {
-        if (currentRole !== 'administrator') return message.warning(t.noPermissionAdd);
-
+        if (!canAddDevice) return message.warning(t.noPermissionAdd);
         setModalMode('add');
         form.resetFields();
     };
@@ -328,7 +331,7 @@ export default function ManageDevicesPage() {
         EDIT
     ========================= */
     const openEdit = (item) => {
-        if (currentRole !== 'administrator') return message.warning(t.noPermissionEdit);
+        if (!canEditDevice) return message.warning(t.noPermissionEdit);
 
         setModalMode('edit');
         setSelectedDevice(item);
@@ -408,7 +411,7 @@ export default function ManageDevicesPage() {
         DELETE
     ========================= */
     const handleDelete = (id) => {
-        if (currentRole !== 'administrator') return message.warning(t.noPermissionDelete);
+        if (!canDeleteDevice) return message.warning(t.noPermissionDelete);
 
         Modal.confirm({
             title: t.deleteConfirm,
@@ -429,8 +432,6 @@ export default function ManageDevicesPage() {
         SELECT DEVICE (DETAIL)
     ========================= */
     const handleSelectDevice = async (item) => {
-        if (currentRole === 'customer') return message.warning(t.noPermissionDetail);
-
         setSelectedDevice(item);
         setViewMode('detail');
 
@@ -585,17 +586,21 @@ export default function ManageDevicesPage() {
         },
         {
             title: `${t.edit}/${t.delete}`,
-            render: (_, r) =>
-                currentRole === 'administrator' && (
-                    <Space>
+            render: (_, r) => (
+                <Space>
+                    {canEditDevice && (
                         <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>
                             {t.edit}
                         </Button>
+                    )}
+
+                    {canDeleteDevice && (
                         <Button danger size="small" icon={<DeleteOutlined />} onClick={() => handleDelete(r._id)}>
                             {t.delete}
                         </Button>
-                    </Space>
-                ),
+                    )}
+                </Space>
+            ),
         },
     ];
 
@@ -614,7 +619,7 @@ export default function ManageDevicesPage() {
                             {t.exportExcel}
                         </Button>
 
-                        {currentRole === 'administrator' && (
+                        {canAddDevice && (
                             <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
                                 {t.addDevice}
                             </Button>

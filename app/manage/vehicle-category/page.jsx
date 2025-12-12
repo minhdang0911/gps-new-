@@ -71,6 +71,10 @@ const VehicleCategoryPage = () => {
     const isAdmin = role === 'administrator';
     const isDistributor = role === 'distributor';
     const isCustomer = role === 'customer';
+    const canView = isAdmin || isDistributor;
+    const canEdit = isAdmin || isDistributor;
+    const canCreate = isAdmin;
+    const canDelete = isAdmin;
 
     // ===== LANG =====
     const [isEn, setIsEn] = useState(false);
@@ -232,10 +236,11 @@ const VehicleCategoryPage = () => {
     };
 
     const openEditModal = (record) => {
-        if (!isAdmin) {
+        if (!canEdit) {
             message.warning(t.noPermissionEdit);
             return;
         }
+
         setEditingItem(record);
         form.setFieldsValue({
             name: record.name,
@@ -266,7 +271,7 @@ const VehicleCategoryPage = () => {
     };
 
     const handleModalOk = async () => {
-        if (!isAdmin) {
+        if (!canEdit) {
             message.warning(t.noPermissionAction);
             return;
         }
@@ -505,22 +510,25 @@ const VehicleCategoryPage = () => {
             key: 'actions',
             width: 160,
             render: (_, record) =>
-                isAdmin ? (
+                canEdit ? (
                     <Space>
                         <Button size="small" icon={<EditOutlined />} onClick={() => openEditModal(record)}>
                             {t.actions.edit}
                         </Button>
-                        <Popconfirm
-                            title={t.actions.deleteConfirmTitle}
-                            description={t.actions.deleteConfirmDesc}
-                            onConfirm={() => handleDelete(record)}
-                            okText={t.actions.deleteOk}
-                            cancelText={t.actions.deleteCancel}
-                        >
-                            <Button size="small" danger icon={<DeleteOutlined />}>
-                                {t.actions.delete}
-                            </Button>
-                        </Popconfirm>
+
+                        {canDelete && (
+                            <Popconfirm
+                                title={t.actions.deleteConfirmTitle}
+                                description={t.actions.deleteConfirmDesc}
+                                onConfirm={() => handleDelete(record)}
+                                okText={t.actions.deleteOk}
+                                cancelText={t.actions.deleteCancel}
+                            >
+                                <Button size="small" danger icon={<DeleteOutlined />}>
+                                    {t.actions.delete}
+                                </Button>
+                            </Popconfirm>
+                        )}
                     </Space>
                 ) : null,
         },
@@ -561,7 +569,7 @@ const VehicleCategoryPage = () => {
                         <Button icon={<DownloadOutlined />} onClick={exportExcel} disabled={!data.length}>
                             {t.exportExcel}
                         </Button>
-                        {isAdmin && (
+                        {canCreate && (
                             <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
                                 {t.addNew}
                             </Button>

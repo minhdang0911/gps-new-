@@ -44,6 +44,13 @@ export default function DeviceCustomerPage() {
     // ===== LANG =====
     const [isEn, setIsEn] = useState(false);
 
+    const isAdmin = role === 'administrator';
+    const isDistributor = role === 'distributor';
+    const isCustomer = role === 'customer';
+
+    const canView = isAdmin || isDistributor;
+    const canEdit = isAdmin || isDistributor; // ✅ distributor được add/remove
+
     const isEnFromPath = useMemo(() => {
         const segments = pathname.split('/').filter(Boolean);
         const last = segments[segments.length - 1];
@@ -159,6 +166,11 @@ export default function DeviceCustomerPage() {
             return;
         }
 
+        if (!canEdit) {
+            message.warning(t.noPermissionAction || (isEn ? 'No permission' : 'Bạn không có quyền thao tác'));
+            return;
+        }
+
         try {
             const values = await form.validateFields();
 
@@ -190,6 +202,11 @@ export default function DeviceCustomerPage() {
     // ==== GỠ THIẾT BỊ KHỎI CUSTOMER ====
     const handleRemoveDevice = async (record) => {
         if (!token || !selectedCustomer) return;
+
+        if (!canEdit) {
+            message.warning(t.noPermissionAction || (isEn ? 'No permission' : 'Bạn không có quyền thao tác'));
+            return;
+        }
 
         try {
             await removeDeviceFromCustomer(token, {
@@ -391,24 +408,25 @@ export default function DeviceCustomerPage() {
             title: t.columns.actions,
             key: 'actions',
             width: 120,
-            render: (_, record) => (
-                <Popconfirm
-                    title={t.actions.removeTitle}
-                    description={t.actions.removeDesc}
-                    onConfirm={() => handleRemoveDevice(record)}
-                    okText={t.actions.removeOk}
-                    cancelText={t.actions.removeCancel}
-                >
-                    <Button size="small" danger icon={<DeleteOutlined />}>
-                        {t.actions.remove}
-                    </Button>
-                </Popconfirm>
-            ),
+            render: (_, record) =>
+                canEdit ? (
+                    <Popconfirm
+                        title={t.actions.removeTitle}
+                        description={t.actions.removeDesc}
+                        onConfirm={() => handleRemoveDevice(record)}
+                        okText={t.actions.removeOk}
+                        cancelText={t.actions.removeCancel}
+                    >
+                        <Button size="small" danger icon={<DeleteOutlined />}>
+                            {t.actions.remove}
+                        </Button>
+                    </Popconfirm>
+                ) : null,
         },
     ];
 
     // ==== PHÂN QUYỀN: CUSTOMER KHÔNG ĐƯỢC VÀO ====
-    if (role === 'customer') {
+    if (!canView) {
         return (
             <div className="dcustomer-page dcustomer-page--denied">
                 <Card className="dcustomer-card-denied">
@@ -466,7 +484,7 @@ export default function DeviceCustomerPage() {
                             type="primary"
                             icon={<PlusOutlined />}
                             onClick={() => setIsAddModalOpen(true)}
-                            disabled={!selectedCustomer}
+                            disabled={!selectedCustomer || !canEdit}
                         >
                             {t.buttons.addDevice}
                         </Button>

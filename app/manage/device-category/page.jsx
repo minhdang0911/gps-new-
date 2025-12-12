@@ -68,6 +68,10 @@ const DeviceCategoryPage = () => {
     const isAdmin = role === 'administrator';
     const isDistributor = role === 'distributor';
     const isCustomer = role === 'customer';
+    const canView = isAdmin || isDistributor;
+    const canEdit = isAdmin || isDistributor;
+    const canCreate = isAdmin;
+    const canDelete = isAdmin;
 
     // ===== LANG =====
     const [isEn, setIsEn] = useState(false);
@@ -196,12 +200,12 @@ const DeviceCategoryPage = () => {
         form.resetFields();
         setIsModalOpen(true);
     };
-
     const openEditModal = (record) => {
-        if (!isAdmin) {
+        if (!canEdit) {
             message.warning(t.noPermissionEdit);
             return;
         }
+
         setEditingItem(record);
         form.setFieldsValue({
             code: record.code,
@@ -232,7 +236,7 @@ const DeviceCategoryPage = () => {
     };
 
     const handleModalOk = async () => {
-        if (!isAdmin) {
+        if (!canEdit) {
             message.warning(t.noPermissionAction);
             return;
         }
@@ -463,22 +467,25 @@ const DeviceCategoryPage = () => {
             key: 'actions',
             width: 150,
             render: (_, record) =>
-                isAdmin ? (
+                canEdit ? (
                     <Space>
                         <Button size="small" icon={<EditOutlined />} onClick={() => openEditModal(record)}>
                             {t.actions.edit}
                         </Button>
-                        <Popconfirm
-                            title={t.actions.deleteConfirmTitle}
-                            description={t.actions.deleteConfirmDesc}
-                            onConfirm={() => handleDelete(record)}
-                            okText={t.actions.deleteOk}
-                            cancelText={t.actions.deleteCancel}
-                        >
-                            <Button size="small" danger icon={<DeleteOutlined />}>
-                                {t.actions.delete}
-                            </Button>
-                        </Popconfirm>
+
+                        {canDelete && (
+                            <Popconfirm
+                                title={t.actions.deleteConfirmTitle}
+                                description={t.actions.deleteConfirmDesc}
+                                onConfirm={() => handleDelete(record)}
+                                okText={t.actions.deleteOk}
+                                cancelText={t.actions.deleteCancel}
+                            >
+                                <Button size="small" danger icon={<DeleteOutlined />}>
+                                    {t.actions.delete}
+                                </Button>
+                            </Popconfirm>
+                        )}
                     </Space>
                 ) : null,
         },
