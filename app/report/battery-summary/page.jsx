@@ -2,8 +2,24 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography, Select, message } from 'antd';
-import { SearchOutlined, ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
+import {
+    Card,
+    Form,
+    Input,
+    Button,
+    Row,
+    Col,
+    Table,
+    DatePicker,
+    Space,
+    Typography,
+    Select,
+    message,
+    Tooltip,
+    Grid,
+} from 'antd';
+import { SearchOutlined, ReloadOutlined, DownloadOutlined, QuestionCircleOutlined } from '@ant-design/icons';
+
 import { usePathname } from 'next/navigation';
 
 import { getBatteryReport } from '../../lib/api/report';
@@ -15,6 +31,7 @@ import * as XLSX from 'xlsx';
 
 // ✅ helper
 import { buildImeiToLicensePlateMap, attachLicensePlate } from '../../util/deviceMap';
+const { useBreakpoint } = Grid;
 
 const { RangePicker } = DatePicker;
 const { Title, Text } = Typography;
@@ -399,93 +416,451 @@ const BatterySummaryReportPage = () => {
         XLSX.writeFile(wb, fileName);
     };
 
+    const screens = useBreakpoint();
+    const isMobile = !screens.lg;
+
+    const colHelp = {
+        index: { vi: 'Số thứ tự của dòng trong bảng.', en: 'Order number of the row.' },
+
+        imei: {
+            vi: 'Mã thiết bị gắn trên xe. Hệ thống dùng mã này để nhận diện xe.',
+            en: 'Device code installed on the vehicle (used to identify the vehicle).',
+        },
+
+        license_plate: {
+            vi: 'Biển số xe tương ứng với thiết bị. Có thể trống nếu hệ thống chưa liên kết.',
+            en: 'License plate linked to the device. May be empty if not linked yet.',
+        },
+
+        batteryId: {
+            vi: 'Mã pin đang được theo dõi trong hệ thống.',
+            en: 'Battery ID tracked in the system.',
+        },
+
+        date: {
+            vi: 'Ngày ghi nhận số liệu tổng hợp (theo ngày).',
+            en: 'Daily summary date (by day).',
+        },
+
+        chargingDurationToday: {
+            vi: 'Tổng thời gian sạc trong ngày (cộng dồn các lần sạc).',
+            en: 'Total charging time in the day (sum of all charging sessions).',
+        },
+
+        consumedKwToday: {
+            vi: 'Tổng điện năng tiêu thụ trong ngày (kWh).',
+            en: 'Total energy consumed in the day (kWh).',
+        },
+
+        consumedPercentToday: {
+            vi: 'Tổng % pin đã tiêu hao trong ngày.',
+            en: 'Total battery % consumed in the day.',
+        },
+
+        mileageToday: {
+            vi: 'Quãng đường xe chạy trong ngày này (km). Đây là số km phát sinh trong ngày, không phải ODO. ODO là tổng quãng đường xe đã đi từ trước đến nay.',
+            en: 'Distance traveled on this day (km). This is the distance added within the day, not the ODO. ODO is the vehicle’s total distance over time.',
+        },
+
+        numberOfChargingToday: {
+            vi: 'Số lần sạc trong ngày.',
+            en: 'Number of charging times in the day.',
+        },
+
+        socToday: {
+            vi: 'Mức pin (%) ghi nhận theo ngày (tổng hợp trong ngày).',
+            en: 'Daily battery level (%) summary.',
+        },
+
+        sohToday: {
+            vi: 'Sức khỏe pin (%) theo ngày. Số càng cao thì pin càng “khỏe”.',
+            en: 'Daily battery health (%). Higher means better battery condition.',
+        },
+
+        speedMaxToday: {
+            vi: 'Tốc độ cao nhất ghi nhận trong ngày.',
+            en: 'Highest speed recorded in the day.',
+        },
+
+        tempAvgToday: { vi: 'Nhiệt độ pin trung bình trong ngày.', en: 'Average battery temperature in the day.' },
+        tempMaxToday: { vi: 'Nhiệt độ pin cao nhất trong ngày.', en: 'Maximum battery temperature in the day.' },
+        tempMinToday: { vi: 'Nhiệt độ pin thấp nhất trong ngày.', en: 'Minimum battery temperature in the day.' },
+
+        usageDurationToday: {
+            vi: 'Tổng thời gian pin/xe được sử dụng trong ngày.',
+            en: 'Total usage time in the day.',
+        },
+
+        voltageAvgToday: { vi: 'Điện áp trung bình trong ngày.', en: 'Average voltage in the day.' },
+        voltageMaxToday: { vi: 'Điện áp cao nhất trong ngày.', en: 'Maximum voltage in the day.' },
+        voltageMinToday: { vi: 'Điện áp thấp nhất trong ngày.', en: 'Minimum voltage in the day.' },
+
+        connectionStatus: {
+            vi: 'Trạng thái kết nối: Online (đang kết nối) / Offline (mất kết nối).',
+            en: 'Connection status: Online / Offline.',
+        },
+
+        utilization: {
+            vi: 'Trạng thái sử dụng: xe đang chạy hay đang dừng.',
+            en: 'Utilization status: running or stopped.',
+        },
+
+        realtime_soc: {
+            vi: 'Mức pin hiện tại (%) theo thời gian thực.',
+            en: 'Current battery level (%) in real time.',
+        },
+        realtime_soh: {
+            vi: 'Sức khỏe pin hiện tại (%) theo thời gian thực.',
+            en: 'Current battery health (%) in real time.',
+        },
+        realtime_voltage: {
+            vi: 'Điện áp pin hiện tại theo thời gian thực.',
+            en: 'Current battery voltage in real time.',
+        },
+        realtime_temperature: {
+            vi: 'Nhiệt độ pin hiện tại theo thời gian thực.',
+            en: 'Current battery temperature in real time.',
+        },
+
+        realtime_status: {
+            vi: 'Trạng thái hiện tại của pin: đang chờ / đang sạc / đang xả.',
+            en: 'Current battery status: idle / charging / discharging.',
+        },
+
+        realtime_lat: { vi: 'Vĩ độ vị trí gần nhất (tọa độ bản đồ).', en: 'Latest latitude (map coordinate).' },
+        realtime_lon: { vi: 'Kinh độ vị trí gần nhất (tọa độ bản đồ).', en: 'Latest longitude (map coordinate).' },
+
+        distributor_id: {
+            vi: 'Đại lý/đơn vị quản lý xe (theo tài khoản được gán).',
+            en: 'Distributor / managing unit assigned to the vehicle.',
+        },
+
+        createdAt: {
+            vi: 'Thời điểm bản ghi được tạo trên hệ thống.',
+            en: 'Time when this record was created in the system.',
+        },
+
+        last_update: { vi: 'Thời điểm thiết bị gửi dữ liệu gần nhất.', en: 'Last time the device sent data.' },
+    };
+
+    const ColTitle = ({ label, tip }) => (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            <span>{label}</span>
+
+            <Tooltip
+                title={tip}
+                placement="top"
+                trigger={isMobile ? ['click'] : ['hover']}
+                classNames={{ root: 'table-col-tooltip' }}
+                styles={{ root: { maxWidth: 260 }, container: { maxWidth: 260 } }}
+                mouseEnterDelay={0.1}
+                mouseLeaveDelay={0.1}
+            >
+                <span
+                    className="table-col-help"
+                    onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }}
+                    onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }}
+                    style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: 16,
+                        height: 16,
+                        cursor: 'help',
+                        pointerEvents: 'auto',
+                    }}
+                >
+                    <QuestionCircleOutlined style={{ fontSize: 12, color: '#94a3b8' }} />
+                </span>
+            </Tooltip>
+        </span>
+    );
+
     // ===== COLUMNS =====
     const columns = [
         {
-            title: t.table.index,
+            title: <ColTitle label={t.table.index} tip={isEn ? colHelp.index.en : colHelp.index.vi} />,
             dataIndex: 'index',
-            width: 60,
+            width: 65,
             fixed: 'left',
-            render: (text, record, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
+            render: (_, __, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
         },
-        { title: t.table.imei, dataIndex: 'imei', width: 150, ellipsis: true },
 
-        // ✅ cột biển số
         {
-            title: t.table.licensePlate || (isEn ? 'License plate' : 'Biển số'),
+            title: <ColTitle label={t.table.imei} tip={isEn ? colHelp.imei.en : colHelp.imei.vi} />,
+            dataIndex: 'imei',
+            width: 150,
+            ellipsis: true,
+        },
+
+        {
+            title: (
+                <ColTitle
+                    label={t.table.licensePlate || (isEn ? 'License plate' : 'Biển số')}
+                    tip={isEn ? colHelp.license_plate.en : colHelp.license_plate.vi}
+                />
+            ),
             dataIndex: 'license_plate',
             width: 140,
             ellipsis: true,
         },
 
-        { title: t.table.batteryId, dataIndex: 'batteryId', width: 140, ellipsis: true },
         {
-            title: t.table.date,
+            title: <ColTitle label={t.table.batteryId} tip={isEn ? colHelp.batteryId.en : colHelp.batteryId.vi} />,
+            dataIndex: 'batteryId',
+            width: 140,
+            ellipsis: true,
+        },
+
+        {
+            title: <ColTitle label={t.table.date} tip={isEn ? colHelp.date.en : colHelp.date.vi} />,
             dataIndex: 'date',
             width: 160,
             render: (value) => formatDateTime(value, isEn),
         },
 
-        { title: t.table.chargingDurationToday, dataIndex: 'chargingDurationToday', width: 150 },
-        { title: t.table.consumedKwToday, dataIndex: 'consumedKwToday', width: 150 },
-        { title: t.table.consumedPercentToday, dataIndex: 'consumedPercentToday', width: 170 },
-        { title: t.table.mileageToday, dataIndex: 'mileageToday', width: 150 },
-        { title: t.table.numberOfChargingToday, dataIndex: 'numberOfChargingToday', width: 160 },
-        { title: t.table.socToday, dataIndex: 'socToday', width: 130 },
-        { title: t.table.sohToday, dataIndex: 'sohToday', width: 130 },
-        { title: t.table.speedMaxToday, dataIndex: 'speedMaxToday', width: 150 },
-
-        { title: t.table.tempAvgToday, dataIndex: 'tempAvgToday', width: 150 },
-        { title: t.table.tempMaxToday, dataIndex: 'tempMaxToday', width: 150 },
-        { title: t.table.tempMinToday, dataIndex: 'tempMinToday', width: 150 },
-        { title: t.table.usageDurationToday, dataIndex: 'usageDurationToday', width: 170 },
-        { title: t.table.voltageAvgToday, dataIndex: 'voltageAvgToday', width: 160 },
-        { title: t.table.voltageMaxToday, dataIndex: 'voltageMaxToday', width: 160 },
-        { title: t.table.voltageMinToday, dataIndex: 'voltageMinToday', width: 160 },
+        {
+            title: (
+                <ColTitle
+                    label={t.table.chargingDurationToday}
+                    tip={isEn ? colHelp.chargingDurationToday.en : colHelp.chargingDurationToday.vi}
+                />
+            ),
+            dataIndex: 'chargingDurationToday',
+            width: 180,
+        },
+        {
+            title: (
+                <ColTitle
+                    label={t.table.consumedKwToday}
+                    tip={isEn ? colHelp.consumedKwToday.en : colHelp.consumedKwToday.vi}
+                />
+            ),
+            dataIndex: 'consumedKwToday',
+            width: 257,
+        },
+        {
+            title: (
+                <ColTitle
+                    label={t.table.consumedPercentToday}
+                    tip={isEn ? colHelp.consumedPercentToday.en : colHelp.consumedPercentToday.vi}
+                />
+            ),
+            dataIndex: 'consumedPercentToday',
+            width: 220,
+        },
+        {
+            title: (
+                <ColTitle label={t.table.mileageToday} tip={isEn ? colHelp.mileageToday.en : colHelp.mileageToday.vi} />
+            ),
+            dataIndex: 'mileageToday',
+            width: 220,
+        },
+        {
+            title: (
+                <ColTitle
+                    label={t.table.numberOfChargingToday}
+                    tip={isEn ? colHelp.numberOfChargingToday.en : colHelp.numberOfChargingToday.vi}
+                />
+            ),
+            dataIndex: 'numberOfChargingToday',
+            width: 170,
+        },
+        {
+            title: <ColTitle label={t.table.socToday} tip={isEn ? colHelp.socToday.en : colHelp.socToday.vi} />,
+            dataIndex: 'socToday',
+            width: 180,
+        },
+        {
+            title: <ColTitle label={t.table.sohToday} tip={isEn ? colHelp.sohToday.en : colHelp.sohToday.vi} />,
+            dataIndex: 'sohToday',
+            width: 150,
+        },
+        {
+            title: (
+                <ColTitle
+                    label={t.table.speedMaxToday}
+                    tip={isEn ? colHelp.speedMaxToday.en : colHelp.speedMaxToday.vi}
+                />
+            ),
+            dataIndex: 'speedMaxToday',
+            width: 180,
+        },
 
         {
-            title: t.table.connectionStatus,
+            title: (
+                <ColTitle label={t.table.tempAvgToday} tip={isEn ? colHelp.tempAvgToday.en : colHelp.tempAvgToday.vi} />
+            ),
+            dataIndex: 'tempAvgToday',
+            width: 225,
+        },
+        {
+            title: (
+                <ColTitle label={t.table.tempMaxToday} tip={isEn ? colHelp.tempMaxToday.en : colHelp.tempMaxToday.vi} />
+            ),
+            dataIndex: 'tempMaxToday',
+            width: 200,
+        },
+        {
+            title: (
+                <ColTitle label={t.table.tempMinToday} tip={isEn ? colHelp.tempMinToday.en : colHelp.tempMinToday.vi} />
+            ),
+            dataIndex: 'tempMinToday',
+            width: 210,
+        },
+
+        {
+            title: (
+                <ColTitle
+                    label={t.table.usageDurationToday}
+                    tip={isEn ? colHelp.usageDurationToday.en : colHelp.usageDurationToday.vi}
+                />
+            ),
+            dataIndex: 'usageDurationToday',
+            width: 235,
+        },
+
+        {
+            title: (
+                <ColTitle
+                    label={t.table.voltageAvgToday}
+                    tip={isEn ? colHelp.voltageAvgToday.en : colHelp.voltageAvgToday.vi}
+                />
+            ),
+            dataIndex: 'voltageAvgToday',
+            width: 220,
+        },
+        {
+            title: (
+                <ColTitle
+                    label={t.table.voltageMaxToday}
+                    tip={isEn ? colHelp.voltageMaxToday.en : colHelp.voltageMaxToday.vi}
+                />
+            ),
+            dataIndex: 'voltageMaxToday',
+            width: 190,
+        },
+        {
+            title: (
+                <ColTitle
+                    label={t.table.voltageMinToday}
+                    tip={isEn ? colHelp.voltageMinToday.en : colHelp.voltageMinToday.vi}
+                />
+            ),
+            dataIndex: 'voltageMinToday',
+            width: 205,
+        },
+
+        {
+            title: (
+                <ColTitle
+                    label={t.table.connectionStatus}
+                    tip={isEn ? colHelp.connectionStatus.en : colHelp.connectionStatus.vi}
+                />
+            ),
             dataIndex: 'connectionStatus',
-            width: 120,
+            width: 85,
             render: (value) => formatStatus(value, 'connection', isEn),
         },
         {
-            title: t.table.utilization,
+            title: (
+                <ColTitle label={t.table.utilization} tip={isEn ? colHelp.utilization.en : colHelp.utilization.vi} />
+            ),
             dataIndex: 'utilization',
             width: 120,
             render: (value) => formatStatus(value, 'utilization', isEn),
         },
 
-        { title: t.table.realtime_soc, dataIndex: 'realtime_soc', width: 140 },
-        { title: t.table.realtime_soh, dataIndex: 'realtime_soh', width: 140 },
-        { title: t.table.realtime_voltage, dataIndex: 'realtime_voltage', width: 150 },
-        { title: t.table.realtime_temperature, dataIndex: 'realtime_temperature', width: 160 },
         {
-            title: t.table.realtime_status,
+            title: (
+                <ColTitle label={t.table.realtime_soc} tip={isEn ? colHelp.realtime_soc.en : colHelp.realtime_soc.vi} />
+            ),
+            dataIndex: 'realtime_soc',
+            width: 80,
+        },
+        {
+            title: (
+                <ColTitle label={t.table.realtime_soh} tip={isEn ? colHelp.realtime_soh.en : colHelp.realtime_soh.vi} />
+            ),
+            dataIndex: 'realtime_soh',
+            width: 80,
+        },
+        {
+            title: (
+                <ColTitle
+                    label={t.table.realtime_voltage}
+                    tip={isEn ? colHelp.realtime_voltage.en : colHelp.realtime_voltage.vi}
+                />
+            ),
+            dataIndex: 'realtime_voltage',
+            width: 100,
+        },
+        {
+            title: (
+                <ColTitle
+                    label={t.table.realtime_temperature}
+                    tip={isEn ? colHelp.realtime_temperature.en : colHelp.realtime_temperature.vi}
+                />
+            ),
+            dataIndex: 'realtime_temperature',
+            width: 100,
+        },
+        {
+            title: (
+                <ColTitle
+                    label={t.table.realtime_status}
+                    tip={isEn ? colHelp.realtime_status.en : colHelp.realtime_status.vi}
+                />
+            ),
             dataIndex: 'realtime_status',
-            width: 140,
+            width: 110,
             render: (value) => formatStatus(value, 'realtime', isEn),
         },
-        { title: t.table.realtime_lat, dataIndex: 'realtime_lat', width: 150 },
-        { title: t.table.realtime_lon, dataIndex: 'realtime_lon', width: 150 },
+        {
+            title: (
+                <ColTitle label={t.table.realtime_lat} tip={isEn ? colHelp.realtime_lat.en : colHelp.realtime_lat.vi} />
+            ),
+            dataIndex: 'realtime_lat',
+            width: 110,
+        },
+        {
+            title: (
+                <ColTitle label={t.table.realtime_lon} tip={isEn ? colHelp.realtime_lon.en : colHelp.realtime_lon.vi} />
+            ),
+            dataIndex: 'realtime_lon',
+            width: 110,
+        },
 
         {
-            title: t.table.distributor_id,
+            title: (
+                <ColTitle
+                    label={t.table.distributor_id}
+                    tip={isEn ? colHelp.distributor_id.en : colHelp.distributor_id.vi}
+                />
+            ),
             dataIndex: 'distributor_id',
-            width: 200,
+            width: 130,
             render: (value) => getDistributorLabel(value),
         },
 
         {
-            title: t.table.createdAt,
+            title: <ColTitle label={t.table.createdAt} tip={isEn ? colHelp.createdAt.en : colHelp.createdAt.vi} />,
             dataIndex: 'createdAt',
-            width: 180,
+            width: 130,
             render: (value) => formatDateTime(value, isEn),
         },
         {
-            title: t.table.last_update,
+            title: (
+                <ColTitle label={t.table.last_update} tip={isEn ? colHelp.last_update.en : colHelp.last_update.vi} />
+            ),
             dataIndex: 'last_update',
-            width: 180,
+            width: 165,
             render: (value) => formatDateTime(value, isEn),
         },
     ];

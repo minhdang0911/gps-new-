@@ -874,7 +874,8 @@ const MonitorPage = () => {
                                                                     <span className="imei">IMEI: {d.imei}</span>
                                                                     <span className="dot">•</span>
                                                                     <span className="phone">
-                                                                        {t.list.phoneLabel} {d.phone_number || NA_TEXT}
+                                                                        {t.list.phoneLabel}{' '}
+                                                                        {d.phone_number || 'Chưa gán'}
                                                                     </span>
                                                                 </div>
                                                             </div>

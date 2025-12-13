@@ -86,7 +86,7 @@
     },
     "batteryReport": {
         "title": "Báo cáo pin",
-        "subtitle": "Tổng quan dữ liệu pin theo thiết bị",
+        "subtitle": "Tổng hợp tình trạng và hiệu suất pin theo từng thiết bị, dựa trên dữ liệu sử dụng trong ngày và trạng thái cập nhật theo thời gian thực.",
 
         "filter": {
             "title": "Bộ lọc",
@@ -259,7 +259,7 @@
             "index": "STT",
             "dev": "IMEI",
             "fwr": "Phiên bản",
-            "tim": "Thời gian thiết bị",
+            "tim": "Thời gian  thiết bị",
             "lat": "Vĩ độ",
             "lon": "Kinh độ",
             "sat": "Số vệ tinh",
@@ -476,7 +476,7 @@
             "originLabel": "Xuất xứ (madeInFrom)",
             "originRequired": "Chọn xuất xứ",
             "originPlaceholder": "Chọn xuất xứ",
-            "deviceTypeLabel": "Dòng thiết bị (deviceTypeId)",
+            "deviceTypeLabel": "Dòng thiết bị ",
             "deviceTypePlaceholder": "Chọn dòng thiết bị (không bắt buộc)"
         }
     },
@@ -626,7 +626,7 @@
     },
     "usageSessionReport": {
         "title": "Báo cáo sử dụng (Usage Session)",
-        "subtitle": "Lọc theo session, thiết bị, pin, mã usage, khoảng thời gian...",
+        "subtitle": "Hiển thị chi tiết từng phiên sử dụng pin của xe, cho phép lọc theo thiết bị, pin, mã usage và khoảng thời gian.",
         "filter": {
             "title": "Bộ lọc",
             "sessionId": "Mã phiên (Session ID)",
@@ -678,8 +678,8 @@
     },
 
     "chargingSessionReport": {
-        "title": "Báo cáo sạc (Charging Session)",
-        "subtitle": "Lọc theo session, pin, mã sạc, SOH, khoảng thời gian...",
+        "title": "Báo cáo phiên sạc pin",
+        "subtitle": "Hiển thị báo cáo chi tiết các phiên sạc pin. Mỗi bản ghi tương ứng với một lần sạc, bao gồm thông tin pin và thiết bị, thời gian bắt đầu – kết thúc sạc,..",
         "filter": {
             "title": "Bộ lọc",
             "sessionId": "Mã phiên (Session ID)",

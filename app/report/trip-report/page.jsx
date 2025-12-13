@@ -2,8 +2,23 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography, Select, message } from 'antd';
-import { SearchOutlined, ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
+import {
+    Card,
+    Form,
+    Input,
+    Button,
+    Row,
+    Col,
+    Table,
+    DatePicker,
+    Space,
+    Typography,
+    Select,
+    message,
+    Tooltip,
+    Grid,
+} from 'antd';
+import { SearchOutlined, ReloadOutlined, DownloadOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 
 import { getTripReport } from '../../lib/api/report';
@@ -19,6 +34,7 @@ import '../usage-session/usageSession.css';
 import { buildImeiToLicensePlateMap, attachLicensePlate } from '../../util/deviceMap';
 
 const { RangePicker } = DatePicker;
+const { useBreakpoint } = Grid;
 const { Title, Text } = Typography;
 const { Option } = Select;
 
@@ -368,71 +384,317 @@ const TripReportPage = () => {
         emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu ',
     };
 
+    const screens = useBreakpoint();
+    const isMobile = !screens.lg;
+
+    // ✅ Tooltip giải thích cho người dùng (dễ hiểu)
+    const colHelp = {
+        index: {
+            vi: 'Số thứ tự của dòng trong bảng.',
+            en: 'Order number of the row.',
+        },
+
+        date: {
+            vi: 'Ngày ghi nhận dữ liệu tổng hợp của xe.',
+            en: 'Date of the daily summary record.',
+        },
+
+        imei: {
+            vi: 'Mã thiết bị gắn trên xe. Hệ thống dùng mã này để nhận diện xe.',
+            en: 'Device code installed on the vehicle (used to identify the vehicle).',
+        },
+
+        licensePlate: {
+            vi: 'Biển số xe. Có thể trống nếu hệ thống chưa liên kết được biển số.',
+            en: 'License plate. May be empty if not linked yet.',
+        },
+
+        motorcycleId: {
+            vi: 'Mã xe trong hệ thống (định danh xe nội bộ).',
+            en: 'Motorcycle ID in the system (internal identifier).',
+        },
+
+        mileageToday: {
+            vi: 'Quãng đường xe chạy trong ngày này (km). Đây là số km trong ngày',
+            en: 'Distance traveled on this day (km). This is the distance for the day',
+        },
+
+        numberOfTrips: {
+            vi: 'Tổng số chuyến xe chạy trong ngày.',
+            en: 'Total number of trips in the day.',
+        },
+
+        ridingHours: {
+            vi: 'Tổng thời gian xe chạy trong ngày (giờ).',
+            en: 'Total riding time in the day (hours).',
+        },
+
+        speedMaxToday: {
+            vi: 'Tốc độ cao nhất ghi nhận trong ngày.',
+            en: 'Highest speed recorded today.',
+        },
+
+        batteryConsumedToday: {
+            vi: 'Lượng pin tiêu hao trong ngày (thường tính theo %).',
+            en: 'Battery consumed today (usually in %).',
+        },
+
+        wattageConsumedToday: {
+            vi: 'Lượng điện tiêu thụ trong ngày (kWh).',
+            en: 'Energy consumed today (kWh).',
+        },
+
+        connectionStatus: {
+            vi: 'Trạng thái kết nối: xe đang kết nối (Online) hay mất kết nối (Offline).',
+            en: 'Connection status: Online (connected) or Offline (disconnected).',
+        },
+
+        movementStatus: {
+            vi: 'Trạng thái di chuyển: xe đang chạy hay đang dừng.',
+            en: 'Movement status: running or stopped.',
+        },
+
+        lockStatus: {
+            vi: 'Trạng thái khóa xe: đang khóa hay đang mở khóa.',
+            en: 'Lock status: locked or unlocked.',
+        },
+
+        realtime_lat: {
+            vi: 'Vĩ độ vị trí gần nhất của xe (tọa độ bản đồ).',
+            en: 'Latest latitude location (map coordinate).',
+        },
+
+        realtime_lon: {
+            vi: 'Kinh độ vị trí gần nhất của xe (tọa độ bản đồ).',
+            en: 'Latest longitude location (map coordinate).',
+        },
+
+        distributor_id: {
+            vi: 'Đại lý/đơn vị quản lý xe (theo tài khoản được gán).',
+            en: 'Distributor / managing unit assigned to the vehicle.',
+        },
+
+        createdAt: {
+            vi: 'Thời điểm bản ghi được tạo trên hệ thống.',
+            en: 'Time when this record was created in the system.',
+        },
+
+        last_update: {
+            vi: 'Thời điểm thiết bị gửi dữ liệu gần nhất.',
+            en: 'Last time the device sent data.',
+        },
+    };
+
+    // ✅ Tiêu đề cột có dấu “?” để xem giải thích
+    const ColTitle = ({ label, tip }) => (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            <span>{label}</span>
+
+            <Tooltip
+                title={tip}
+                placement="top"
+                trigger={isMobile ? ['click'] : ['hover']}
+                classNames={{ root: 'table-col-tooltip' }}
+                styles={{ root: { maxWidth: 260 }, container: { maxWidth: 260 } }}
+                mouseEnterDelay={0.1}
+                mouseLeaveDelay={0.1}
+            >
+                <span
+                    className="table-col-help"
+                    onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }}
+                    onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }}
+                    style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: 16,
+                        height: 16,
+                        cursor: 'help',
+                        pointerEvents: 'auto',
+                    }}
+                >
+                    <QuestionCircleOutlined style={{ fontSize: 12, color: '#94a3b8' }} />
+                </span>
+            </Tooltip>
+        </span>
+    );
+
     // ===== COLUMNS =====
     const columns = [
         {
-            title: t.table.index,
+            title: <ColTitle label={t.table.index} tip={isEn ? colHelp.index.en : colHelp.index.vi} />,
             dataIndex: 'index',
-            width: 60,
+            width: 70,
             fixed: 'left',
-            render: (text, record, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
+            render: (_, __, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
         },
         {
-            title: t.table.date,
+            title: <ColTitle label={t.table.date} tip={isEn ? colHelp.date.en : colHelp.date.vi} />,
             dataIndex: 'date',
             width: 160,
             render: (value) => formatDateTime(value, isEn),
         },
-        { title: t.table.imei, dataIndex: 'imei', width: 150, ellipsis: true },
-
-        // ✅ biển số
-        { title: isEn ? 'License plate' : 'Biển số', dataIndex: 'license_plate', width: 140, ellipsis: true },
+        {
+            title: <ColTitle label={t.table.imei} tip={isEn ? colHelp.imei.en : colHelp.imei.vi} />,
+            dataIndex: 'imei',
+            width: 150,
+            ellipsis: true,
+        },
 
         {
-            title: t.table.motorcycleId,
+            title: (
+                <ColTitle
+                    label={isEn ? 'License plate' : 'Biển số'}
+                    tip={isEn ? colHelp.licensePlate.en : colHelp.licensePlate.vi}
+                />
+            ),
+            dataIndex: 'license_plate',
+            width: 140,
+            ellipsis: true,
+        },
+
+        {
+            title: (
+                <ColTitle label={t.table.motorcycleId} tip={isEn ? colHelp.motorcycleId.en : colHelp.motorcycleId.vi} />
+            ),
             dataIndex: 'Motorcycle_id',
             width: 150,
             ellipsis: true,
         },
 
-        { title: t.table.mileageToday, dataIndex: 'mileageToday', width: 150 },
-        { title: t.table.numberOfTrips, dataIndex: 'numberOfTrips', width: 130 },
-        { title: t.table.ridingHours, dataIndex: 'ridingHours', width: 130 },
-        { title: t.table.speedMaxToday, dataIndex: 'speedMaxToday', width: 150 },
-
-        { title: t.table.batteryConsumedToday, dataIndex: 'batteryConsumedToday', width: 180 },
-        { title: t.table.wattageConsumedToday, dataIndex: 'wattageConsumedToday', width: 200 },
+        // ✅ đổi label sang ODO
+        {
+            title: (
+                <ColTitle label={t.table.mileageToday} tip={isEn ? colHelp.mileageToday.en : colHelp.mileageToday.vi} />
+            ),
+            dataIndex: 'mileageToday',
+            width: 220,
+        },
 
         {
-            title: t.table.connectionStatus,
-            dataIndex: 'connectionStatus',
+            title: (
+                <ColTitle
+                    label={t.table.numberOfTrips}
+                    tip={isEn ? colHelp.numberOfTrips.en : colHelp.numberOfTrips.vi}
+                />
+            ),
+            dataIndex: 'numberOfTrips',
             width: 130,
+        },
+        {
+            title: (
+                <ColTitle label={t.table.ridingHours} tip={isEn ? colHelp.ridingHours.en : colHelp.ridingHours.vi} />
+            ),
+            dataIndex: 'ridingHours',
+            width: 130,
+        },
+        {
+            title: (
+                <ColTitle
+                    label={t.table.speedMaxToday}
+                    tip={isEn ? colHelp.speedMaxToday.en : colHelp.speedMaxToday.vi}
+                />
+            ),
+            dataIndex: 'speedMaxToday',
+            width: 180,
+        },
+
+        {
+            title: (
+                <ColTitle
+                    label={t.table.batteryConsumedToday}
+                    tip={isEn ? colHelp.batteryConsumedToday.en : colHelp.batteryConsumedToday.vi}
+                />
+            ),
+            dataIndex: 'batteryConsumedToday',
+            width: 250,
+        },
+        {
+            title: (
+                <ColTitle
+                    label={t.table.wattageConsumedToday}
+                    tip={isEn ? colHelp.wattageConsumedToday.en : colHelp.wattageConsumedToday.vi}
+                />
+            ),
+            dataIndex: 'wattageConsumedToday',
+            width: 260,
+        },
+
+        {
+            title: (
+                <ColTitle
+                    label={t.table.connectionStatus}
+                    tip={isEn ? colHelp.connectionStatus.en : colHelp.connectionStatus.vi}
+                />
+            ),
+            dataIndex: 'connectionStatus',
+            width: 100,
             render: (value) => formatStatus(value, 'connection', isEn),
         },
         {
-            title: t.table.movementStatus,
+            title: (
+                <ColTitle
+                    label={t.table.movementStatus}
+                    tip={isEn ? colHelp.movementStatus.en : colHelp.movementStatus.vi}
+                />
+            ),
             dataIndex: 'movementStatus',
-            width: 150,
+            width: 170,
             render: (value) => formatStatus(value, 'movement', isEn),
         },
         {
-            title: t.table.lockStatus,
+            title: <ColTitle label={t.table.lockStatus} tip={isEn ? colHelp.lockStatus.en : colHelp.lockStatus.vi} />,
             dataIndex: 'lockStatus',
             width: 140,
             render: (value) => formatStatus(value, 'lock', isEn),
         },
 
-        { title: t.table.realtime_lat, dataIndex: 'realtime_lat', width: 150 },
-        { title: t.table.realtime_lon, dataIndex: 'realtime_lon', width: 150 },
+        {
+            title: (
+                <ColTitle label={t.table.realtime_lat} tip={isEn ? colHelp.realtime_lat.en : colHelp.realtime_lat.vi} />
+            ),
+            dataIndex: 'realtime_lat',
+            width: 150,
+        },
+        {
+            title: (
+                <ColTitle label={t.table.realtime_lon} tip={isEn ? colHelp.realtime_lon.en : colHelp.realtime_lon.vi} />
+            ),
+            dataIndex: 'realtime_lon',
+            width: 150,
+        },
 
         {
-            title: t.table.distributor_id,
+            title: (
+                <ColTitle
+                    label={t.table.distributor_id}
+                    tip={isEn ? colHelp.distributor_id.en : colHelp.distributor_id.vi}
+                />
+            ),
             dataIndex: 'distributor_id',
             width: 200,
             render: (value) => getDistributorLabel(value),
         },
-        { title: t.table.createdAt, dataIndex: 'createdAt', width: 180, render: (v) => formatDateTime(v, isEn) },
-        { title: t.table.last_update, dataIndex: 'last_update', width: 180, render: (v) => formatDateTime(v, isEn) },
+        {
+            title: <ColTitle label={t.table.createdAt} tip={isEn ? colHelp.createdAt.en : colHelp.createdAt.vi} />,
+            dataIndex: 'createdAt',
+            width: 180,
+            render: (v) => formatDateTime(v, isEn),
+        },
+        {
+            title: (
+                <ColTitle label={t.table.last_update} tip={isEn ? colHelp.last_update.en : colHelp.last_update.vi} />
+            ),
+            dataIndex: 'last_update',
+            width: 180,
+            render: (v) => formatDateTime(v, isEn),
+        },
     ];
 
     const totalRecords = data.length;

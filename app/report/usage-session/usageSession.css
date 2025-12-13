@@ -47,6 +47,13 @@
     flex: 1;
 }
 
+.table-col-tooltip .ant-tooltip-inner {
+    font-size: 12px;
+    line-height: 1.35;
+    padding: 6px 8px;
+    max-width: 260px;
+}
+
 /* mobile: cho khoảng cách gọn lại */
 @media (max-width: 991px) {
     .usage-report-page {

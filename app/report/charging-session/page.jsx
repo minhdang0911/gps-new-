@@ -2,8 +2,22 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography, message } from 'antd';
-import { SearchOutlined, ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
+import {
+    Card,
+    Form,
+    Input,
+    Button,
+    Row,
+    Col,
+    Table,
+    DatePicker,
+    Space,
+    Typography,
+    message,
+    Tooltip,
+    Grid,
+} from 'antd';
+import { SearchOutlined, ReloadOutlined, DownloadOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { getChargingSessions } from '../../lib/api/chargingSession';
 import '../usage-session/usageSession.css';
 
@@ -11,12 +25,13 @@ import { usePathname } from 'next/navigation';
 import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
 import * as XLSX from 'xlsx';
-
-// ✅ helper ở util đúng theo bạn
+import dayjs from 'dayjs';
+// ✅ helper
 import { buildImeiToLicensePlateMap, attachLicensePlate } from '../../util/deviceMap';
 
 const { RangePicker } = DatePicker;
 const { Title, Text } = Typography;
+const { useBreakpoint } = Grid;
 
 const locales = { vi, en };
 
@@ -38,6 +53,9 @@ const ChargingSessionReportPage = () => {
 
     const pathname = usePathname() || '/';
     const [isEn, setIsEn] = useState(false);
+
+    const screens = useBreakpoint();
+    const isMobile = !screens.lg;
 
     const isEnFromPath = useMemo(() => {
         const segments = pathname.split('/').filter(Boolean);
@@ -75,11 +93,11 @@ const ChargingSessionReportPage = () => {
         if (values.chargeCode) payload.chargeCode = values.chargeCode.trim();
         if (values.soh) payload.soh = values.soh;
 
-        // ✅ biển số -> imei (query backend theo imei)
+        // ✅ biển số -> imei
         if (values.license_plate) {
             const key = normalize(values.license_plate);
             const imeis = plateToImeis.get(key) || [];
-            payload.imei = imeis[0] || '__NO_MATCH__'; // nếu không match thì trả rỗng
+            payload.imei = imeis[0] || '__NO_MATCH__';
         }
 
         if (values.timeRange?.length === 2) {
@@ -118,6 +136,8 @@ const ChargingSessionReportPage = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    const formatDateTime = (value) => (value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '--');
+
     const fetchData = async (page = 1, pageSize = 10) => {
         try {
             setLoading(true);
@@ -133,11 +153,12 @@ const ChargingSessionReportPage = () => {
             setData(enriched);
             setPagination({
                 current: res.page || page,
-                pageSize: 10,
+                pageSize: pageSize,
                 total: res.total || 0,
             });
         } catch (err) {
             console.error('Lỗi lấy charging session: ', err);
+            message.error(isEn ? 'Failed to load charging sessions' : 'Không tải được danh sách phiên sạc');
         } finally {
             setLoading(false);
         }
@@ -160,20 +181,6 @@ const ChargingSessionReportPage = () => {
         fetchData(pager.current, pager.pageSize);
     };
 
-    const formatDateTime = (value) => {
-        if (!value) return '--';
-        const d = new Date(value);
-        return d.toLocaleString(isEn ? 'en-US' : 'vi-VN', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: false,
-        });
-    };
-
     const handleExportExcel = () => {
         if (!data || data.length === 0) {
             message.warning(isEn ? 'No data to export' : 'Không có dữ liệu để xuất');
@@ -182,20 +189,20 @@ const ChargingSessionReportPage = () => {
 
         const rows = data.map((item, index) => ({
             [t.table.index]: (pagination.current - 1) * pagination.pageSize + index + 1,
-            imei: item.imei || '',
-            license_plate: item.license_plate || '',
+            IMEI: item.imei || '',
+            [isEn ? 'License plate' : 'Biển số']: item.license_plate || '',
             [t.table.chargeCode]: item.chargeCode || '',
             [t.table.soh]: item.soh ?? '',
-            'SOC Start': item.socStart ?? '',
-            'SOC End': item.socEnd ?? '',
-            'Temp Max': item.tempMax ?? '',
-            'Temp Min': item.tempMin ?? '',
-            'Temp Avg': item.tempAvg ?? '',
-            'Voltage Max': item.voltageMax ?? '',
-            'Voltage Min': item.voltageMin ?? '',
-            'Voltage Avg': item.voltageAvg ?? '',
-            'Charge Lat': item.chargeLat ?? '',
-            'Charge Lng': item.chargeLng ?? '',
+            [t.table.socStart]: item.socStart ?? '',
+            [t.table.socEnd]: item.socEnd ?? '',
+            [t.table.tempMax]: item.tempMax ?? '',
+            [t.table.tempMin]: item.tempMin ?? '',
+            [t.table.tempAvg]: item.tempAvg ?? '',
+            [t.table.voltageMax]: item.voltageMax ?? '',
+            [t.table.voltageMin]: item.voltageMin ?? '',
+            [t.table.voltageAvg]: item.voltageAvg ?? '',
+            [t.table.chargeLat]: item.chargeLat ?? '',
+            [t.table.chargeLng]: item.chargeLng ?? '',
             [t.table.startTime]: formatDateTime(item.start),
             [t.table.endTime]: formatDateTime(item.end),
         }));
@@ -208,29 +215,238 @@ const ChargingSessionReportPage = () => {
         XLSX.writeFile(wb, fileName);
     };
 
+    // ✅ Tooltip giải thích từng cột
+    const colHelp = {
+        index: {
+            vi: 'Số thứ tự của dòng trong bảng báo cáo.',
+            en: 'Order number of the row in the report.',
+        },
+
+        imei: {
+            vi: 'Mã thiết bị gắn trên xe. Hệ thống dùng mã này để xác định xe và biển số.',
+            en: 'Device code installed on the vehicle. Used by the system to identify the vehicle and license plate.',
+        },
+
+        license_plate: {
+            vi: 'Biển số xe tương ứng với thiết bị. Có thể trống nếu hệ thống chưa liên kết.',
+            en: 'Vehicle license plate linked to the device. May be empty if not yet linked.',
+        },
+
+        chargeCode: {
+            vi: 'Mã nhận diện của phiên sạc. Mỗi lần sạc pin sẽ có một mã riêng.',
+            en: 'Charging session ID. Each charging session has its own unique code.',
+        },
+
+        socStart: {
+            vi: 'Phần trăm pin còn lại tại thời điểm bắt đầu sạc.',
+            en: 'Battery percentage at the start of charging.',
+        },
+
+        socEnd: {
+            vi: 'Phần trăm pin tại thời điểm kết thúc sạc.',
+            en: 'Battery percentage at the end of charging.',
+        },
+
+        soh: {
+            vi: 'Tình trạng sức khỏe của pin. Giá trị càng cao thì pin càng tốt.',
+            en: 'Battery health status. Higher value means better battery condition.',
+        },
+
+        tempMax: {
+            vi: 'Nhiệt độ pin cao nhất ghi nhận trong suốt quá trình sạc.',
+            en: 'Highest battery temperature recorded during charging.',
+        },
+
+        tempMin: {
+            vi: 'Nhiệt độ pin thấp nhất ghi nhận trong quá trình sạc.',
+            en: 'Lowest battery temperature recorded during charging.',
+        },
+
+        tempAvg: {
+            vi: 'Nhiệt độ pin trung bình trong suốt phiên sạc.',
+            en: 'Average battery temperature during the charging session.',
+        },
+
+        voltageMax: {
+            vi: 'Mức điện áp cao nhất của pin trong quá trình sạc.',
+            en: 'Highest voltage level during charging.',
+        },
+
+        voltageMin: {
+            vi: 'Mức điện áp thấp nhất của pin trong quá trình sạc.',
+            en: 'Lowest voltage level during charging.',
+        },
+
+        voltageAvg: {
+            vi: 'Mức điện áp trung bình của pin trong phiên sạc.',
+            en: 'Average voltage level during the charging session.',
+        },
+
+        chargeLat: {
+            vi: 'Vị trí sạc – vĩ độ (tọa độ trên bản đồ).',
+            en: 'Charging location latitude (map coordinate).',
+        },
+
+        chargeLng: {
+            vi: 'Vị trí sạc – kinh độ (tọa độ trên bản đồ).',
+            en: 'Charging location longitude (map coordinate).',
+        },
+
+        startTime: {
+            vi: 'Thời điểm bắt đầu sạc pin.',
+            en: 'Time when charging started.',
+        },
+
+        endTime: {
+            vi: 'Thời điểm kết thúc sạc pin.',
+            en: 'Time when charging ended.',
+        },
+    };
+
+    // ✅ Title “Label ?”
+    const ColTitle = ({ label, tip }) => (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            <span>{label}</span>
+
+            <Tooltip
+                title={tip}
+                placement="top"
+                trigger={isMobile ? ['click'] : ['hover']}
+                classNames={{ root: 'table-col-tooltip' }}
+                styles={{ root: { maxWidth: 260 }, container: { maxWidth: 260 } }}
+                mouseEnterDelay={0.1}
+                mouseLeaveDelay={0.1}
+            >
+                <span
+                    className="table-col-help"
+                    onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }}
+                    onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }}
+                    style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: 16,
+                        height: 16,
+                        cursor: 'help',
+                        pointerEvents: 'auto',
+                    }}
+                >
+                    <QuestionCircleOutlined style={{ fontSize: 12, color: '#94a3b8' }} />
+                </span>
+            </Tooltip>
+        </span>
+    );
+
     const columns = [
         {
-            title: t.table.index,
+            title: <ColTitle label={t.table.index} tip={isEn ? colHelp.index.en : colHelp.index.vi} />,
             dataIndex: 'index',
             width: 60,
             render: (_, __, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
+            fixed: 'left',
         },
-        { title: 'IMEI', dataIndex: 'imei', ellipsis: true, width: 150 },
-        { title: isEn ? 'License plate' : 'Biển số', dataIndex: 'license_plate', ellipsis: true, width: 140 },
-        { title: t.table.chargeCode, dataIndex: 'chargeCode', ellipsis: true, width: 260 },
-        { title: t.table.soh, dataIndex: 'soh', width: 80 },
-        { title: t.table.socStart, dataIndex: 'socStart', width: 80 },
-        { title: t.table.socEnd, dataIndex: 'socEnd', width: 80 },
-        { title: t.table.tempMax, dataIndex: 'tempMax', width: 80 },
-        { title: t.table.tempMin, dataIndex: 'tempMin', width: 80 },
-        { title: t.table.tempAvg, dataIndex: 'tempAvg', width: 80 },
-        { title: t.table.voltageMax, dataIndex: 'voltageMax', width: 80 },
-        { title: t.table.voltageMin, dataIndex: 'voltageMin', width: 80 },
-        { title: t.table.voltageAvg, dataIndex: 'voltageAvg', width: 80 },
-        { title: t.table.chargeLat, dataIndex: 'chargeLat', width: 100 },
-        { title: t.table.chargeLng, dataIndex: 'chargeLng', width: 100 },
-        { title: t.table.startTime, dataIndex: 'start', ellipsis: true, render: (val) => formatDateTime(val) },
-        { title: t.table.endTime, dataIndex: 'end', ellipsis: true, render: (val) => formatDateTime(val) },
+        {
+            title: <ColTitle label="IMEI" tip={isEn ? colHelp.imei?.en : colHelp.imei?.vi} />,
+            dataIndex: 'imei',
+            ellipsis: true,
+            width: 150,
+        },
+        {
+            title: (
+                <ColTitle
+                    label={isEn ? 'License plate' : 'Biển số'}
+                    tip={isEn ? colHelp.license_plate?.en : colHelp.license_plate?.vi}
+                />
+            ),
+            dataIndex: 'license_plate',
+            ellipsis: true,
+            width: 140,
+        },
+        {
+            title: <ColTitle label={t.table.chargeCode} tip={isEn ? colHelp.chargeCode?.en : colHelp.chargeCode?.vi} />,
+            dataIndex: 'chargeCode',
+            ellipsis: true,
+            width: 260,
+        },
+        {
+            title: <ColTitle label={t.table.soh} tip={isEn ? colHelp.soh.en : colHelp.soh.vi} />,
+            dataIndex: 'soh',
+            width: 80,
+        },
+        {
+            title: <ColTitle label={t.table.socStart} tip={isEn ? colHelp.socStart.en : colHelp.socStart.vi} />,
+            dataIndex: 'socStart',
+            width: 120,
+        },
+        {
+            title: <ColTitle label={t.table.socEnd} tip={isEn ? colHelp.socEnd.en : colHelp.socEnd.vi} />,
+            dataIndex: 'socEnd',
+            width: 120,
+        },
+
+        {
+            title: <ColTitle label={t.table.tempMax} tip={isEn ? colHelp.tempMax.en : colHelp.tempMax.vi} />,
+            dataIndex: 'tempMax',
+            width: 150,
+        },
+        {
+            title: <ColTitle label={t.table.tempMin} tip={isEn ? colHelp.tempMin.en : colHelp.tempMin.vi} />,
+            dataIndex: 'tempMin',
+            width: 150,
+        },
+        {
+            title: <ColTitle label={t.table.tempAvg} tip={isEn ? colHelp.tempAvg.en : colHelp.tempAvg.vi} />,
+            dataIndex: 'tempAvg',
+            width: 165,
+        },
+
+        {
+            title: <ColTitle label={t.table.voltageMax} tip={isEn ? colHelp.voltageMax?.en : colHelp.voltageMax?.vi} />,
+            dataIndex: 'voltageMax',
+            width: 120,
+        },
+        {
+            title: <ColTitle label={t.table.voltageMin} tip={isEn ? colHelp.voltageMin?.en : colHelp.voltageMin?.vi} />,
+            dataIndex: 'voltageMin',
+            width: 120,
+        },
+        {
+            title: <ColTitle label={t.table.voltageAvg} tip={isEn ? colHelp.voltageAvg?.en : colHelp.voltageAvg?.vi} />,
+            dataIndex: 'voltageAvg',
+            width: 160,
+        },
+
+        {
+            title: <ColTitle label={t.table.chargeLat} tip={isEn ? colHelp.chargeLat?.en : colHelp.chargeLat?.vi} />,
+            dataIndex: 'chargeLat',
+            width: 120,
+        },
+        {
+            title: <ColTitle label={t.table.chargeLng} tip={isEn ? colHelp.chargeLng?.en : colHelp.chargeLng?.vi} />,
+            dataIndex: 'chargeLng',
+            width: 120,
+        },
+
+        {
+            title: <ColTitle label={t.table.startTime} tip={isEn ? colHelp.startTime.en : colHelp.startTime.vi} />,
+            dataIndex: 'startTime',
+            ellipsis: true,
+            render: (val) => formatDateTime(val),
+            width: 170,
+        },
+        {
+            title: <ColTitle label={t.table.endTime} tip={isEn ? colHelp.endTime.en : colHelp.endTime.vi} />,
+            dataIndex: 'endTime',
+            ellipsis: true,
+            render: (val) => formatDateTime(val),
+            width: 170,
+        },
     ];
 
     const customLocale = { emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu ' };
@@ -279,16 +495,6 @@ const ChargingSessionReportPage = () => {
                                     </Button>
                                 </Space>
                             </Form.Item>
-
-                            {/* <Text type="secondary" style={{ fontSize: 12 }}>
-                                {loadingDeviceMap
-                                    ? isEn
-                                        ? 'Loading devices…'
-                                        : 'Đang tải danh sách xe…'
-                                    : isEn
-                                    ? 'Devices loaded'
-                                    : 'Đã tải danh sách xe'}
-                            </Text> */}
                         </Form>
                     </Card>
                 </Col>
@@ -326,7 +532,7 @@ const ChargingSessionReportPage = () => {
                                 showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
                             }}
                             onChange={handleTableChange}
-                            scroll={{ x: 950 }}
+                            scroll={{ x: 1400 }}
                         />
                     </Card>
                 </Col>

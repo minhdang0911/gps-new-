@@ -12,21 +12,28 @@
  *  LEFT PANEL
  * ========================= */
 .iky-cruise__left {
-    width: 350px;
+    width: 30 0px;
     padding: 12px;
     box-sizing: border-box;
 }
 
 .iky-cruise__left-card {
-    background: #ffffff;
-    border-radius: 8px;
-    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
-    border: 1px solid #e5e7eb;
     display: flex;
     flex-direction: column;
     height: 100%;
+    min-height: 0;
 }
 
+.iky-cruise__list {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.iky-cruise__table-body {
+    height: 100%;
+    overflow: auto;
+}
 .iky-cruise__left-header {
     padding: 10px 12px;
     border-bottom: 1px solid #e5e7eb;
@@ -54,6 +61,24 @@
     margin-bottom: 2px;
     color: #374151;
     font-weight: 500;
+}
+
+.iky-cruise__table-body {
+    height: 350px; /* đúng bằng cái bạn đang set */
+    overflow: auto;
+}
+
+/* Ant List item mặc định có padding, bạn muốn giống table row thì chỉnh: */
+.iky-cruise__table-row.ant-list-item {
+    padding: 6px 8px;
+}
+
+.iky-cruise__table-row {
+    height: 32px;
+    line-height: 32px;
+    padding: 0;
+    box-sizing: border-box;
+    overflow: hidden;
 }
 
 .iky-cruise__form-row input,
@@ -203,7 +228,7 @@
  * ========================= */
 .iky-cruise__list {
     margin-top: 8px;
-    max-height: 260px; /* chỉ là khung ngoài, scroll do react-window handle */
+
     border: 1px solid #e5e7eb;
     border-radius: 6px;
     background: #ffffff;

@@ -9,27 +9,25 @@ const { Content } = Layout;
 
 export default function ManageLayout({ children }) {
     const router = useRouter();
-    const [allowed, setAllowed] = useState(false); // check xong mới render
+
+    // Tính allowed ngay lúc khởi tạo (client only)
+    const [allowed] = useState(() => {
+        if (typeof window === 'undefined') return false;
+        const role = window.localStorage.getItem('role');
+        return role !== 'reporter';
+    });
 
     useEffect(() => {
-        const role = localStorage.getItem('role');
+        if (!allowed) router.replace('/');
+    }, [allowed, router]);
 
-        // role reporter thì chặn
-        if (role === 'reporter') {
-            router.replace('/');
-            return;
-        }
-
-        setAllowed(true);
-    }, []);
-
-    if (!allowed) return null; // tránh nháy UI
+    if (!allowed) return null;
 
     return (
-        <Layout style={{ minHeight: 'calc(100vh - 140px)', background: '#f5f7fb' }}>
+        <Layout hasSider style={{ minHeight: 'calc(100vh - 140px)', background: '#f5f7fb', overflowX: 'hidden' }}>
             <Sidebar />
-            <Layout style={{ background: 'transparent' }}>
-                <Content style={{ padding: 20 }}>{children}</Content>
+            <Layout style={{ background: 'transparent', minWidth: 0 }}>
+                <Content style={{ padding: 20, minWidth: 0 }}>{children}</Content>
             </Layout>
         </Layout>
     );

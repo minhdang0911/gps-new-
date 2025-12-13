@@ -34,13 +34,15 @@ const StatusBar = () => {
     useEffect(() => {
         if (typeof window === 'undefined') return;
 
-        if (isEnFromPath) {
-            setIsEn(true);
-            localStorage.setItem('iky_lang', 'en');
-        } else {
-            const saved = localStorage.getItem('iky_lang');
-            setIsEn(saved === 'en');
-        }
+        queueMicrotask(() => {
+            if (isEnFromPath) {
+                setIsEn(true);
+                localStorage.setItem('iky_lang', 'en');
+            } else {
+                const saved = localStorage.getItem('iky_lang');
+                setIsEn(saved === 'en');
+            }
+        });
     }, [isEnFromPath]);
 
     const t = isEn ? locales.en.statusbar : locales.vi.statusbar;

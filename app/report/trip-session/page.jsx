@@ -2,8 +2,23 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography, message } from 'antd';
-import { SearchOutlined, ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
+import {
+    Card,
+    Form,
+    Input,
+    Button,
+    Row,
+    Col,
+    Table,
+    DatePicker,
+    Space,
+    Typography,
+    message,
+    Tooltip,
+    Grid,
+} from 'antd';
+import { SearchOutlined, ReloadOutlined, DownloadOutlined, QuestionCircleOutlined } from '@ant-design/icons';
+
 import { getTripSessions } from '../../lib/api/tripSession';
 import '../usage-session/usageSession.css';
 
@@ -240,89 +255,225 @@ const TripSessionReportPage = () => {
         XLSX.writeFile(wb, fileName);
     };
 
+    const { useBreakpoint } = Grid;
+    const screens = useBreakpoint();
+    const isMobile = !screens.lg;
+
+    // ✅ Tooltip giải thích từng cột (viết dễ hiểu cho người dùng)
+    const colHelp = {
+        index: {
+            vi: 'Số thứ tự của dòng trong bảng.',
+            en: 'Order number of the row.',
+        },
+
+        tripCode: {
+            vi: 'Mã của chuyến đi (mỗi chuyến sẽ có một mã riêng).',
+            en: 'Trip ID (each trip has its own code).',
+        },
+
+        imei: {
+            vi: 'Mã thiết bị gắn trên xe. Hệ thống dùng mã này để xác định xe/biển số.',
+            en: 'Device code installed on the vehicle (used to identify the vehicle/license plate).',
+        },
+
+        license_plate: {
+            vi: 'Biển số xe. Có thể trống nếu hệ thống chưa liên kết được biển số với thiết bị.',
+            en: 'License plate. May be empty if not linked yet.',
+        },
+
+        batteryId: {
+            vi: 'Mã pin đang được sử dụng trong chuyến đi này.',
+            en: 'Battery ID used in this trip.',
+        },
+
+        soh: {
+            vi: 'Sức khỏe pin (%). Số càng cao thì pin càng “khỏe”.',
+            en: 'Battery health (%). Higher means better battery condition.',
+        },
+
+        startTime: {
+            vi: 'Thời điểm bắt đầu chuyến đi.',
+            en: 'Trip start time.',
+        },
+
+        endTime: {
+            vi: 'Thời điểm kết thúc chuyến đi.',
+            en: 'Trip end time.',
+        },
+
+        duration: {
+            vi: 'Tổng thời gian của chuyến đi (tính từ bắt đầu đến kết thúc).',
+            en: 'Total trip duration (from start to end).',
+        },
+
+        distanceKm: {
+            vi: 'Quãng đường di chuyển trong chuyến đi (km).',
+            en: 'Distance traveled in the trip (km).',
+        },
+
+        consumedKw: {
+            vi: 'Lượng điện tiêu thụ trong chuyến đi.',
+            en: 'Energy consumed during the trip.',
+        },
+
+        socEnd: {
+            vi: 'Phần trăm pin còn lại khi kết thúc chuyến đi.',
+            en: 'Battery percentage remaining at the end of the trip.',
+        },
+
+        endLat: {
+            vi: 'Vị trí kết thúc chuyến đi – vĩ độ (tọa độ trên bản đồ).',
+            en: 'Trip end location latitude (map coordinate).',
+        },
+
+        endLng: {
+            vi: 'Vị trí kết thúc chuyến đi – kinh độ (tọa độ trên bản đồ).',
+            en: 'Trip end location longitude (map coordinate).',
+        },
+    };
+
+    // ✅ Title “Label ?”
+    const ColTitle = ({ label, tip }) => (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            <span>{label}</span>
+
+            <Tooltip
+                title={tip}
+                placement="top"
+                trigger={isMobile ? ['click'] : ['hover']}
+                classNames={{ root: 'table-col-tooltip' }}
+                styles={{ root: { maxWidth: 260 }, container: { maxWidth: 260 } }}
+                mouseEnterDelay={0.1}
+                mouseLeaveDelay={0.1}
+            >
+                <span
+                    className="table-col-help"
+                    onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }}
+                    onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }}
+                    style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: 16,
+                        height: 16,
+                        cursor: 'help',
+                        pointerEvents: 'auto',
+                    }}
+                >
+                    <QuestionCircleOutlined style={{ fontSize: 12, color: '#94a3b8' }} />
+                </span>
+            </Tooltip>
+        </span>
+    );
+
     const columns = [
         {
-            title: t.table.index,
+            title: <ColTitle label={t.table.index} tip={isEn ? colHelp.index.en : colHelp.index.vi} />,
             dataIndex: 'index',
             width: 60,
-            render: (text, record, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
+            render: (_, __, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
         },
         {
-            title: t.table.tripCode,
+            title: <ColTitle label={t.table.tripCode} tip={isEn ? colHelp.tripCode.en : colHelp.tripCode.vi} />,
             dataIndex: 'tripCode',
             ellipsis: true,
             width: 260,
         },
         {
-            title: t.table.imei,
+            title: <ColTitle label={t.table.imei} tip={isEn ? colHelp.imei.en : colHelp.imei.vi} />,
             dataIndex: 'imei',
             ellipsis: true,
             width: 180,
         },
         {
-            title: isEn ? 'License plate' : 'Biển số',
+            title: (
+                <ColTitle
+                    label={isEn ? 'License plate' : 'Biển số'}
+                    tip={isEn ? colHelp.license_plate.en : colHelp.license_plate.vi}
+                />
+            ),
             dataIndex: 'license_plate',
             ellipsis: true,
             width: 140,
         },
         {
-            title: t.table.batteryId,
+            title: <ColTitle label={t.table.batteryId} tip={isEn ? colHelp.batteryId.en : colHelp.batteryId.vi} />,
             dataIndex: 'batteryId',
             ellipsis: true,
             width: 150,
         },
         {
-            title: t.table.soh,
+            title: <ColTitle label={t.table.soh} tip={isEn ? colHelp.soh.en : colHelp.soh.vi} />,
             dataIndex: 'soh',
             width: 80,
         },
 
-        // ✅ ĐÚNG: startTime / endTime
         {
-            title: isEn ? 'Start time' : 'Thời gian bắt đầu',
+            title: (
+                <ColTitle
+                    label={isEn ? 'Start time' : 'Thời gian bắt đầu'}
+                    tip={isEn ? colHelp.startTime.en : colHelp.startTime.vi}
+                />
+            ),
             dataIndex: 'startTime',
             ellipsis: true,
             width: 190,
             render: (value) => formatDateTime(value),
         },
         {
-            title: isEn ? 'End time' : 'Thời gian kết thúc',
+            title: (
+                <ColTitle
+                    label={isEn ? 'End time' : 'Thời gian kết thúc'}
+                    tip={isEn ? colHelp.endTime.en : colHelp.endTime.vi}
+                />
+            ),
             dataIndex: 'endTime',
             ellipsis: true,
             width: 190,
             render: (value) => formatDateTime(value),
         },
         {
-            title: isEn ? 'Duration' : 'Thời lượng',
+            title: (
+                <ColTitle
+                    label={isEn ? 'Duration' : 'Thời lượng'}
+                    tip={isEn ? colHelp.duration.en : colHelp.duration.vi}
+                />
+            ),
             key: 'duration',
             width: 110,
             render: (_, record) => formatDuration(record.startTime, record.endTime),
         },
 
         {
-            title: t.table.distanceKm,
+            title: <ColTitle label={t.table.distanceKm} tip={isEn ? colHelp.distanceKm.en : colHelp.distanceKm.vi} />,
             dataIndex: 'distanceKm',
-            width: 100,
+            width: 160,
         },
         {
-            title: t.table.consumedKw,
+            title: <ColTitle label={t.table.consumedKw} tip={isEn ? colHelp.consumedKw.en : colHelp.consumedKw.vi} />,
             dataIndex: 'consumedKw',
-            width: 100,
+            width: 202,
         },
         {
-            title: t.table.socEnd,
+            title: <ColTitle label={t.table.socEnd} tip={isEn ? colHelp.socEnd.en : colHelp.socEnd.vi} />,
             dataIndex: 'socEnd',
-            width: 80,
+            width: 120,
         },
         {
-            title: t.table.endLat,
+            title: <ColTitle label={t.table.endLat} tip={isEn ? colHelp.endLat.en : colHelp.endLat.vi} />,
             dataIndex: 'endLat',
-            width: 120,
+            width: 150,
         },
         {
-            title: t.table.endLng,
+            title: <ColTitle label={t.table.endLng} tip={isEn ? colHelp.endLng.en : colHelp.endLng.vi} />,
             dataIndex: 'endLng',
-            width: 120,
+            width: 150,
         },
     ];
 

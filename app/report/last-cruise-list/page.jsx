@@ -2,8 +2,24 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography, Select, message } from 'antd';
-import { SearchOutlined, ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
+import {
+    Card,
+    Form,
+    Input,
+    Button,
+    Row,
+    Col,
+    Table,
+    DatePicker,
+    Space,
+    Typography,
+    Select,
+    message,
+    Tooltip,
+    Grid,
+} from 'antd';
+import { SearchOutlined, ReloadOutlined, DownloadOutlined, QuestionCircleOutlined } from '@ant-design/icons';
+
 import { usePathname } from 'next/navigation';
 import * as XLSX from 'xlsx';
 
@@ -13,6 +29,7 @@ import en from '../../locales/en.json';
 
 // ✅ helper
 import { buildImeiToLicensePlateMap } from '../../util/deviceMap';
+const { useBreakpoint } = Grid;
 
 const { RangePicker } = DatePicker;
 const { Title, Text } = Typography;
@@ -292,52 +309,207 @@ const LastCruiseReportPage = () => {
         message.success(isEn ? 'Export Excel successfully' : 'Xuất Excel thành công');
     };
 
+    const screens = useBreakpoint();
+    const isMobile = !screens.lg;
+
+    // ✅ Tooltip cho user dễ hiểu
+    const colHelp = {
+        index: {
+            vi: 'Số thứ tự của dòng trong bảng.',
+            en: 'Order number of the row.',
+        },
+
+        dev: {
+            vi: 'Mã thiết bị trên xe (dùng để nhận diện xe trong hệ thống).',
+            en: 'Device ID (used to identify the vehicle in the system).',
+        },
+
+        license_plate: {
+            vi: 'Biển số xe tương ứng với thiết bị. Có thể trống nếu hệ thống chưa liên kết.',
+            en: 'License plate linked to the device. May be empty if not linked yet.',
+        },
+
+        fwr: {
+            vi: 'Phiên bản  firmware của thiết bị.',
+            en: 'Device firmware  version.',
+        },
+
+        // tim là chuỗi 12 ký tự, bạn có parseTimToDate
+        tim: {
+            vi: 'Thời điểm thiết bị ghi nhận vị trí (theo dữ liệu thiết bị gửi lên).',
+            en: 'Time when the device recorded the location (from device data).',
+        },
+
+        lat: {
+            vi: 'Vĩ độ vị trí gần nhất của xe (tọa độ trên bản đồ).',
+            en: 'Latest latitude (map coordinate).',
+        },
+
+        lon: {
+            vi: 'Kinh độ vị trí gần nhất của xe (tọa độ trên bản đồ).',
+            en: 'Latest longitude (map coordinate).',
+        },
+
+        sat: {
+            vi: 'Số vệ tinh GPS bắt được. Số càng cao thì định vị thường càng ổn định.',
+            en: 'Number of GPS satellites in view. Higher usually means better accuracy.',
+        },
+
+        gps: {
+            vi: 'Trạng thái GPS: Bình thường hoặc Mất GPS (không lấy được vị trí).',
+            en: 'GPS status: Normal or GPS lost (unable to get location).',
+        },
+
+        sos: {
+            vi: 'Trạng thái tắt máy xe khẩn cấp. ',
+            en: 'Emergency engine shut-off status..',
+        },
+
+        acc: {
+            vi: 'Trạng thái khóa/nguồn xe theo tín hiệu thiết bị (hiển thị theo hệ thống).',
+            en: 'Vehicle lock/ignition status reported by the device (shown by the system).',
+        },
+
+        vgp: {
+            vi: 'Tốc độ ghi nhận tại vị trí gần nhất (nếu có).',
+            en: 'Speed recorded at the latest location (if available).',
+        },
+
+        createdAt: {
+            vi: 'Thời điểm dữ liệu được lưu lên hệ thống.',
+            en: 'Time when the record was saved to the system.',
+        },
+    };
+
+    // ✅ Tiêu đề cột có dấu “?” để xem giải thích
+    const ColTitle = ({ label, tip }) => (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            <span>{label}</span>
+
+            <Tooltip
+                title={tip}
+                placement="top"
+                trigger={isMobile ? ['click'] : ['hover']}
+                classNames={{ root: 'table-col-tooltip' }}
+                styles={{ root: { maxWidth: 260 }, container: { maxWidth: 260 } }}
+                mouseEnterDelay={0.1}
+                mouseLeaveDelay={0.1}
+            >
+                <span
+                    className="table-col-help"
+                    onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }}
+                    onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    }}
+                    style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: 16,
+                        height: 16,
+                        cursor: 'help',
+                        pointerEvents: 'auto',
+                    }}
+                >
+                    <QuestionCircleOutlined style={{ fontSize: 12, color: '#94a3b8' }} />
+                </span>
+            </Tooltip>
+        </span>
+    );
+
     // ===== columns =====
     const columns = [
         {
-            title: t.table.index,
+            title: <ColTitle label={t.table.index} tip={isEn ? colHelp.index.en : colHelp.index.vi} />,
             dataIndex: 'index',
             width: 60,
             fixed: 'left',
-            render: (text, record, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
+            render: (_, __, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
         },
         {
-            title: t.table.dev,
+            title: <ColTitle label={t.table.dev} tip={isEn ? colHelp.dev.en : colHelp.dev.vi} />,
             dataIndex: 'dev',
             width: 160,
             ellipsis: true,
         },
-        // ✅ cột biển số
         {
-            title: isEn ? 'License plate' : 'Biển số',
+            title: (
+                <ColTitle
+                    label={isEn ? 'License plate' : 'Biển số'}
+                    tip={isEn ? colHelp.license_plate.en : colHelp.license_plate.vi}
+                />
+            ),
             dataIndex: 'license_plate',
             width: 140,
             ellipsis: true,
         },
         {
-            title: t.table.fwr,
+            title: <ColTitle label={t.table.fwr} tip={isEn ? colHelp.fwr.en : colHelp.fwr.vi} />,
             dataIndex: 'fwr',
             width: 140,
             ellipsis: true,
         },
+
+        // Nếu bạn muốn mở lại cột TIM thì dùng ColTitle này:
+        // {
+        //   title: <ColTitle label={t.table.tim} tip={isEn ? colHelp.tim.en : colHelp.tim.vi} />,
+        //   dataIndex: 'tim',
+        //   width: 180,
+        //   render: (value) => {
+        //     const d = parseTimToDate(value);
+        //     if (!d) return value || '--';
+        //     return formatDateTime(d);
+        //   },
+        // },
+
         {
-            title: t.table.tim,
-            dataIndex: 'tim',
-            width: 180,
-            render: (value) => {
-                const d = parseTimToDate(value);
-                if (!d) return value || '--';
-                return formatDateTime(d);
-            },
+            title: <ColTitle label={t.table.lat} tip={isEn ? colHelp.lat.en : colHelp.lat.vi} />,
+            dataIndex: 'lat',
+            width: 130,
         },
-        { title: t.table.lat, dataIndex: 'lat', width: 130 },
-        { title: t.table.lon, dataIndex: 'lon', width: 130 },
-        { title: t.table.sat, dataIndex: 'sat', width: 100 },
-        { title: t.table.gps, dataIndex: 'gps', width: 140, render: (value) => formatGps(value) },
-        { title: t.table.sos, dataIndex: 'sos', width: 140, render: (value) => formatSos(value) },
-        { title: t.table.acc, dataIndex: 'acc', width: 120, render: (value) => formatAcc(value) },
-        { title: t.table.vgp, dataIndex: 'vgp', width: 160 },
-        { title: t.table.createdAt, dataIndex: 'createdAt', width: 180, render: formatDateTime },
+        {
+            title: <ColTitle label={t.table.lon} tip={isEn ? colHelp.lon.en : colHelp.lon.vi} />,
+            dataIndex: 'lon',
+            width: 130,
+        },
+        {
+            title: <ColTitle label={t.table.sat} tip={isEn ? colHelp.sat.en : colHelp.sat.vi} />,
+            dataIndex: 'sat',
+            width: 100,
+        },
+        {
+            title: <ColTitle label={t.table.gps} tip={isEn ? colHelp.gps.en : colHelp.gps.vi} />,
+            dataIndex: 'gps',
+            width: 140,
+            render: (value) => formatGps(value),
+        },
+        {
+            title: <ColTitle label={t.table.sos} tip={isEn ? colHelp.sos.en : colHelp.sos.vi} />,
+            dataIndex: 'sos',
+            width: 140,
+            render: (value) => formatSos(value),
+        },
+        {
+            title: <ColTitle label={t.table.acc} tip={isEn ? colHelp.acc.en : colHelp.acc.vi} />,
+            dataIndex: 'acc',
+            width: 120,
+            render: (value) => formatAcc(value),
+        },
+        {
+            title: <ColTitle label={t.table.vgp} tip={isEn ? colHelp.vgp.en : colHelp.vgp.vi} />,
+            dataIndex: 'vgp',
+            width: 160,
+        },
+        {
+            title: <ColTitle label={t.table.createdAt} tip={isEn ? colHelp.createdAt.en : colHelp.createdAt.vi} />,
+            dataIndex: 'createdAt',
+            width: 180,
+            render: formatDateTime,
+        },
     ];
 
     const totalRecords = data.length;

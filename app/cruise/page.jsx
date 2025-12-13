@@ -14,10 +14,9 @@ import en from '../locales/en.json';
 import { usePathname } from 'next/navigation';
 import { formatDateFromDevice } from '../util/FormatDate';
 
-import { FixedSizeList as List } from 'react-window';
 import loading from '../assets/loading.gif';
 import Image from 'next/image';
-import { Tooltip, Select } from 'antd';
+import { Tooltip, Select, List as AntList } from 'antd';
 
 const locales = { vi, en };
 
@@ -297,6 +296,7 @@ const toInputDateTime = (date) => {
 const CruisePage = () => {
     const pathname = usePathname() || '/';
     const [isEn, setIsEn] = useState(false);
+    const listWrapRef = useRef(null);
 
     useEffect(() => {
         const segments = pathname.split('/').filter(Boolean);
@@ -487,8 +487,8 @@ const CruisePage = () => {
     };
 
     const smoothScrollToItem = (idx) => {
-        if (!listRef.current) return;
-        listRef.current.scrollToItem(idx, 'center');
+        const el = document.getElementById(`cruise-item-${idx}`);
+        if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
     };
 
     // fetch address + cache
@@ -1367,16 +1367,59 @@ const CruisePage = () => {
                                         <div className="iky-cruise__table-cell">{t.table?.speed || 'V (GPS)'}</div>
                                     </div>
 
-                                    <List
-                                        height={350}
-                                        itemCount={routeData.length}
-                                        itemSize={32}
-                                        width="100%"
-                                        ref={listRef}
-                                        itemKey={itemKey}
-                                    >
-                                        {RowItem}
-                                    </List>
+                                    {/* SCROLL AREA */}
+                                    <div className="iky-cruise__table-body" ref={listWrapRef}>
+                                        <AntList
+                                            size="small"
+                                            dataSource={routeData}
+                                            split={false}
+                                            renderItem={(p, index) => {
+                                                const isActive = index === activeIndex;
+
+                                                return (
+                                                    <AntList.Item
+                                                        key={p?.selector || index}
+                                                        id={`cruise-item-${index}`}
+                                                        className={
+                                                            'iky-cruise__table-row' +
+                                                            (isActive ? ' iky-cruise__table-row--active' : '')
+                                                        }
+                                                        onClick={() => handlePointClick(index)}
+                                                    >
+                                                        <Tooltip title={formatDateFromDevice(p.dateTime)}>
+                                                            <div className="iky-cruise__table-cell iky-cruise__table-cell--time">
+                                                                {formatDateFromDevice(p.dateTime)}
+                                                            </div>
+                                                        </Tooltip>
+
+                                                        <Tooltip
+                                                            title={`Vĩ độ: ${
+                                                                typeof p.lat === 'number' ? p.lat.toFixed(6) : 'N/A'
+                                                            }`}
+                                                        >
+                                                            <div className="iky-cruise__table-cell">
+                                                                {typeof p.lat === 'number' ? p.lat.toFixed(6) : ''}
+                                                            </div>
+                                                        </Tooltip>
+
+                                                        <Tooltip
+                                                            title={`Kinh độ: ${
+                                                                typeof p.lon === 'number' ? p.lon.toFixed(6) : 'N/A'
+                                                            }`}
+                                                        >
+                                                            <div className="iky-cruise__table-cell">
+                                                                {typeof p.lon === 'number' ? p.lon.toFixed(6) : ''}
+                                                            </div>
+                                                        </Tooltip>
+
+                                                        <Tooltip title={`Vận tốc: ${p?.velocity || 'N/A'}`}>
+                                                            <div className="iky-cruise__table-cell">{p?.velocity}</div>
+                                                        </Tooltip>
+                                                    </AntList.Item>
+                                                );
+                                            }}
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         </>
