@@ -92,6 +92,13 @@ const MonitorPage = () => {
     const [liveTelemetry, setLiveTelemetry] = useState(null);
     const mqttClientRef = useRef(null);
 
+    // ⭐ ADD: anti-spam gọi last-cruise khi MQTT thiếu gps
+    const lastCruiseTimeoutRef = useRef(null);
+    const lastCruiseInFlightRef = useRef(false);
+    const lastCruiseCallAtRef = useRef(0);
+    const LAST_CRUISE_DEBOUNCE_MS = 800; // gom nhiều packet trong 0.8s
+    const LAST_CRUISE_MIN_INTERVAL_MS = 15_000; // tối thiểu 15s mới gọi lại
+
     useEffect(() => {
         const loadLeaflet = async () => {
             const L = await import('leaflet');
@@ -107,6 +114,17 @@ const MonitorPage = () => {
 
     // lưu tọa độ cuối cùng đã dùng để gọi API địa chỉ
     const lastCoordsRef = useRef({ lat: null, lon: null });
+
+    // ⭐ ADD: clear timer khi unmount (tránh gọi lạc)
+    useEffect(() => {
+        return () => {
+            if (lastCruiseTimeoutRef.current) {
+                clearTimeout(lastCruiseTimeoutRef.current);
+                lastCruiseTimeoutRef.current = null;
+            }
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const router = useRouter();
 
@@ -279,6 +297,62 @@ const MonitorPage = () => {
         }
     };
 
+    // ⭐ ADD: schedule gọi API last-cruise khi MQTT thiếu gps (tránh spam)
+    const scheduleRefreshLastCruise = () => {
+        if (!selectedDevice?.imei) return;
+
+        // debounce
+        if (lastCruiseTimeoutRef.current) {
+            clearTimeout(lastCruiseTimeoutRef.current);
+            lastCruiseTimeoutRef.current = null;
+        }
+
+        lastCruiseTimeoutRef.current = setTimeout(async () => {
+            const now = Date.now();
+
+            // rate-limit
+            if (now - lastCruiseCallAtRef.current < LAST_CRUISE_MIN_INTERVAL_MS) return;
+
+            // tránh gọi chồng
+            if (lastCruiseInFlightRef.current) return;
+
+            const token = localStorage.getItem('accessToken');
+            if (!token) return;
+
+            const imei = selectedDevice.imei;
+
+            try {
+                lastCruiseInFlightRef.current = true;
+                lastCruiseCallAtRef.current = now;
+
+                // (optional) nếu bạn muốn show thanh loading refresh, bật cái này:
+                // setLoadingCruise(true);
+
+                const cruise = await getLastCruise(token, imei);
+
+                if (!cruise || cruise.error) return;
+
+                setLastCruise(cruise);
+                setCruiseError(null);
+
+                // update map + address theo cruise mới
+                if (mapRef.current && markerRef.current && cruise.lat && cruise.lon && LMap) {
+                    const newLatLng = LMap.latLng(cruise.lat, cruise.lon);
+                    markerRef.current.setLatLng(newLatLng);
+                    mapRef.current.setView(newLatLng, 16);
+
+                    lastCoordsRef.current = { lat: cruise.lat, lon: cruise.lon };
+                    fetchAddress(cruise.lat, cruise.lon);
+                }
+            } catch (e) {
+                console.error('Refresh lastCruise error:', e);
+            } finally {
+                lastCruiseInFlightRef.current = false;
+                // setLoadingCruise(false);
+            }
+        }, LAST_CRUISE_DEBOUNCE_MS);
+    };
+
     const publishControlCommand = (payload) => {
         if (!selectedDevice || !selectedDevice.imei) {
             const msgText = t.error.missingDeviceOrImei;
@@ -340,6 +414,14 @@ const MonitorPage = () => {
     const handleSelectDevice = async (device) => {
         setSelectedDevice(device);
         setShowPopup(true);
+
+        // ⭐ ADD: đổi xe thì clear timer + reset anti-spam để khỏi gọi lạc xe
+        if (lastCruiseTimeoutRef.current) {
+            clearTimeout(lastCruiseTimeoutRef.current);
+            lastCruiseTimeoutRef.current = null;
+        }
+        lastCruiseInFlightRef.current = false;
+        lastCruiseCallAtRef.current = 0;
 
         // reset MQTT data khi đổi xe
         setLiveTelemetry(null);
@@ -468,6 +550,13 @@ const MonitorPage = () => {
         if (arr[1] !== selectedDevice.imei) return;
 
         if (!data || typeof data !== 'object') return;
+
+        // ⭐ CHANGE: nếu MQTT có message nhưng thiếu gps -> schedule gọi last-cruise
+        // (Bạn nói chỉ thiếu gps thôi => mình check đúng gps)
+        if (data.gps == null) {
+            scheduleRefreshLastCruise();
+        }
+
         setLiveTelemetry((prev) => {
             const updated = { ...(prev || {}), ...data };
 
@@ -606,13 +695,19 @@ const MonitorPage = () => {
         const latVal = src.lat;
         const lonVal = src.lon;
 
-        const accValNum = toNumberOrNull(mqttSrc.acc != null ? mqttSrc.acc : src.acc);
-        const spdNum = toNumberOrNull(mqttSrc.spd);
+        const accValNum = toNumberOrNull(
+            mqttSrc.acc != null ? mqttSrc.acc : src.acc != null ? src.acc : batteryStatus?.acc,
+        );
+
+        console.log('accValNum', accValNum);
+
+        const spdNum = toNumberOrNull(mqttSrc.spd || batteryStatus?.spd);
         const vgpNum = toNumberOrNull(mqttSrc.vgp);
 
-        // ⭐ gps: ưu tiên MQTT, nếu chưa có thì dùng gps từ lastCruise (src)
         const gpsValNum = toNumberOrNull(mqttSrc.gps != null ? mqttSrc.gps : src.gps);
+        const isAccOn = accValNum === 1;
 
+        console.log('gpsValNum', gpsValNum);
         let machineStatus = t.statusInfo.engineOn;
         if (accValNum === 1) {
             machineStatus = t.statusInfo.engineOff;
@@ -622,19 +717,15 @@ const MonitorPage = () => {
 
         let vehicleStatus = t.statusInfo.vehicleStopped;
 
-        if (accValNum === 1) {
-            vehicleStatus = t.statusInfo.vehicleParking;
-        } else if (accValNum === 0) {
-            let usedSpeed = null;
-            if (spdNum != null) usedSpeed = spdNum;
-            else if (vgpNum != null) usedSpeed = vgpNum;
+        let usedSpeed = spdNum ?? vgpNum;
 
-            if (usedSpeed == null) {
+        if (!isAccOn) {
+            vehicleStatus = t.statusInfo.vehicleParking;
+        } else {
+            if (usedSpeed == null || usedSpeed < 5) {
                 vehicleStatus = t.statusInfo.vehicleStopped;
-            } else if (usedSpeed > 0) {
-                vehicleStatus = t.statusInfo.vehicleRunning.replace('{speed}', String(usedSpeed));
             } else {
-                vehicleStatus = t.statusInfo.vehicleParking;
+                vehicleStatus = t.statusInfo.vehicleRunning.replace('{speed}', String(usedSpeed));
             }
         }
 
@@ -665,7 +756,7 @@ const MonitorPage = () => {
                     {t.statusInfo.vehicleStatus} {vehicleStatus}
                 </div>
 
-                {speed != null && (
+                {speed != null && speed > 5 && (
                     <div>
                         {t.statusInfo.speed} {speed} km/h
                     </div>
