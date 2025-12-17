@@ -315,7 +315,7 @@
         "firmware": "Firmware",
         "battery": "Battery",
         "speed": "Speed",
-        "acc": "ACC",
+        "acc": "Engine status",
         "running": "Running",
         "stopped": "Stopped",
         "position": "Location",

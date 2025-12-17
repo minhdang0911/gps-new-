@@ -1,33 +1,32 @@
-// app/report/charging-session/page.jsx
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
-import {
-    Card,
-    Form,
-    Input,
-    Button,
-    Row,
-    Col,
-    Table,
-    DatePicker,
-    Space,
-    Typography,
-    message,
-    Tooltip,
-    Grid,
-} from 'antd';
-import { SearchOutlined, ReloadOutlined, DownloadOutlined, QuestionCircleOutlined } from '@ant-design/icons';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography, Grid } from 'antd';
+import { SearchOutlined, ReloadOutlined, DownloadOutlined, SettingOutlined } from '@ant-design/icons';
+import { usePathname } from 'next/navigation';
+
 import { getChargingSessions } from '../../lib/api/chargingSession';
 import '../usage-session/usageSession.css';
 
-import { usePathname } from 'next/navigation';
 import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
-import * as XLSX from 'xlsx';
-import dayjs from 'dayjs';
-// ✅ helper
+
+// ✅ helper (existing)
 import { buildImeiToLicensePlateMap, attachLicensePlate } from '../../util/deviceMap';
+
+// ✅ reusable (existing)
+import ReportSortSelect from '../../components/report/ReportSortSelect';
+import ColumnManagerModal from '../../components/report/ColumnManagerModal';
+import { useReportColumns } from '../../hooks/useReportColumns';
+
+// ✅ extracted (new)
+import { useLangFromPath } from '../../features/usageSessionReport/locale';
+import { LOCKED_KEYS, STORAGE_KEY } from '../../features/chargingSessionReport/constants';
+import { applySortCharging } from '../../features/chargingSessionReport/utils';
+import { buildAllColsMeta } from '../../features/chargingSessionReport/columns/buildAllColsMeta';
+import { useChargingDeviceMap } from '../../features/chargingSessionReport/hooks/useChargingDeviceMap';
+import { useChargingSessionData } from '../../features/chargingSessionReport/hooks/useChargingSessionData';
+import { useChargingSessionExcel } from '../../features/chargingSessionReport/hooks/useChargingSessionExcel';
 
 const { RangePicker } = DatePicker;
 const { Title, Text } = Typography;
@@ -37,419 +36,105 @@ const locales = { vi, en };
 
 const ChargingSessionReportPage = () => {
     const [form] = Form.useForm();
-    const [data, setData] = useState([]);
-    const [loading, setLoading] = useState(false);
-
-    const [pagination, setPagination] = useState({
-        current: 1,
-        pageSize: 10,
-        total: 0,
-    });
-
-    // ✅ 2 maps
-    const [imeiToPlate, setImeiToPlate] = useState(new Map());
-    const [plateToImeis, setPlateToImeis] = useState(new Map());
-    const [loadingDeviceMap, setLoadingDeviceMap] = useState(false);
 
     const pathname = usePathname() || '/';
-    const [isEn, setIsEn] = useState(false);
-
     const screens = useBreakpoint();
     const isMobile = !screens.lg;
 
-    const isEnFromPath = useMemo(() => {
-        const segments = pathname.split('/').filter(Boolean);
-        const last = segments[segments.length - 1];
-        return last === 'en';
-    }, [pathname]);
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-
-        if (isEnFromPath) {
-            setIsEn(true);
-            localStorage.setItem('iky_lang', 'en');
-        } else {
-            const saved = localStorage.getItem('iky_lang');
-            setIsEn(saved === 'en');
-        }
-    }, [isEnFromPath]);
-
+    const { isEn } = useLangFromPath(pathname);
     const t = isEn ? locales.en.chargingSessionReport : locales.vi.chargingSessionReport;
 
-    const getAuthToken = () => {
-        if (typeof window === 'undefined') return '';
-        return localStorage.getItem('token') || localStorage.getItem('accessToken') || '';
-    };
+    // ✅ device maps
+    const { imeiToPlate, plateToImeis, loadingDeviceMap } = useChargingDeviceMap({
+        buildImeiToLicensePlateMap,
+    });
 
-    const normalize = (s) =>
-        String(s || '')
-            .trim()
-            .toLowerCase();
+    // ✅ data hook
+    const {
+        serverData,
+        fullData,
+        loading,
+        pagination,
+        setPagination,
+        sortMode,
+        setSortMode,
+        needFullData,
+        fetchPaged,
+        fetchAll,
+    } = useChargingSessionData({
+        form,
+        getChargingSessions,
+        isEn,
+        t,
+        imeiToPlate,
+        plateToImeis,
+        loadingDeviceMap,
+        attachLicensePlate,
+    });
 
-    const buildPayload = (values, page, limit) => {
-        const payload = { page, limit };
+    // ✅ FE sort (only when needFullData)
+    const sortedFull = useMemo(() => {
+        if (!needFullData) return fullData;
+        return applySortCharging(fullData, sortMode);
+    }, [needFullData, fullData, sortMode]);
 
-        if (values.chargeCode) payload.chargeCode = values.chargeCode.trim();
-        if (values.soh) payload.soh = values.soh;
+    const baseRows = useMemo(() => (needFullData ? sortedFull : serverData), [needFullData, sortedFull, serverData]);
 
-        // ✅ biển số -> imei
-        if (values.license_plate) {
-            const key = normalize(values.license_plate);
-            const imeis = plateToImeis.get(key) || [];
-            payload.imei = imeis[0] || '__NO_MATCH__';
-        }
+    const pagedData = useMemo(() => {
+        const { current, pageSize } = pagination;
+        const start = (current - 1) * pageSize;
+        const end = start + pageSize;
+        return (baseRows || []).slice(start, end);
+    }, [baseRows, pagination]);
 
-        if (values.timeRange?.length === 2) {
-            payload.start = values.timeRange[0].format('YYYY-MM-DD HH:mm:ss');
-            payload.end = values.timeRange[1].format('YYYY-MM-DD HH:mm:ss');
-        }
-
-        return payload;
-    };
-
-    // ✅ load device maps 1 lần
+    // ✅ keep total synced in full-mode
     useEffect(() => {
-        const loadMaps = async () => {
-            try {
-                setLoadingDeviceMap(true);
-                const token = getAuthToken();
-                if (!token) {
-                    setImeiToPlate(new Map());
-                    setPlateToImeis(new Map());
-                    return;
-                }
+        if (!needFullData) return;
+        setPagination((p) => ({ ...p, total: sortedFull.length }));
+    }, [needFullData, sortedFull.length, setPagination]);
 
-                const { imeiToPlate, plateToImeis } = await buildImeiToLicensePlateMap(token);
-                setImeiToPlate(imeiToPlate);
-                setPlateToImeis(plateToImeis);
-            } catch (e) {
-                console.error('Load device map failed:', e);
-                setImeiToPlate(new Map());
-                setPlateToImeis(new Map());
-            } finally {
-                setLoadingDeviceMap(false);
-            }
-        };
+    // ✅ excel
+    const { exportExcel } = useChargingSessionExcel({ isEn, t });
+    const onExport = () => exportExcel(baseRows);
 
-        loadMaps();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    const formatDateTime = (value) => (value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '--');
-
-    const fetchData = async (page = 1, pageSize = 10) => {
-        try {
-            setLoading(true);
-            const values = form.getFieldsValue();
-            const payload = buildPayload(values, page, pageSize);
-
-            const res = await getChargingSessions(payload);
-            const list = res.data || [];
-
-            // ✅ attach biển số
-            const enriched = attachLicensePlate(list, imeiToPlate);
-
-            setData(enriched);
-            setPagination({
-                current: res.page || page,
-                pageSize: pageSize,
-                total: res.total || 0,
-            });
-        } catch (err) {
-            console.error('Lỗi lấy charging session: ', err);
-            message.error(isEn ? 'Failed to load charging sessions' : 'Không tải được danh sách phiên sạc');
-        } finally {
-            setLoading(false);
-        }
+    const onFinish = () => {
+        setPagination((p) => ({ ...p, current: 1 }));
+        if (needFullData) fetchAll();
+        else fetchPaged(1, pagination.pageSize);
     };
-
-    // fetch lần đầu + khi maps sẵn sàng
-    useEffect(() => {
-        fetchData(1, pagination.pageSize);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [imeiToPlate, plateToImeis]);
-
-    const onFinish = () => fetchData(1, pagination.pageSize);
 
     const onReset = () => {
         form.resetFields();
-        fetchData(1, pagination.pageSize);
+        setSortMode('none');
+        setPagination((p) => ({ ...p, current: 1 }));
+        fetchPaged(1, pagination.pageSize);
     };
 
     const handleTableChange = (pager) => {
-        fetchData(pager.current, pager.pageSize);
+        const next = { current: pager.current, pageSize: pager.pageSize };
+        setPagination((p) => ({ ...p, ...next }));
+        if (!needFullData) fetchPaged(next.current, next.pageSize);
     };
 
-    const handleExportExcel = () => {
-        if (!data || data.length === 0) {
-            message.warning(isEn ? 'No data to export' : 'Không có dữ liệu để xuất');
-            return;
-        }
+    // ======= Column Manager =======
+    const [colModalOpen, setColModalOpen] = useState(false);
 
-        const rows = data.map((item, index) => ({
-            [t.table.index]: (pagination.current - 1) * pagination.pageSize + index + 1,
-            IMEI: item.imei || '',
-            [isEn ? 'License plate' : 'Biển số']: item.license_plate || '',
-            [t.table.chargeCode]: item.chargeCode || '',
-            [t.table.soh]: item.soh ?? '',
-            [t.table.socStart]: item.socStart ?? '',
-            [t.table.socEnd]: item.socEnd ?? '',
-            [t.table.tempMax]: item.tempMax ?? '',
-            [t.table.tempMin]: item.tempMin ?? '',
-            [t.table.tempAvg]: item.tempAvg ?? '',
-            [t.table.voltageMax]: item.voltageMax ?? '',
-            [t.table.voltageMin]: item.voltageMin ?? '',
-            [t.table.voltageAvg]: item.voltageAvg ?? '',
-            [t.table.chargeLat]: item.chargeLat ?? '',
-            [t.table.chargeLng]: item.chargeLng ?? '',
-            [t.table.startTime]: formatDateTime(item.start),
-            [t.table.endTime]: formatDateTime(item.end),
+    const allColsMeta = useMemo(() => {
+        return buildAllColsMeta({ t, isEn, isMobile });
+    }, [t, isEn, isMobile]);
+
+    const { columns, visibleOrder, setVisibleOrder, allColsForModal } = useReportColumns({
+        storageKey: STORAGE_KEY,
+        allColsMeta,
+        lockedKeys: LOCKED_KEYS,
+    });
+
+    const tableData = useMemo(() => {
+        return (pagedData || []).map((row, idx) => ({
+            ...row,
+            __rowNo: (pagination.current - 1) * pagination.pageSize + idx + 1,
         }));
-
-        const wb = XLSX.utils.book_new();
-        const ws = XLSX.utils.json_to_sheet(rows);
-        XLSX.utils.book_append_sheet(wb, ws, 'ChargingSession');
-
-        const fileName = isEn ? `charging-session-report-${Date.now()}.xlsx` : `bao-cao-sac-${Date.now()}.xlsx`;
-        XLSX.writeFile(wb, fileName);
-    };
-
-    // ✅ Tooltip giải thích từng cột
-    const colHelp = {
-        index: {
-            vi: 'Số thứ tự của dòng trong bảng báo cáo.',
-            en: 'Order number of the row in the report.',
-        },
-
-        imei: {
-            vi: 'Mã thiết bị gắn trên xe. Hệ thống dùng mã này để xác định xe và biển số.',
-            en: 'Device code installed on the vehicle. Used by the system to identify the vehicle and license plate.',
-        },
-
-        license_plate: {
-            vi: 'Biển số xe tương ứng với thiết bị. Có thể trống nếu hệ thống chưa liên kết.',
-            en: 'Vehicle license plate linked to the device. May be empty if not yet linked.',
-        },
-
-        chargeCode: {
-            vi: 'Mã nhận diện của phiên sạc. Mỗi lần sạc pin sẽ có một mã riêng.',
-            en: 'Charging session ID. Each charging session has its own unique code.',
-        },
-
-        socStart: {
-            vi: 'Phần trăm pin còn lại tại thời điểm bắt đầu sạc.',
-            en: 'Battery percentage at the start of charging.',
-        },
-
-        socEnd: {
-            vi: 'Phần trăm pin tại thời điểm kết thúc sạc.',
-            en: 'Battery percentage at the end of charging.',
-        },
-
-        soh: {
-            vi: 'Tình trạng sức khỏe của pin. Giá trị càng cao thì pin càng tốt.',
-            en: 'Battery health status. Higher value means better battery condition.',
-        },
-
-        tempMax: {
-            vi: 'Nhiệt độ pin cao nhất ghi nhận trong suốt quá trình sạc.',
-            en: 'Highest battery temperature recorded during charging.',
-        },
-
-        tempMin: {
-            vi: 'Nhiệt độ pin thấp nhất ghi nhận trong quá trình sạc.',
-            en: 'Lowest battery temperature recorded during charging.',
-        },
-
-        tempAvg: {
-            vi: 'Nhiệt độ pin trung bình trong suốt phiên sạc.',
-            en: 'Average battery temperature during the charging session.',
-        },
-
-        voltageMax: {
-            vi: 'Mức điện áp cao nhất của pin trong quá trình sạc.',
-            en: 'Highest voltage level during charging.',
-        },
-
-        voltageMin: {
-            vi: 'Mức điện áp thấp nhất của pin trong quá trình sạc.',
-            en: 'Lowest voltage level during charging.',
-        },
-
-        voltageAvg: {
-            vi: 'Mức điện áp trung bình của pin trong phiên sạc.',
-            en: 'Average voltage level during the charging session.',
-        },
-
-        chargeLat: {
-            vi: 'Vị trí sạc – vĩ độ (tọa độ trên bản đồ).',
-            en: 'Charging location latitude (map coordinate).',
-        },
-
-        chargeLng: {
-            vi: 'Vị trí sạc – kinh độ (tọa độ trên bản đồ).',
-            en: 'Charging location longitude (map coordinate).',
-        },
-
-        startTime: {
-            vi: 'Thời điểm bắt đầu sạc pin.',
-            en: 'Time when charging started.',
-        },
-
-        endTime: {
-            vi: 'Thời điểm kết thúc sạc pin.',
-            en: 'Time when charging ended.',
-        },
-    };
-
-    // ✅ Title “Label ?”
-    const ColTitle = ({ label, tip }) => (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
-            <span>{label}</span>
-
-            <Tooltip
-                title={tip}
-                placement="top"
-                trigger={isMobile ? ['click'] : ['hover']}
-                classNames={{ root: 'table-col-tooltip' }}
-                styles={{ root: { maxWidth: 260 }, container: { maxWidth: 260 } }}
-                mouseEnterDelay={0.1}
-                mouseLeaveDelay={0.1}
-            >
-                <span
-                    className="table-col-help"
-                    onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                    }}
-                    onMouseDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                    }}
-                    style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        width: 16,
-                        height: 16,
-                        cursor: 'help',
-                        pointerEvents: 'auto',
-                    }}
-                >
-                    <QuestionCircleOutlined style={{ fontSize: 12, color: '#94a3b8' }} />
-                </span>
-            </Tooltip>
-        </span>
-    );
-
-    const columns = [
-        {
-            title: <ColTitle label={t.table.index} tip={isEn ? colHelp.index.en : colHelp.index.vi} />,
-            dataIndex: 'index',
-            width: 60,
-            render: (_, __, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
-            fixed: 'left',
-        },
-        {
-            title: <ColTitle label="IMEI" tip={isEn ? colHelp.imei?.en : colHelp.imei?.vi} />,
-            dataIndex: 'imei',
-            ellipsis: true,
-            width: 150,
-        },
-        {
-            title: (
-                <ColTitle
-                    label={isEn ? 'License plate' : 'Biển số'}
-                    tip={isEn ? colHelp.license_plate?.en : colHelp.license_plate?.vi}
-                />
-            ),
-            dataIndex: 'license_plate',
-            ellipsis: true,
-            width: 140,
-        },
-        {
-            title: <ColTitle label={t.table.chargeCode} tip={isEn ? colHelp.chargeCode?.en : colHelp.chargeCode?.vi} />,
-            dataIndex: 'chargeCode',
-            ellipsis: true,
-            width: 260,
-        },
-        {
-            title: <ColTitle label={t.table.soh} tip={isEn ? colHelp.soh.en : colHelp.soh.vi} />,
-            dataIndex: 'soh',
-            width: 80,
-        },
-        {
-            title: <ColTitle label={t.table.socStart} tip={isEn ? colHelp.socStart.en : colHelp.socStart.vi} />,
-            dataIndex: 'socStart',
-            width: 120,
-        },
-        {
-            title: <ColTitle label={t.table.socEnd} tip={isEn ? colHelp.socEnd.en : colHelp.socEnd.vi} />,
-            dataIndex: 'socEnd',
-            width: 120,
-        },
-
-        {
-            title: <ColTitle label={t.table.tempMax} tip={isEn ? colHelp.tempMax.en : colHelp.tempMax.vi} />,
-            dataIndex: 'tempMax',
-            width: 150,
-        },
-        {
-            title: <ColTitle label={t.table.tempMin} tip={isEn ? colHelp.tempMin.en : colHelp.tempMin.vi} />,
-            dataIndex: 'tempMin',
-            width: 150,
-        },
-        {
-            title: <ColTitle label={t.table.tempAvg} tip={isEn ? colHelp.tempAvg.en : colHelp.tempAvg.vi} />,
-            dataIndex: 'tempAvg',
-            width: 165,
-        },
-
-        {
-            title: <ColTitle label={t.table.voltageMax} tip={isEn ? colHelp.voltageMax?.en : colHelp.voltageMax?.vi} />,
-            dataIndex: 'voltageMax',
-            width: 120,
-        },
-        {
-            title: <ColTitle label={t.table.voltageMin} tip={isEn ? colHelp.voltageMin?.en : colHelp.voltageMin?.vi} />,
-            dataIndex: 'voltageMin',
-            width: 120,
-        },
-        {
-            title: <ColTitle label={t.table.voltageAvg} tip={isEn ? colHelp.voltageAvg?.en : colHelp.voltageAvg?.vi} />,
-            dataIndex: 'voltageAvg',
-            width: 160,
-        },
-
-        {
-            title: <ColTitle label={t.table.chargeLat} tip={isEn ? colHelp.chargeLat?.en : colHelp.chargeLat?.vi} />,
-            dataIndex: 'chargeLat',
-            width: 120,
-        },
-        {
-            title: <ColTitle label={t.table.chargeLng} tip={isEn ? colHelp.chargeLng?.en : colHelp.chargeLng?.vi} />,
-            dataIndex: 'chargeLng',
-            width: 120,
-        },
-
-        {
-            title: <ColTitle label={t.table.startTime} tip={isEn ? colHelp.startTime.en : colHelp.startTime.vi} />,
-            dataIndex: 'startTime',
-            ellipsis: true,
-            render: (val) => formatDateTime(val),
-            width: 170,
-        },
-        {
-            title: <ColTitle label={t.table.endTime} tip={isEn ? colHelp.endTime.en : colHelp.endTime.vi} />,
-            dataIndex: 'endTime',
-            ellipsis: true,
-            render: (val) => formatDateTime(val),
-            width: 170,
-        },
-    ];
-
-    const customLocale = { emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu ' };
+    }, [pagedData, pagination.current, pagination.pageSize]);
 
     return (
         <div className="usage-report-page">
@@ -505,24 +190,38 @@ const ChargingSessionReportPage = () => {
                         size="small"
                         title={t.table.title}
                         extra={
-                            <Space size={12}>
-                                <Text type="secondary" style={{ fontSize: 12 }}>
+                            <Space size={12} wrap>
+                                {/* <Text type="secondary" style={{ fontSize: 12 }}>
                                     {t.table.total.replace('{total}', String(pagination.total))}
-                                </Text>
-                                <Button icon={<DownloadOutlined />} size="small" onClick={handleExportExcel}>
+                                </Text> */}
+
+                                <ReportSortSelect
+                                    locale={isEn ? 'en' : 'vi'}
+                                    value={sortMode}
+                                    onChange={(v) => {
+                                        setSortMode(v);
+                                        setPagination((p) => ({ ...p, current: 1 }));
+                                    }}
+                                />
+
+                                <Button icon={<SettingOutlined />} size="small" onClick={() => setColModalOpen(true)}>
+                                    {isEn ? 'Columns' : 'Cột'}
+                                </Button>
+
+                                <Button icon={<DownloadOutlined />} size="small" onClick={onExport}>
                                     {isEn ? 'Export Excel' : 'Xuất Excel'}
                                 </Button>
                             </Space>
                         }
                     >
                         <Table
-                            rowKey={(record) =>
-                                record._id || record.sessionId || `${record.imei}-${record.start}-${record.end}`
+                            rowKey={(r) =>
+                                r._id || r.sessionId || `${r.imei}-${r.start || r.startTime}-${r.end || r.endTime}`
                             }
                             columns={columns}
-                            dataSource={data}
+                            dataSource={tableData}
                             loading={loading}
-                            locale={customLocale}
+                            locale={{ emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu' }}
                             pagination={{
                                 current: pagination.current,
                                 pageSize: pagination.pageSize,
@@ -530,6 +229,7 @@ const ChargingSessionReportPage = () => {
                                 showSizeChanger: true,
                                 pageSizeOptions: ['10', '20', '50', '100'],
                                 showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
+                                showQuickJumper: true,
                             }}
                             onChange={handleTableChange}
                             scroll={{ x: 1400 }}
@@ -537,6 +237,27 @@ const ChargingSessionReportPage = () => {
                     </Card>
                 </Col>
             </Row>
+
+            <ColumnManagerModal
+                open={colModalOpen}
+                onClose={() => setColModalOpen(false)}
+                allCols={allColsForModal}
+                visibleOrder={visibleOrder}
+                setVisibleOrder={setVisibleOrder}
+                storageKey={STORAGE_KEY}
+                lockedKeys={LOCKED_KEYS}
+                texts={{
+                    title: isEn ? 'Manage columns' : 'Quản lý cột',
+                    searchPlaceholder: isEn ? 'Search column' : 'Tìm tên cột',
+                    visibleTitle: isEn ? 'Visible columns' : 'Cột hiển thị',
+                    hint: isEn
+                        ? 'Drag to reorder. Uncheck or press X to hide.'
+                        : 'Kéo thả để đổi vị trí. Bỏ tick hoặc bấm X để ẩn cột.',
+                    apply: isEn ? 'Apply' : 'Áp dụng',
+                    cancel: isEn ? 'Cancel' : 'Huỷ',
+                    reset: isEn ? 'Reset' : 'Đặt lại',
+                }}
+            />
         </div>
     );
 };

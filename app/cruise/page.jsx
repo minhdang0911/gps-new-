@@ -3,8 +3,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './cruise.css';
 
-import markerIconImg from '../assets/marker-red.png';
-
+// import markerIconImg from '../assets/marker-red.png';
+import markerIconImg from '../assets/xe2.png';
 import { getCruiseHistory } from '../lib/api/cruise';
 import { getDevices } from '../lib/api/devices';
 import cruiseCacheManager from '../lib/cache/CruiseCacheManager';
@@ -17,6 +17,7 @@ import { formatDateFromDevice } from '../util/FormatDate';
 import loading from '../assets/loading.gif';
 import Image from 'next/image';
 import { Tooltip, Select, List as AntList } from 'antd';
+import { reverseGeocodeAddress } from '../lib/address/reverseGeocode';
 
 const locales = { vi, en };
 
@@ -33,19 +34,6 @@ const GOONG_KEYS = [
     process.env.NEXT_PUBLIC_GOONG_API_KEY7,
     process.env.NEXT_PUBLIC_GOONG_API_KEY8,
 ].filter(Boolean);
-
-const VIETMAP_KEYS = [
-    process.env.NEXT_PUBLIC_VIETMAP_API_KEY,
-    process.env.NEXT_PUBLIC_VIETMAP_API_KEY1,
-    process.env.NEXT_PUBLIC_VIETMAP_API_KEY2,
-    process.env.NEXT_PUBLIC_VIETMAP_API_KEY3,
-    process.env.NEXT_PUBLIC_VIETMAP_API_KEY4,
-].filter(Boolean);
-
-const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_API_KEY;
-const TOMTOM_TOKEN = process.env.NEXT_PUBLIC_TOMTOM_API_KEY || process.env.NEXT_PUBLIC_TOMTOM_API_KEY_1 || '';
-const TRACKASIA_KEY = process.env.NEXT_PUBLIC_TRACKASIA_API_KEY || '';
-const OPENCAGE_KEY = process.env.NEXT_PUBLIC_OPENCAGE_API_KEY || '';
 
 // ===============================
 // 🔑 NHIỀU GOONG API KEY + XOAY VÒNG
@@ -84,6 +72,23 @@ const distanceMeters = (a, b) => {
 
     const c = 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
     return EARTH_RADIUS_M * c;
+};
+
+// ===============================
+// 🧭 TÍNH HƯỚNG DI CHUYỂN (BEARING)
+// ===============================
+const getBearing = (lat1, lon1, lat2, lon2) => {
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+    const y = Math.sin(Δλ) * Math.cos(φ2);
+    const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+
+    let θ = Math.atan2(y, x);
+    θ = (θ * 180) / Math.PI;
+
+    return (θ + 360) % 360; // 0–360°
 };
 
 // 🔥 gom điểm trong bán kính ~100m
@@ -242,7 +247,7 @@ const getGoongRoadDistanceKm = async (startPoint, endPoint) => {
     const destinations = `${endPoint.lat},${endPoint.lon}`;
 
     // 👉 dùng v2
-    const url = `https://rsapi.goong.io/v2/distancematrix?origins=${origins}&destinations=${destinations}&vehicle=car&api_key=${apiKey}`;
+    const url = `https://rsapi.goong.io/v2/distancematrix?origins=${origins}&destinations=${destinations}&vehicle=bike&api_key=${apiKey}`;
 
     try {
         const res = await fetch(url);
@@ -293,9 +298,20 @@ const toInputDateTime = (date) => {
     return localISO.slice(0, 16);
 };
 
+const normalizeAngle = (a) => ((a % 360) + 360) % 360;
+
+const angleDiff = (a, b) => {
+    let d = normalizeAngle(a - b);
+    if (d > 180) d -= 360;
+    return Math.abs(d);
+};
+
 const CruisePage = () => {
     const pathname = usePathname() || '/';
     const [isEn, setIsEn] = useState(false);
+    const [playbackRate, setPlaybackRate] = useState(1);
+    const lastBearingRef = useRef(null);
+
     const listWrapRef = useRef(null);
 
     useEffect(() => {
@@ -449,7 +465,7 @@ const CruisePage = () => {
             const imei = d.imei || '---';
             const phone = d.phone_number || '';
 
-            const rawLabel = `${plate} – ${imei}${phone ? ' – ' + phone : ''}`;
+            const rawLabel = `${plate} – ${imei}${phone ? '' : ''}`;
 
             return {
                 value: d._id,
@@ -496,149 +512,28 @@ const CruisePage = () => {
     // fetch address + cache
     const fetchAddressForPoint = async (idx) => {
         if (!routeData.length) return;
+
         const point = routeData[idx];
-        if (!point) return;
+        if (!point || point.address || point.lat == null || point.lon == null) return;
 
-        const { lat, lon, address } = point;
-        if (lat == null || lon == null) return;
-        if (address) return;
-
-        const latNum = Number(lat);
-        const lonNum = Number(lon);
-        if (Number.isNaN(latNum) || Number.isNaN(lonNum)) return;
-
-        const key = `${latNum.toFixed(6)},${lonNum.toFixed(6)}`;
-
-        const cachedAddr = addressCacheRef.current[key];
-        if (cachedAddr) {
+        const key = `${point.lat.toFixed(6)},${point.lon.toFixed(6)}`;
+        if (addressCacheRef.current[key]) {
             setRouteData((prev) => {
                 const clone = [...prev];
-                clone[idx] = { ...clone[idx], address: cachedAddr };
+                clone[idx] = { ...clone[idx], address: addressCacheRef.current[key] };
                 return clone;
             });
             return;
         }
 
         setLoadingAddress(true);
-        setAddressError(null);
 
-        const lang = isEn ? 'en' : 'vi';
+        const res = await reverseGeocodeAddress(point.lat, point.lon, {
+            lang: isEn ? 'en' : 'vi',
+            isEn,
+        });
 
-        // ================================
-        // PROVIDERS (CÓ LANGUAGE)
-        // ================================
-
-        // 1️⃣ Goong
-        const tryGoong = async () => {
-            try {
-                return (await callGoongWithRotation(latNum, lonNum, lang)) || '';
-            } catch {
-                return '';
-            }
-        };
-
-        // 2️⃣ VietMap (không hỗ trợ language)
-        const tryVietMap = async () => {
-            for (let i = 0; i < VIETMAP_KEYS.length; i++) {
-                const keyVm = VIETMAP_KEYS[i];
-                const url = `https://api.vnmap.com.vn/geocoding?latlng=${latNum},${lonNum}&key=${keyVm}`;
-                try {
-                    const res = await fetch(url);
-                    if (res.status === 403 || res.status === 429) continue;
-                    if (!res.ok) continue;
-                    const data = await res.json();
-                    const addr = data?.results?.[0]?.formatted_address || '';
-                    if (addr) return addr;
-                } catch {}
-            }
-            return '';
-        };
-
-        // 3️⃣ TrackAsia (không hỗ trợ language)
-        const tryTrackAsia = async () => {
-            if (!TRACKASIA_KEY) return '';
-            const url = `https://maps.track-asia.com/api/v2/geocode/json?latlng=${latNum},${lonNum}&key=${TRACKASIA_KEY}`;
-            try {
-                const res = await fetch(url);
-                if (!res.ok) return '';
-                const data = await res.json();
-                return data?.results?.[0]?.formatted_address || '';
-            } catch {
-                return '';
-            }
-        };
-
-        // 4️⃣ OpenCage (CÓ language)
-        const tryOpenCage = async () => {
-            if (!OPENCAGE_KEY) return '';
-            const url = `https://api.opencagedata.com/geocode/v1/json?q=${latNum}+${lonNum}&language=${lang}&key=${OPENCAGE_KEY}`;
-            try {
-                const res = await fetch(url);
-                if (!res.ok) return '';
-                const data = await res.json();
-                return data?.results?.[0]?.formatted || '';
-            } catch {
-                return '';
-            }
-        };
-
-        // 5️⃣ TomTom (CÓ language)
-        const tryTomTom = async () => {
-            if (!TOMTOM_TOKEN) return '';
-            const ttLang = lang === 'en' ? 'en-US' : 'vi-VN';
-            const url = `https://api.tomtom.com/search/2/reverseGeocode/${latNum},${lonNum}.json?language=${ttLang}&key=${TOMTOM_TOKEN}`;
-            try {
-                const res = await fetch(url);
-                if (!res.ok) return '';
-                const data = await res.json();
-                return data?.addresses?.[0]?.address?.freeformAddress || '';
-            } catch {
-                return '';
-            }
-        };
-
-        // 6️⃣ Mapbox (CÓ language)
-        const tryMapbox = async () => {
-            if (!MAPBOX_TOKEN) return '';
-            const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lonNum},${latNum}.json?language=${lang}&limit=1&access_token=${MAPBOX_TOKEN}`;
-            try {
-                const res = await fetch(url);
-                if (!res.ok) return '';
-                const data = await res.json();
-                return data?.features?.[0]?.place_name || '';
-            } catch {
-                return '';
-            }
-        };
-
-        // 7️⃣ Nominatim (CÓ language)
-        const tryNominatim = async () => {
-            const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latNum}&lon=${lonNum}&zoom=18&addressdetails=1&accept-language=${lang}`;
-            try {
-                const res = await fetch(url);
-                if (!res.ok) return '';
-                const data = await res.json();
-                return data?.display_name || '';
-            } catch {
-                return '';
-            }
-        };
-
-        // ===========================
-        // THỰC THI TUẦN TỰ ƯU TIÊN
-        // ===========================
-        const providers = [tryGoong, tryVietMap, tryTrackAsia, tryOpenCage, tryTomTom, tryMapbox, tryNominatim];
-
-        let addr = '';
-
-        for (const fn of providers) {
-            addr = await fn();
-            if (addr) break;
-        }
-
-        if (!addr) {
-            setAddressError(t.error.addressFailed);
-        }
+        const addr = res?.address || '';
 
         addressCacheRef.current[key] = addr;
 
@@ -886,23 +781,19 @@ const CruisePage = () => {
                 const label = isStart ? 'A' : 'B';
                 const divIcon = LMap.divIcon({
                     className: 'iky-cruise-ab-icon',
-                    html: label,
-                    iconSize: [18, 18],
-                    iconAnchor: [9, 9],
+                    html: `<span>${label}</span>`,
+                    iconSize: [28, 28],
+                    iconAnchor: [14, 14],
                 });
 
                 const abMarker = LMap.marker([p.lat, p.lon], {
                     icon: divIcon,
+                    zIndexOffset: 2000,
                 }).addTo(map);
+
                 abLabelMarkersRef.current.push(abMarker);
 
-                if (abMarker.setZIndexOffset) {
-                    abMarker.setZIndexOffset(1000);
-                }
-
-                abMarker.on('click', () => {
-                    handlePointClick(idx);
-                });
+                abMarker.on('click', () => handlePointClick(idx));
             }
 
             marker.on('click', () => {
@@ -927,11 +818,12 @@ const CruisePage = () => {
 
         const customIcon = LMap.icon({
             iconUrl: markerIconImg.src,
-            iconSize: [36, 36],
-            iconAnchor: [18, 36],
+            iconSize: [50, 50], // ⬅️ tăng size
+            iconAnchor: [24, 24], // ⬅️ luôn = 1/2 size
         });
 
         movingMarkerRef.current = LMap.marker([firstPoint.lat, firstPoint.lon], { icon: customIcon }).addTo(map);
+        movingMarkerRef.current.setZIndexOffset(15000);
 
         setIsPlaying(false);
         isPlayingRef.current = false;
@@ -981,18 +873,16 @@ const CruisePage = () => {
         isPlayingRef.current = isPlaying;
 
         if (!isPlaying) {
-            if (animationFrameRef.current !== null) {
+            if (animationFrameRef.current) {
                 cancelAnimationFrame(animationFrameRef.current);
                 animationFrameRef.current = null;
             }
             return;
         }
 
-        if (animationFrameRef.current !== null) {
-            cancelAnimationFrame(animationFrameRef.current);
-        }
+        const BASE_SPEED = 0.00025;
+        const speed = BASE_SPEED * playbackRate;
 
-        const speed = 0.0015;
         let lastTime = performance.now();
 
         const step = (now) => {
@@ -1009,6 +899,7 @@ const CruisePage = () => {
                 return;
             }
 
+            // ===== tiến timeline =====
             t += dt * speed;
 
             while (t >= 1 && segmentIndex < routeData.length - 1) {
@@ -1028,15 +919,29 @@ const CruisePage = () => {
             const pA = routeData[segmentIndex];
             const pB = routeData[segmentIndex + 1];
 
-            if (pA.lat == null || pA.lon == null || pB.lat == null || pB.lon == null) {
+            if (!pA || !pB || pA.lat == null || pA.lon == null || pB.lat == null || pB.lon == null) {
                 animationFrameRef.current = requestAnimationFrame(step);
                 return;
             }
 
+            // ===== 1️⃣ DI CHUYỂN =====
             const lat = pA.lat + (pB.lat - pA.lat) * t;
             const lon = pA.lon + (pB.lon - pA.lon) * t;
 
             movingMarkerRef.current.setLatLng([lat, lon]);
+
+            // ===== 2️⃣ XOAY ICON (TOP-DOWN → XOAY TRỰC TIẾP) =====
+            const bearing = getBearing(pA.lat, pA.lon, pB.lat, pB.lon);
+            const finalBearing = normalizeAngle(bearing);
+
+            const el = movingMarkerRef.current.getElement();
+            if (el) {
+                el.style.transformOrigin = 'center center';
+
+                // giữ translate của Leaflet, chỉ thay rotate
+                const baseTransform = el.style.transform.replace(/rotate\([^)]*\)/g, '');
+                el.style.transform = `${baseTransform} rotate(${finalBearing}deg)`;
+            }
 
             animationFrameRef.current = requestAnimationFrame(step);
         };
@@ -1044,12 +949,12 @@ const CruisePage = () => {
         animationFrameRef.current = requestAnimationFrame(step);
 
         return () => {
-            if (animationFrameRef.current !== null) {
+            if (animationFrameRef.current) {
                 cancelAnimationFrame(animationFrameRef.current);
                 animationFrameRef.current = null;
             }
         };
-    }, [isPlaying, routeData]);
+    }, [isPlaying, routeData, playbackRate]);
 
     // LOAD ROUTE
     const handleLoadRoute = async () => {
@@ -1347,6 +1252,17 @@ const CruisePage = () => {
                                 <button onClick={handleReset} disabled={!routeData.length}>
                                     ⏹
                                 </button>
+                                <select
+                                    value={playbackRate}
+                                    onChange={(e) => setPlaybackRate(Number(e.target.value))}
+                                    className="iky-cruise__rate"
+                                >
+                                    <option value={0.5}>0.5x</option>
+                                    <option value={1}>1x</option>
+                                    <option value={1.5}>1.5x</option>
+                                    <option value={2}>2x</option>
+                                </select>
+
                                 <input
                                     type="range"
                                     min={0}

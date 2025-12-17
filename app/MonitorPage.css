@@ -24,7 +24,7 @@
 
 .iky-monitor {
     display: flex;
-    height: calc(100vh - 104px);
+    height: calc(100vh - 50px);
     background: #f3f4f6;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }

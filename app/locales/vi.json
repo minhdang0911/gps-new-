@@ -313,7 +313,7 @@
         "firmware": "Firmware",
         "battery": "Pin",
         "speed": "Vận tốc",
-        "acc": "ACC",
+        "acc": "Trạng thái máy",
         "running": "Đang chạy",
         "stopped": "Tắt máy",
         "position": "Vị trí",

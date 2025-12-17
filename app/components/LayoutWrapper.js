@@ -32,7 +32,8 @@ export default function LayoutWrapper({ children }) {
                 }}
             >
                 <main style={{ flex: 1 }}>{children}</main>
-                {!isLoginPage && <AppFooter />}
+
+                {!isLoginPage && <AppFooter style={{ marginTop: 'auto' }} />}
             </div>
         </>
     );

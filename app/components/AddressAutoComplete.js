@@ -14,6 +14,7 @@ const GOONG_KEYS = [
     process.env.NEXT_PUBLIC_GOONG_API_KEY5,
     process.env.NEXT_PUBLIC_GOONG_API_KEY6,
     process.env.NEXT_PUBLIC_GOONG_API_KEY7,
+    process.env.NEXT_PUBLIC_GOONG_API_KEY8,
 ].filter(Boolean); // bỏ undefined / null
 
 let goongKeyIndex = 0;
@@ -218,21 +219,26 @@ export default function AddressAutoComplete({ value, onChange, placeholder }) {
             options={options}
             style={{ width: '100%' }}
             allowClear
-            onSearch={fetchSuggestions}
             onChange={(val) => {
-                // GÕ MƯỢT: chỉ đổi state nội bộ, KHÔNG gọi onChange parent
+                // chỉ đổi state nội bộ (khi clear hoặc khi AutoComplete thay đổi)
                 setInnerValue(val || '');
             }}
             onSelect={(val, option) => {
-                // Khi user chọn 1 dòng → mới sync lên parent
                 setInnerValue(val);
-                if (onChange) {
-                    onChange(val, { place_id: option?.place_id, raw: option?.raw });
-                }
+                onChange?.(val, { place_id: option?.place_id, raw: option?.raw });
             }}
             notFoundContent={loading ? 'Đang tìm...' : null}
         >
-            <Input placeholder={placeholder || 'Nhập địa chỉ...'} prefix={<EnvironmentOutlined />} />
+            <Input
+                placeholder={placeholder || 'Nhập địa chỉ...'}
+                prefix={<EnvironmentOutlined />}
+                value={innerValue}
+                onChange={(e) => {
+                    const v = e.target.value;
+                    setInnerValue(v); // gõ mượt
+                    fetchSuggestions(v); // ✅ thay cho AutoComplete.onSearch
+                }}
+            />
         </AutoComplete>
     );
 }

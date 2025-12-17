@@ -692,6 +692,7 @@ export default function ManageDevicesPage() {
         </Space>
     );
 
+    console.log('selectedDevice', selectedDevice);
     /* =========================
         RENDER DETAIL MODE
     ========================= */
@@ -715,7 +716,7 @@ export default function ManageDevicesPage() {
                             <Descriptions.Item label={t.deviceType}>
                                 {selectedDevice.device_category_id?.name}
                             </Descriptions.Item>
-                            <Descriptions.Item label={t.firmware}>{selectedDevice.version || '-'}</Descriptions.Item>
+                            <Descriptions.Item label={t.firmware}>{cruiseInfo?.fwr || '-'}</Descriptions.Item>
                             <Descriptions.Item label={t.battery}>{batteryInfo?.soc ?? '--'}%</Descriptions.Item>
                             <Descriptions.Item label={t.speed}>{cruiseInfo?.spd || 0} km/h</Descriptions.Item>
                             <Descriptions.Item label={t.acc}>

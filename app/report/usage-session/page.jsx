@@ -1,24 +1,8 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
-import {
-    Card,
-    Form,
-    Input,
-    Button,
-    Row,
-    Col,
-    Table,
-    DatePicker,
-    Space,
-    Typography,
-    message,
-    Tooltip,
-    Grid,
-} from 'antd';
-import { SearchOutlined, ReloadOutlined, QuestionCircleOutlined } from '@ant-design/icons';
-import dayjs from 'dayjs';
-import * as XLSX from 'xlsx';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography, Grid } from 'antd';
+import { SearchOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 
 import { getUsageSessions } from '../../lib/api/usageSession';
@@ -26,6 +10,19 @@ import './usageSession.css';
 
 import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
+
+// ✅ reusable
+import ColumnManagerModal from '../../components/report/ColumnManagerModal';
+import { useReportColumns } from '../../hooks/useReportColumns';
+import ReportSortSelect from '../../components/report/ReportSortSelect';
+
+// ✅ extracted
+import { LOCKED_KEYS, STORAGE_KEY } from '../../features/usageSessionReport/constants';
+import { useLangFromPath } from '../../features/usageSessionReport/locale';
+import { applyClientFilterSort, buildGrouped } from '../../features/usageSessionReport/utils';
+import { buildAllColsMeta } from '../../features/usageSessionReport/columns/buildAllColsMeta';
+import { useUsageSessionData } from '../../features/usageSessionReport/hooks/useUsageSessionData';
+import { useUsageSessionExcel } from '../../features/usageSessionReport/hooks/useUsageSessionExcel';
 
 const { RangePicker } = DatePicker;
 const { Title, Text } = Typography;
@@ -35,403 +32,147 @@ const locales = { vi, en };
 
 const UsageSessionReportPage = () => {
     const [form] = Form.useForm();
-    const [data, setData] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const [exporting, setExporting] = useState(false);
-    const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 });
 
     const pathname = usePathname() || '/';
     const screens = useBreakpoint();
     const isMobile = !screens.lg;
 
-    const [isEn, setIsEn] = useState(false);
-
-    const isEnFromPath = useMemo(() => {
-        const segments = pathname.split('/').filter(Boolean);
-        const last = segments[segments.length - 1];
-        return last === 'en';
-    }, [pathname]);
-
-    const formatDateTime = (value) => (value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '-');
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-
-        if (isEnFromPath) {
-            setIsEn(true);
-            localStorage.setItem('iky_lang', 'en');
-        } else {
-            const saved = localStorage.getItem('iky_lang');
-            setIsEn(saved === 'en');
-        }
-    }, [isEnFromPath]);
-
+    const { isEn } = useLangFromPath(pathname);
     const t = isEn ? locales.en.usageSessionReport : locales.vi.usageSessionReport;
 
-    const buildParams = (values, page, limit, noPagination = false) => {
-        const params = {};
+    const {
+        serverData,
+        fullData,
+        loading,
+        pagination,
+        setPagination,
 
-        if (!noPagination) {
-            params.page = page;
-            params.limit = limit;
-        }
+        sortMode,
+        setSortMode,
+        tableFilters,
+        setTableFilters,
+        groupBy,
+        // setGroupBy, // (đang không dùng UI groupBy, nên comment tránh eslint warn)
 
-        // NOTE: giữ như code bạn
-        if (values.sessionId) params.usageCode = values.sessionId.trim();
-        if (values.batteryId) params.batteryId = values.batteryId.trim();
-        if (values.usageCode) params.usageCode = values.usageCode.trim();
-        if (values.deviceId) params.deviceId = values.deviceId.trim();
-        if (values.soh) params.soh = values.soh;
+        needFullData,
 
-        if (values.timeRange?.length === 2) {
-            params.startTime = values.timeRange[0].format('YYYY-MM-DD HH:mm:ss');
-            params.endTime = values.timeRange[1].format('YYYY-MM-DD HH:mm:ss');
-        }
+        fetchPaged,
+        fetchAll,
+    } = useUsageSessionData({ form, getUsageSessions, isEn, t });
 
-        return params;
+    // ======= Excel export (moved to hook) =======
+    const { exporting, exportExcel } = useUsageSessionExcel({ form, getUsageSessions, t, isEn });
+
+    const onFinish = () => {
+        setPagination((p) => ({ ...p, current: 1 }));
+        if (needFullData) fetchAll();
+        else fetchPaged(1, pagination.pageSize);
     };
-
-    const fetchData = async (page = 1, pageSize = 20) => {
-        try {
-            setLoading(true);
-            const values = form.getFieldsValue();
-            const params = buildParams(values, page, pageSize);
-            const res = await getUsageSessions(params);
-
-            setData(res.data || []);
-            setPagination({ current: res.page || page, pageSize: res.limit || pageSize, total: res.total || 0 });
-        } catch (err) {
-            console.error('Lỗi lấy usage session: ', err);
-            message.error(
-                t.messages?.loadError ||
-                    (!isEn ? 'Không tải được danh sách phiên sử dụng' : 'Failed to load usage sessions'),
-            );
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        fetchData(1, pagination.pageSize);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
-    const onFinish = () => fetchData(1, pagination.pageSize);
 
     const onReset = () => {
         form.resetFields();
-        fetchData(1, pagination.pageSize);
+        setTableFilters({ vehicleId: null, batteryId: null });
+        // setGroupBy('none');
+        setSortMode('none');
+        setPagination((p) => ({ ...p, current: 1 }));
+        fetchPaged(1, pagination.pageSize);
     };
 
-    const handleTableChange = (pager) => fetchData(pager.current, pager.pageSize);
+    // ======= Build FE processed data (sort/filter/group) =======
+    const uniqueFiltersFrom = useMemo(
+        () => (needFullData ? fullData : serverData),
+        [needFullData, fullData, serverData],
+    );
 
-    const handleExportExcel = async () => {
-        try {
-            setExporting(true);
-            const values = form.getFieldsValue();
-            const params = buildParams(values, 1, 100000);
-            const res = await getUsageSessions(params);
-            const list = res.data || [];
+    const vehicleFilterOptions = useMemo(() => {
+        const s = new Set();
+        uniqueFiltersFrom.forEach((x) => x?.vehicleId && s.add(x.vehicleId));
+        return Array.from(s)
+            .sort()
+            .map((v) => ({ text: v, value: v }));
+    }, [uniqueFiltersFrom]);
 
-            if (!list.length) {
-                message.warning(t.excel?.noData || (!isEn ? 'Không có dữ liệu để xuất' : 'No data to export'));
-                return;
-            }
+    const batteryFilterOptions = useMemo(() => {
+        const s = new Set();
+        uniqueFiltersFrom.forEach((x) => x?.batteryId && s.add(x.batteryId));
+        return Array.from(s)
+            .sort()
+            .map((v) => ({ text: v, value: v }));
+    }, [uniqueFiltersFrom]);
 
-            const rows = list.map((item, index) => ({
-                [t.table.index]: index + 1,
-                [t.table.sessionId]: item.usageCode,
-                [t.table.vehicleId]: item.vehicleId,
-                [t.table.batteryId]: item.batteryId,
-                [t.table.usageCode]: item.usageCode,
-                [t.table.durationMinutes]: item.durationMinutes,
-                [t.table.soh]: item.soh,
-                [t.table.socStart]: item.socStart,
-                [t.table.socEnd]: item.socEnd,
-                [t.table.tempMax]: item.tempMax,
-                [t.table.tempMin]: item.tempMin,
-                [t.table.tempAvg]: item.tempAvg,
-                [t.table.distanceKm]: item.distanceKm,
-                [t.table.speedMax]: item.speedMax,
-                [t.table.speedAvg]: item.speedAvg,
-                [t.table.consumedPercent]: item.consumedPercent,
-                [t.table.consumedKwh]: item.consumedKwh,
+    const processedData = useMemo(() => {
+        if (!needFullData) return serverData;
 
-                // ✅ FIX key name
-                [t.table.startTime]: formatDateTime(item.startTime),
-                [t.table.endTime]: formatDateTime(item.endTime),
+        const filteredSorted = applyClientFilterSort(fullData, tableFilters, sortMode);
+        if (groupBy !== 'none') return buildGrouped(filteredSorted, groupBy);
+        return filteredSorted;
+    }, [needFullData, serverData, fullData, sortMode, tableFilters, groupBy]);
 
-                [t.table.startLat]: item.startLat,
-                [t.table.startLng]: item.startLng,
-                [t.table.endLat]: item.endLat,
-                [t.table.endLng]: item.endLng,
-            }));
+    const pagedData = useMemo(() => {
+        const { current, pageSize } = pagination;
+        const start = (current - 1) * pageSize;
+        const end = start + pageSize;
+        return (processedData || []).slice(start, end);
+    }, [processedData, pagination]);
 
-            const ws = XLSX.utils.json_to_sheet(rows);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'UsageSessions');
+    useEffect(() => {
+        if (!needFullData) return;
+        setPagination((p) => ({ ...p, total: processedData.length }));
+    }, [needFullData, processedData.length, setPagination]);
 
-            XLSX.writeFile(
-                wb,
-                t.excel?.fileName || (!isEn ? 'bao_cao_usage_session.xlsx' : 'usage_session_report.xlsx'),
-            );
+    // ======= Column Manager (reusable hook) =======
+    const [colModalOpen, setColModalOpen] = useState(false);
 
-            message.success(t.excel?.success || (!isEn ? 'Xuất Excel thành công' : 'Export Excel successfully'));
-        } catch (err) {
-            console.error('Export usage session Excel error: ', err);
-            message.error(t.excel?.failed || (!isEn ? 'Xuất Excel thất bại' : 'Export Excel failed'));
-        } finally {
-            setExporting(false);
+    const allColsMeta = useMemo(() => {
+        return buildAllColsMeta({
+            t,
+            isEn,
+            isMobile,
+            vehicleFilterOptions,
+            batteryFilterOptions,
+            tableFilters,
+        });
+    }, [t, isEn, isMobile, vehicleFilterOptions, batteryFilterOptions, tableFilters]);
+
+    const { columns, visibleOrder, setVisibleOrder, allColsForModal } = useReportColumns({
+        storageKey: STORAGE_KEY,
+        allColsMeta,
+        lockedKeys: LOCKED_KEYS,
+    });
+
+    // ======= dataSource gắn __rowNo =======
+    const tableData = useMemo(() => {
+        return (pagedData || []).map((row, idx) => ({
+            ...row,
+            __rowNo: row?.__group ? '' : (pagination.current - 1) * pagination.pageSize + idx + 1,
+        }));
+    }, [pagedData, pagination.current, pagination.pageSize]);
+
+    // ======= Handle Table change (pagination + filters) =======
+    const handleTableChange = (pager, filters) => {
+        const nextPager = { current: pager.current, pageSize: pager.pageSize };
+
+        const nextFilters = {
+            vehicleId: filters?.vehicleId ? filters.vehicleId : null,
+            batteryId: filters?.batteryId ? filters.batteryId : null,
+        };
+
+        const filtersChanged =
+            JSON.stringify(nextFilters.vehicleId || null) !== JSON.stringify(tableFilters.vehicleId || null) ||
+            JSON.stringify(nextFilters.batteryId || null) !== JSON.stringify(tableFilters.batteryId || null);
+
+        if (filtersChanged) {
+            setTableFilters(nextFilters);
+            setPagination((p) => ({ ...p, current: 1, pageSize: nextPager.pageSize }));
+            return;
+        }
+
+        setPagination((p) => ({ ...p, current: nextPager.current, pageSize: nextPager.pageSize }));
+
+        if (!needFullData) {
+            fetchPaged(nextPager.current, nextPager.pageSize);
         }
     };
-
-    // ✅ Tooltip content cho từng cột
-    const colHelp = {
-        index: {
-            vi: 'Số thứ tự dòng trong danh sách.',
-            en: 'Row number in the list.',
-        },
-
-        sessionId: {
-            vi: 'Mã phiên sử dụng (mỗi dòng là 1 phiên/chuyến).',
-            en: 'Usage session ID (each row is one session/trip).',
-        },
-
-        vehicleId: {
-            vi: 'Mã xe / định danh xe của phiên này.',
-            en: 'Vehicle ID for this session.',
-        },
-
-        batteryId: {
-            vi: 'Mã pin sử dụng trong phiên này.',
-            en: 'Battery ID used in this session.',
-        },
-
-        usageCode: {
-            vi: 'Mã phiên (thường trùng với “Mã phiên” ở bên trái). Dùng để tra cứu nội bộ.',
-            en: 'Session code (often same as Session ID). Used for lookup.',
-        },
-
-        durationMinutes: {
-            vi: 'Tổng thời gian phiên (phút).',
-            en: 'Total session duration (minutes).',
-        },
-
-        soh: {
-            vi: 'Sức khỏe pin (SOH) – % tình trạng pin.',
-            en: 'Battery health (SOH) – percentage.',
-        },
-
-        socStart: {
-            vi: 'Pin lúc bắt đầu phiên (%).',
-            en: 'Battery level at start (%).',
-        },
-
-        socEnd: {
-            vi: 'Pin lúc kết thúc phiên (%).',
-            en: 'Battery level at end (%).',
-        },
-
-        tempMax: {
-            vi: 'Nhiệt độ pin cao nhất trong phiên (°C).',
-            en: 'Maximum battery temperature during session (°C).',
-        },
-
-        tempMin: {
-            vi: 'Nhiệt độ pin thấp nhất trong phiên (°C).',
-            en: 'Minimum battery temperature during session (°C).',
-        },
-
-        tempAvg: {
-            vi: 'Nhiệt độ pin trung bình trong phiên (°C).',
-            en: 'Average battery temperature during session (°C).',
-        },
-
-        distanceKm: {
-            vi: 'Quãng đường di chuyển trong phiên (km).',
-            en: 'Distance traveled in session (km).',
-        },
-
-        speedMax: {
-            vi: 'Vận tốc cao nhất trong phiên (km/h).',
-            en: 'Maximum speed in session (km/h).',
-        },
-
-        speedAvg: {
-            vi: 'Vận tốc trung bình trong phiên (km/h).',
-            en: 'Average speed in session (km/h).',
-        },
-
-        consumedPercent: {
-            vi: 'Pin tiêu hao trong phiên (%).',
-            en: 'Battery consumed during session (%).',
-        },
-
-        consumedKwh: {
-            vi: 'Năng lượng tiêu thụ trong phiên (kWh).',
-            en: 'Energy consumed during session (kWh).',
-        },
-
-        startTime: {
-            vi: 'Thời điểm bắt đầu phiên.',
-            en: 'Session start time.',
-        },
-
-        endTime: {
-            vi: 'Thời điểm kết thúc phiên.',
-            en: 'Session end time.',
-        },
-
-        startLat: {
-            vi: 'Vĩ độ tại điểm bắt đầu.',
-            en: 'Latitude at start point.',
-        },
-
-        startLng: {
-            vi: 'Kinh độ tại điểm bắt đầu.',
-            en: 'Longitude at start point.',
-        },
-
-        endLat: {
-            vi: 'Vĩ độ tại điểm kết thúc.',
-            en: 'Latitude at end point.',
-        },
-
-        endLng: {
-            vi: 'Kinh độ tại điểm kết thúc.',
-            en: 'Longitude at end point.',
-        },
-    };
-
-    const ColTitle = ({ label, tip, isEn }) => {
-        const tipText = tip && typeof tip === 'object' ? (isEn ? tip.en : tip.vi) : tip;
-
-        return (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
-                <span>{label}</span>
-
-                <Tooltip
-                    title={tipText} // ✅ FIX: dùng string
-                    placement="top"
-                    trigger={isMobile ? ['click'] : ['hover']}
-                    classNames={{ root: 'table-col-tooltip' }}
-                    styles={{ root: { maxWidth: 260 }, container: { maxWidth: 260 } }}
-                    mouseEnterDelay={0.1}
-                    mouseLeaveDelay={0.1}
-                >
-                    <span
-                        className="table-col-help"
-                        onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                        }}
-                        onMouseDown={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                        }}
-                        style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: 16,
-                            height: 16,
-                            cursor: 'help',
-                            pointerEvents: 'auto',
-                        }}
-                    >
-                        <QuestionCircleOutlined style={{ fontSize: 12, color: '#94a3b8' }} />
-                    </span>
-                </Tooltip>
-            </span>
-        );
-    };
-
-    const columns = [
-        {
-            title: <ColTitle label={t.table.index} tip={colHelp.index} />,
-            dataIndex: 'index',
-            width: 60,
-            render: (text, record, index) => (pagination.current - 1) * pagination.pageSize + index + 1,
-            fixed: 'left',
-        },
-
-        {
-            title: <ColTitle label={t.table.sessionId} tip={colHelp.sessionId} />,
-            dataIndex: 'usageCode',
-            ellipsis: true,
-            width: 210,
-        },
-        {
-            title: <ColTitle label={t.table.vehicleId} tip={colHelp.vehicleId} />,
-            dataIndex: 'vehicleId',
-            ellipsis: true,
-            width: 80,
-        },
-        {
-            title: <ColTitle label={t.table.batteryId} tip={colHelp.batteryId} />,
-            dataIndex: 'batteryId',
-            ellipsis: true,
-            width: 90,
-        },
-        {
-            title: <ColTitle label={t.table.usageCode} tip={colHelp.usageCode} />,
-            dataIndex: 'usageCode',
-            ellipsis: true,
-            width: 210,
-        },
-
-        {
-            title: <ColTitle label={t.table.durationMinutes} tip={colHelp.durationMinutes} />,
-            dataIndex: 'durationMinutes',
-            width: 150,
-        },
-        { title: <ColTitle label={t.table.soh} tip={colHelp.soh} />, dataIndex: 'soh', width: 90 },
-        { title: <ColTitle label={t.table.socStart} tip={colHelp.socStart} />, dataIndex: 'socStart', width: 130 },
-        { title: <ColTitle label={t.table.socEnd} tip={colHelp.socEnd} />, dataIndex: 'socEnd', width: 130 },
-
-        { title: <ColTitle label={t.table.tempMax} tip={colHelp.tempMax} />, dataIndex: 'tempMax', width: 130 },
-        { title: <ColTitle label={t.table.tempMin} tip={colHelp.tempMin} />, dataIndex: 'tempMin', width: 130 },
-        { title: <ColTitle label={t.table.tempAvg} tip={colHelp.tempAvg} />, dataIndex: 'tempAvg', width: 170 },
-
-        {
-            title: <ColTitle label={t.table.distanceKm} tip={colHelp.distanceKm} />,
-            dataIndex: 'distanceKm',
-            width: 170,
-        },
-        { title: <ColTitle label={t.table.speedMax} tip={colHelp.speedMax} />, dataIndex: 'speedMax', width: 120 },
-        { title: <ColTitle label={t.table.speedAvg} tip={colHelp.speedAvg} />, dataIndex: 'speedAvg', width: 160 },
-
-        {
-            title: <ColTitle label={t.table.consumedPercent} tip={colHelp.consumedPercent} />,
-            dataIndex: 'consumedPercent',
-            width: 140,
-        },
-        {
-            title: <ColTitle label={t.table.consumedKwh} tip={colHelp.consumedKwh} />,
-            dataIndex: 'consumedKwh',
-            width: 130,
-        },
-
-        {
-            title: <ColTitle label={t.table.startTime} tip={colHelp.startTime} />,
-            dataIndex: 'startTime',
-            ellipsis: true,
-            render: formatDateTime,
-            width: 170,
-        },
-        {
-            title: <ColTitle label={t.table.endTime} tip={colHelp.endTime} />,
-            dataIndex: 'endTime',
-            ellipsis: true,
-            render: formatDateTime,
-            width: 170,
-        },
-
-        { title: <ColTitle label={t.table.startLat} tip={colHelp.startLat} />, dataIndex: 'startLat', width: 130 },
-        { title: <ColTitle label={t.table.startLng} tip={colHelp.startLng} />, dataIndex: 'startLng', width: 150 },
-        { title: <ColTitle label={t.table.endLat} tip={colHelp.endLat} />, dataIndex: 'endLat', width: 130 },
-        { title: <ColTitle label={t.table.endLng} tip={colHelp.endLng} />, dataIndex: 'endLng', width: 110 },
-    ];
 
     return (
         <div className="usage-report-page">
@@ -495,11 +236,25 @@ const UsageSessionReportPage = () => {
                         size="small"
                         title={t.table.title}
                         extra={
-                            <Space size={12}>
-                                <Text type="secondary" style={{ fontSize: 12 }}>
+                            <Space size={12} wrap>
+                                {/* <Text type="secondary" style={{ fontSize: 12 }}>
                                     {t.table.total.replace('{total}', String(pagination.total))}
-                                </Text>
-                                <Button size="small" onClick={handleExportExcel} loading={exporting}>
+                                </Text> */}
+
+                                <ReportSortSelect
+                                    locale={isEn ? 'en' : 'vi'}
+                                    value={sortMode}
+                                    onChange={(v) => {
+                                        setSortMode(v);
+                                        setPagination((p) => ({ ...p, current: 1 }));
+                                    }}
+                                />
+
+                                <Button size="small" icon={<SettingOutlined />} onClick={() => setColModalOpen(true)}>
+                                    {isEn ? 'Columns' : 'Cột'}
+                                </Button>
+
+                                <Button size="small" onClick={exportExcel} loading={exporting}>
                                     {t.excel?.buttonText || (!isEn ? 'Xuất Excel' : 'Export Excel')}
                                 </Button>
                             </Space>
@@ -508,7 +263,7 @@ const UsageSessionReportPage = () => {
                         <Table
                             rowKey={(record) => record._id || record.usageCode}
                             columns={columns}
-                            dataSource={data}
+                            dataSource={tableData}
                             loading={loading}
                             locale={{ emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu' }}
                             pagination={{
@@ -518,13 +273,45 @@ const UsageSessionReportPage = () => {
                                 showSizeChanger: true,
                                 pageSizeOptions: ['10', '20', '50', '100'],
                                 showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
+                                showQuickJumper: true,
                             }}
                             onChange={handleTableChange}
                             scroll={{ x: 2400 }}
+                            expandable={
+                                groupBy !== 'none' ? { defaultExpandAllRows: false, indentSize: 18 } : undefined
+                            }
+                            rowClassName={(record) => (record?.__group ? 'iky-group-row' : '')}
                         />
                     </Card>
                 </Col>
             </Row>
+
+            <ColumnManagerModal
+                open={colModalOpen}
+                onClose={() => setColModalOpen(false)}
+                allCols={allColsForModal}
+                visibleOrder={visibleOrder}
+                setVisibleOrder={setVisibleOrder}
+                storageKey={STORAGE_KEY}
+                lockedKeys={LOCKED_KEYS}
+                texts={{
+                    title: isEn ? 'Manage columns' : 'Quản lý cột',
+                    searchPlaceholder: isEn ? 'Search column' : 'Tìm tên cột',
+                    visibleTitle: isEn ? 'Visible columns' : 'Cột hiển thị',
+                    hint: isEn
+                        ? 'Drag to reorder. Uncheck or press X to hide.'
+                        : 'Kéo thả để đổi vị trí. Bỏ tick hoặc bấm X để ẩn cột.',
+                    apply: isEn ? 'Apply' : 'Áp dụng',
+                    cancel: isEn ? 'Cancel' : 'Huỷ',
+                    reset: isEn ? 'Reset' : 'Đặt lại',
+                }}
+            />
+
+            <style jsx global>{`
+                .iky-group-row td {
+                    background: #f8fafc !important;
+                }
+            `}</style>
         </div>
     );
 };

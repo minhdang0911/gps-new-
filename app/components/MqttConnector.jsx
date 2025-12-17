@@ -6,7 +6,6 @@ import mqtt from 'mqtt';
 export default function MqttConnector({ imei, onMessage, onClientReady }) {
     const clientRef = useRef(null);
 
-    // lấy từ env
     const url = process.env.NEXT_PUBLIC_MQTT_URL;
     const username = process.env.NEXT_PUBLIC_MQTT_USERNAME;
     const password = process.env.NEXT_PUBLIC_MQTT_PASSWORD;

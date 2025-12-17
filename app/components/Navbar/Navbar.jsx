@@ -18,6 +18,7 @@ import flagEn from '../../assets/flag-en.png';
 import { useAuthStore } from '../../stores/authStore';
 
 import { logoutApi } from '../../lib/api/auth';
+import Link from 'next/link';
 
 // label theo từng ngôn ngữ
 const navItems = [
@@ -164,10 +165,11 @@ const Navbar = () => {
 
     return (
         <header className="iky-nav">
-            <div className="iky-nav__logo">
-                <img src={logo.src} alt="IKY GPS" className="iky-nav__logo-img" />
-            </div>
-
+            <Link className="iky-nav__logo" href="/">
+                <div>
+                    <img src={logo.src} alt="IKY GPS" className="iky-nav__logo-img" />
+                </div>
+            </Link>
             <nav className="iky-nav__menu">
                 {filteredNavItems.map((item) => (
                     <button

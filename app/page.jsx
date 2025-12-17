@@ -32,6 +32,10 @@ const MonitorPage = () => {
     const [deprecatedAddress, setDeprecatedAddress] = useState('');
     const [role, setRole] = useState('');
 
+    const lastMqttAtRef = useRef(0);
+    const mqttSilenceTimerRef = useRef(null);
+    const MQTT_SILENCE_MS = 60_000;
+
     useEffect(() => {
         if (typeof window === 'undefined') return;
         const r = localStorage.getItem('role') || '';
@@ -542,6 +546,41 @@ const MonitorPage = () => {
 
     const isConnected = selectedDevice?.status === 10;
 
+    useEffect(() => {
+        if (!selectedDevice?.imei) return;
+
+        // clear timer cũ
+        if (mqttSilenceTimerRef.current) {
+            clearInterval(mqttSilenceTimerRef.current);
+            mqttSilenceTimerRef.current = null;
+        }
+
+        // reset timestamp khi đổi xe
+        lastMqttAtRef.current = 0;
+
+        mqttSilenceTimerRef.current = setInterval(() => {
+            const last = lastMqttAtRef.current;
+            if (!last) return; // chưa từng nhận mqtt
+
+            const silent = Date.now() - last >= MQTT_SILENCE_MS;
+            if (silent) {
+                // 1) clear liveTelemetry để không giữ gps=1 dấu (*)
+                setLiveTelemetry(null);
+
+                // 2) gọi lastCruise để lấy gps/lat/lon mới nhất (có rate limit bên trong)
+                scheduleRefreshLastCruise();
+            }
+        }, 5_000); // check mỗi 5s
+
+        return () => {
+            if (mqttSilenceTimerRef.current) {
+                clearInterval(mqttSilenceTimerRef.current);
+                mqttSilenceTimerRef.current = null;
+            }
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedDevice?.imei]);
+
     // MQTT update
     const handleMqttMessage = (topic, data) => {
         if (!selectedDevice) return;
@@ -551,8 +590,10 @@ const MonitorPage = () => {
 
         if (!data || typeof data !== 'object') return;
 
+        // ⭐ ADD: mark thời điểm nhận MQTT (để watchdog biết còn sống)
+        lastMqttAtRef.current = Date.now();
+
         // ⭐ CHANGE: nếu MQTT có message nhưng thiếu gps -> schedule gọi last-cruise
-        // (Bạn nói chỉ thiếu gps thôi => mình check đúng gps)
         if (data.gps == null) {
             scheduleRefreshLastCruise();
         }
@@ -561,6 +602,17 @@ const MonitorPage = () => {
             const updated = { ...(prev || {}), ...data };
 
             const isTelemetryPacket = 'ev' in data;
+
+            // ⭐ ADD: nếu telemetry packet mà không có gps => xóa gps cũ (tránh giữ gps=1)
+            if (isTelemetryPacket && data.gps == null) {
+                delete updated.gps;
+            }
+
+            // (optional) nếu muốn “mất gps” thì cũng bỏ lat/lon cũ luôn khi thiếu:
+            // if (isTelemetryPacket && (data.lat == null || data.lon == null)) {
+            //     delete updated.lat;
+            //     delete updated.lon;
+            // }
 
             if (!isTelemetryPacket) {
                 if (!('sos' in data) && 'sos' in updated) {

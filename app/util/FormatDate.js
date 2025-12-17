@@ -32,3 +32,17 @@ export const formatDateFromDevice = (tim) => {
 
     return `${dd}/${MM}/${yyyy} ${hh}:${mm}:${ss}`;
 };
+
+export const formatDateTime = (value, isEn = false) => {
+    if (!value) return '--';
+    const d = new Date(value);
+    return d.toLocaleString(isEn ? 'en-US' : 'vi-VN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+    });
+};
