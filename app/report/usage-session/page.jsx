@@ -66,11 +66,12 @@ const UsageSessionReportPage = () => {
         tableFilters,
         setTableFilters,
         groupBy,
-
+        setGroupBy,
         needFullData,
 
         fetchPaged,
         fetchAll,
+        refresh,
     } = useUsageSessionData({ form, getUsageSessions, isEn, t });
 
     // ======= Excel export (moved to hook) =======
@@ -80,14 +81,22 @@ const UsageSessionReportPage = () => {
         setPagination((p) => ({ ...p, current: 1 }));
         if (needFullData) fetchAll();
         else fetchPaged(1, pagination.pageSize);
+        // nếu muốn luôn refetch dù cache đang có:
+        // refresh();
     };
 
-    const onReset = () => {
+    const onReset = async () => {
         form.resetFields();
         setTableFilters({ vehicleId: null, batteryId: null });
         setSortMode('none');
+        setGroupBy('none');
         setPagination((p) => ({ ...p, current: 1 }));
-        fetchPaged(1, pagination.pageSize);
+
+        // set params về default
+        await fetchPaged(1, pagination.pageSize);
+
+        // ✅ ép gọi lại API dù params y chang
+        await refresh();
     };
 
     const uniqueFiltersFrom = useMemo(

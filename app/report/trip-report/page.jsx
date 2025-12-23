@@ -137,13 +137,38 @@ const TripReportPage = () => {
         setSelectedRows([]);
     }, []);
 
+    const normStr = (v) => (typeof v === 'string' ? v.trim() : '');
+    const normalizePlate = (s) =>
+        (s || '').toString().trim().toUpperCase().replace(/\s+/g, '').replace(/[._]/g, '-').replace(/--+/g, '-');
+
     // ===== actions =====
     const onFinish = () => {
         const values = form.getFieldsValue();
-        setFilterValues(values);
+
+        const imeiInput = normStr(values?.imei || '');
+        const plateInput = normalizePlate(values?.license_plate || '');
+
+        // nếu user KHÔNG nhập imei mà có biển số => map sang imei
+        if (!imeiInput && plateInput) {
+            const mappedImeis = plateToImeis?.get?.(plateInput) || [];
+
+            if (mappedImeis.length > 0) {
+                // nếu API chỉ nhận 1 imei => lấy cái đầu
+                form.setFieldValue('imei', String(mappedImeis[0]));
+            } else {
+                // không map được: tuỳ bạn muốn
+                // 1) báo warning
+                // message.warning(isEn ? 'Plate not mapped to IMEI' : 'Biển số chưa map ra IMEI');
+                // 2) hoặc cứ cho search theo plate FE (nhưng bạn nói muốn chỉ cover mapping thôi)
+            }
+        }
+
+        const newValues = form.getFieldsValue(); // lấy lại sau khi set imei
+        setFilterValues(newValues);
+        clearSelection();
         setPagination((p) => ({ ...p, current: 1 }));
 
-        fetchData({ page: 1, filters: values, sortMode }, { force: true });
+        fetchData({ page: 1, filters: newValues, sortMode }, { force: true });
     };
 
     const onReset = () => {

@@ -668,6 +668,7 @@ const MonitorPage = () => {
         const voltage = src.vavg ?? src.vmax ?? src.vmin ?? bs.voltage;
         const temp = src.tavg ?? src.tmax ?? bs.temperature;
         const currentRaw = src.cur ?? bs.current;
+        const chc = src.chc ?? bs.chc;
 
         const formatAmp = (val) => {
             const n = toNumberOrNull(val);
@@ -719,6 +720,9 @@ const MonitorPage = () => {
                 </div>
                 <div>
                     {t.battery.soh} {soh != null ? `${soh}%` : NA_TEXT}
+                </div>
+                <div>
+                    {isEn ? 'Charge/Discharge cycles' : 'Chu kỳ sạc/xả'}: {chc != null ? chc : NA_TEXT}
                 </div>
                 <div>
                     {t.battery.temperature} {temp != null ? `${temp}°C` : NA_TEXT}

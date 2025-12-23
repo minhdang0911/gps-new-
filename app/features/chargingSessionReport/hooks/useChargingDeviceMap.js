@@ -10,15 +10,19 @@ export function useChargingDeviceMap({ buildImeiToLicensePlateMap }) {
         const loadMaps = async () => {
             try {
                 setLoadingDeviceMap(true);
+
                 const token = getAuthToken();
                 if (!token) {
                     setImeiToPlate(new Map());
                     setPlateToImeis(new Map());
                     return;
                 }
-                const { imeiToPlate, plateToImeis } = await buildImeiToLicensePlateMap(token);
-                setImeiToPlate(imeiToPlate);
-                setPlateToImeis(plateToImeis);
+
+                // buildImeiToLicensePlateMap(token) phải return { imeiToPlate: Map, plateToImeis: Map }
+                const res = await buildImeiToLicensePlateMap(token);
+
+                setImeiToPlate(res?.imeiToPlate || new Map());
+                setPlateToImeis(res?.plateToImeis || new Map());
             } catch (e) {
                 console.error('Load device map failed:', e);
                 setImeiToPlate(new Map());

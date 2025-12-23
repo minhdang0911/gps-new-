@@ -169,7 +169,7 @@
         "title": "Báo cáo chuyến (Trip report)",
         "subtitle": "Tổng hợp theo ngày: số chuyến, tổng quãng đường, tiêu thụ điện và trạng thái thiết bị.",
         "filter": {
-            "title": "Bộ lọc",
+            "title": "Biển số xe",
 
             "imei": "IMEI",
             "imeiPlaceholder": "Nhập IMEI",
@@ -320,6 +320,7 @@
         "customer": "Khách hàng",
         "notAssigned": "Chưa gán",
         "distributor": "Đại lý",
+        "vehicleLine": "Dòng xe",
         "createdDate": "Ngày tạo",
         "edit": "Sửa",
         "delete": "Xóa",

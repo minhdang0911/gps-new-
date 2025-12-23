@@ -12,17 +12,14 @@ import en from '../locales/en.json';
 const { Sider } = Layout;
 const { Text } = Typography;
 
-// JS thuần, không type
 const locales = { vi, en };
 
 export default function Sidebar() {
     const pathname = usePathname() || '';
 
-    // /manage/devices/en -> ['', 'manage', 'devices', 'en'] -> active = 'devices'
     const parts = pathname.split('/');
     const active = parts[2] || 'devices';
 
-    // detect lang theo segment cuối: .../en thì tiếng Anh
     const segments = pathname.split('/').filter(Boolean);
     const last = segments[segments.length - 1];
     const lang = last === 'en' ? 'en' : 'vi';
@@ -34,18 +31,10 @@ export default function Sidebar() {
         <Sider
             width={240}
             breakpoint="lg"
-            collapsedWidth={0}
-            style={{
-                background: '#fff',
-                borderRight: '1px solid #f0f0f0',
-            }}
+            collapsedWidth={240}
+            style={{ background: '#fff', borderRight: '1px solid #f0f0f0' }}
         >
-            <div
-                style={{
-                    padding: '16px 16px 8px',
-                    borderBottom: '1px solid #f0f0f0',
-                }}
-            >
+            <div style={{ padding: '16px 16px 8px', borderBottom: '1px solid #f0f0f0' }}>
                 <Text strong>{t.title}</Text>
             </div>
 
@@ -87,11 +76,7 @@ export default function Sidebar() {
                                 <ToolOutlined />
                             </Tooltip>
                         ),
-                        label: (
-                            <Link href={`/manage/device-customer${suffix}`} style={{ fontSize: '13px' }}>
-                                {t.deviceCustomer}
-                            </Link>
-                        ),
+                        label: <Link href={`/manage/device-customer${suffix}`}>{t.deviceCustomer}</Link>,
                     },
                     {
                         key: 'user',

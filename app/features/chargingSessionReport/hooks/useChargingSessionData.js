@@ -1,10 +1,29 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { message } from 'antd';
+
 import { API_SAFE_LIMIT } from '../constants';
-import { buildPayload } from '../utils';
-import { useAuthStore } from '../../../stores/authStore'; // chỉnh path
-import { makeUserKey } from '../../_shared/swrKey'; // chỉnh path
+import { buildPayload } from '../utils'; // vẫn dùng util hiện có
+import { useAuthStore } from '../../../stores/authStore';
+import { makeUserKey } from '../../_shared/swrKey';
+
+// ✅ strip các field BE không support (imei/license_plate/imeis)
+function stripUnsupportedParams(payload) {
+    if (!payload || typeof payload !== 'object') return payload;
+
+    const next = { ...payload };
+
+    // form fields
+    delete next.imei;
+    delete next.license_plate;
+
+    // mapping fields (nếu util buildPayload có set)
+    delete next.imeis;
+    delete next.imeiText;
+    delete next.plateText;
+
+    return next;
+}
 
 export function useChargingSessionData({
     form,
@@ -12,7 +31,7 @@ export function useChargingSessionData({
     isEn,
     t,
     imeiToPlate,
-    plateToImeis,
+    plateToImeis, // (không dùng trong payload nữa, chỉ để giữ signature)
     loadingDeviceMap,
     attachLicensePlate,
 }) {
@@ -20,7 +39,7 @@ export function useChargingSessionData({
     const { mutate: globalMutate } = useSWRConfig();
 
     const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 });
-    const [sortMode, setSortMode] = useState('none');
+    const [sortMode, setSortMode] = useState('none'); // none | newest | oldest (tuỳ options)
     const needFullData = useMemo(() => sortMode !== 'none', [sortMode]);
 
     const [pagedPayload, setPagedPayload] = useState(null);
@@ -37,7 +56,6 @@ export function useChargingSessionData({
     const pagedKey = useMemo(() => {
         if (loadingDeviceMap) return null;
         if (needFullData) return null;
-        // ✅ key có userId
         return makeUserKey(userId, 'chargingSessions:paged', pagedPayload);
     }, [loadingDeviceMap, needFullData, pagedPayload, userId]);
 
@@ -47,8 +65,23 @@ export function useChargingSessionData({
         return makeUserKey(userId, 'chargingSessions:all', allPayload);
     }, [loadingDeviceMap, needFullData, allPayload, userId]);
 
-    const swrPaged = useSWR(pagedKey, fetcher);
-    const swrAll = useSWR(allKey, fetcher);
+    const swrPaged = useSWR(pagedKey, fetcher, {
+        revalidateOnFocus: false,
+        revalidateOnReconnect: false,
+        revalidateIfStale: false,
+        keepPreviousData: true,
+        dedupingInterval: 5 * 60 * 1000,
+        shouldRetryOnError: false,
+    });
+
+    const swrAll = useSWR(allKey, fetcher, {
+        revalidateOnFocus: false,
+        revalidateOnReconnect: false,
+        revalidateIfStale: false,
+        keepPreviousData: true,
+        dedupingInterval: 5 * 60 * 1000,
+        shouldRetryOnError: false,
+    });
 
     const loading = loadingDeviceMap
         ? true
@@ -75,7 +108,9 @@ export function useChargingSessionData({
     const fullData = useMemo(() => attachPlate(rawFull), [rawFull, attachPlate]);
 
     const toastLoadError = useCallback(() => {
-        // message.error(t?.messages?.loadError || (isEn ? 'Failed to load charging sessions' : 'Không tải được danh sách phiên sạc'));
+        // message.error(
+        //   t?.messages?.loadError || (isEn ? 'Failed to load charging sessions' : 'Không tải được danh sách phiên sạc'),
+        // );
     }, [isEn, t]);
 
     const forceFetch = useCallback(
@@ -90,12 +125,17 @@ export function useChargingSessionData({
         async (page = 1, pageSize = pagination.pageSize || 10, { force = false } = {}) => {
             try {
                 const values = form.getFieldsValue();
-                const payload = buildPayload({
+
+                // ✅ buildPayload vẫn có thể build các field khác mà BE support (chargeCode/soh/timeRange...)
+                // ❌ nhưng tuyệt đối strip imei/license_plate/imeis
+                const payloadRaw = buildPayload({
                     values,
                     page: 1,
                     limit: API_SAFE_LIMIT,
-                    plateToImeis,
+                    plateToImeis, // giữ cho util nếu cần, nhưng sẽ bị strip ra
                 });
+
+                const payload = stripUnsupportedParams(payloadRaw);
 
                 setPagination((p) => ({ ...p, current: page, pageSize }));
                 setPagedPayload(payload);
@@ -113,12 +153,15 @@ export function useChargingSessionData({
         async ({ force = false } = {}) => {
             try {
                 const values = form.getFieldsValue();
-                const payload = buildPayload({
+
+                const payloadRaw = buildPayload({
                     values,
                     page: 1,
                     limit: 100000,
                     plateToImeis,
                 });
+
+                const payload = stripUnsupportedParams(payloadRaw);
 
                 setPagination((p) => ({ ...p, current: 1 }));
                 setAllPayload(payload);
@@ -132,19 +175,24 @@ export function useChargingSessionData({
         [form, plateToImeis, forceFetch, toastLoadError],
     );
 
-    // initial: chỉ set payload để “đọc cache nếu có”
+    // initial: set payload để “đọc cache nếu có”
     useEffect(() => {
         if (loadingDeviceMap) return;
 
         const values = form.getFieldsValue();
         if (needFullData) {
-            setAllPayload(buildPayload({ values, page: 1, limit: 100000, plateToImeis }));
+            const payload = stripUnsupportedParams(buildPayload({ values, page: 1, limit: 100000, plateToImeis }));
+            setAllPayload(payload);
         } else {
-            setPagedPayload(buildPayload({ values, page: 1, limit: API_SAFE_LIMIT, plateToImeis }));
+            const payload = stripUnsupportedParams(
+                buildPayload({ values, page: 1, limit: API_SAFE_LIMIT, plateToImeis }),
+            );
+            setPagedPayload(payload);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loadingDeviceMap, userId]);
 
+    // đổi sortMode => đổi nguồn data
     useEffect(() => {
         if (loadingDeviceMap) return;
 
@@ -152,24 +200,33 @@ export function useChargingSessionData({
         const values = form.getFieldsValue();
 
         if (needFullData) {
-            setAllPayload(buildPayload({ values, page: 1, limit: 100000, plateToImeis }));
+            const payload = stripUnsupportedParams(buildPayload({ values, page: 1, limit: 100000, plateToImeis }));
+            setAllPayload(payload);
         } else {
-            setPagedPayload(buildPayload({ values, page: 1, limit: API_SAFE_LIMIT, plateToImeis }));
+            const payload = stripUnsupportedParams(
+                buildPayload({ values, page: 1, limit: API_SAFE_LIMIT, plateToImeis }),
+            );
+            setPagedPayload(payload);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [needFullData, userId]);
 
+    // total (unfiltered) — page sẽ override theo FE filter
     useEffect(() => {
         if (loadingDeviceMap) return;
 
         if (!needFullData) {
             const safeTotal = Math.max(swrPaged.data?.total || 0, serverData.length);
             setPagination((p) => ({ ...p, total: safeTotal }));
+
             if (serverData.length >= API_SAFE_LIMIT) {
-                // message.warning(isEn ? `Data may be truncated (limit=${API_SAFE_LIMIT}).` : `Dữ liệu có thể bị cắt (limit=${API_SAFE_LIMIT}).`);
+                // message.warning(
+                //   isEn ? `Data may be truncated (limit=${API_SAFE_LIMIT}).` : `Dữ liệu có thể bị cắt (limit=${API_SAFE_LIMIT}).`,
+                // );
             }
             return;
         }
+
         setPagination((p) => ({ ...p, total: fullData.length }));
     }, [loadingDeviceMap, needFullData, serverData, fullData, swrPaged.data, isEn]);
 

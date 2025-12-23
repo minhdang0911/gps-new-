@@ -11,19 +11,19 @@ import '../usage-session/usageSession.css';
 import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
 
-// ✅ helper (existing)
+// ✅ helper
 import { buildImeiToLicensePlateMap, attachLicensePlate } from '../../util/deviceMap';
 
-// ✅ reusable (existing)
+// ✅ reusable
 import ReportSortSelect from '../../components/report/ReportSortSelect';
 import ColumnManagerModal from '../../components/report/ColumnManagerModal';
 import { useReportColumns } from '../../hooks/useReportColumns';
 
-// ✅ compare component chung + insight riêng
+// ✅ compare
 import ReportCompareModal from '../../components/report/ReportCompareModal';
 import { buildChargingSessionInsight } from '../../features/chargingSessionReport/compare/chargingSessionCompareInsight';
 
-// ✅ extracted (existing)
+// ✅ extracted
 import { useLangFromPath } from '../../features/usageSessionReport/locale';
 import { LOCKED_KEYS, STORAGE_KEY } from '../../features/chargingSessionReport/constants';
 import { applySortCharging } from '../../features/chargingSessionReport/utils';
@@ -32,11 +32,9 @@ import { useChargingDeviceMap } from '../../features/chargingSessionReport/hooks
 import { useChargingSessionData } from '../../features/chargingSessionReport/hooks/useChargingSessionData';
 import { useChargingSessionExcel } from '../../features/chargingSessionReport/hooks/useChargingSessionExcel';
 
-// ✅ NEW: generic report components
+// ✅ report ui
 import ReportViewToggle from '../../components/chart/ReportViewToggle';
 import ReportPanel from '../../components/chart/ReportPanel';
-
-// ✅ NEW: adapter/config for THIS report
 import { buildChargingSessionReportConfig } from '../../features/chargingSessionReport/reportConfig';
 
 const { RangePicker } = DatePicker;
@@ -44,6 +42,15 @@ const { Title, Text } = Typography;
 const { useBreakpoint } = Grid;
 
 const locales = { vi, en };
+
+// ===== helpers =====
+const normStr = (v) => (typeof v === 'string' ? v.trim() : '');
+const normalizePlate = (s) =>
+    (s || '').toString().trim().toUpperCase().replace(/\s+/g, '').replace(/[._]/g, '-').replace(/--+/g, '-');
+
+const getRowImei = (row) => normStr(String(row?.imei ?? row?.IMEI ?? row?.deviceImei ?? row?.device?.imei ?? ''));
+const getRowPlate = (row) =>
+    normalizePlate(String(row?.license_plate ?? row?.licensePlate ?? row?.plate ?? row?.licensePlateText ?? ''));
 
 const ChargingSessionReportPage = () => {
     const [form] = Form.useForm();
@@ -58,12 +65,15 @@ const ChargingSessionReportPage = () => {
     // ✅ view mode: table | report
     const [viewMode, setViewMode] = useState('table');
 
+    // ✅ FE filter states (IMEI / Plate)
+    const [feFilters, setFeFilters] = useState({ imeis: [], imeiText: '', plateText: '' });
+
     // ✅ device maps
     const { imeiToPlate, plateToImeis, loadingDeviceMap } = useChargingDeviceMap({
         buildImeiToLicensePlateMap,
     });
 
-    // ✅ data hook
+    // ✅ data hook (BE fetch theo chargeCode/soh/timeRange..., không filter imei/plate)
     const {
         serverData,
         fullData,
@@ -86,39 +96,102 @@ const ChargingSessionReportPage = () => {
         attachLicensePlate,
     });
 
-    // ✅ FE sort (only when needFullData)
+    // ✅ sort full mode (nếu cần)
     const sortedFull = useMemo(() => {
         if (!needFullData) return fullData;
         return applySortCharging(fullData, sortMode);
     }, [needFullData, fullData, sortMode]);
 
+    // base rows (raw attach + sort)
     const baseRows = useMemo(() => (needFullData ? sortedFull : serverData), [needFullData, sortedFull, serverData]);
 
+    // ✅ FE filter (IMEI/Plate)
+    const feFilteredRows = useMemo(() => {
+        const list = baseRows || [];
+
+        const imeis = feFilters?.imeis || [];
+        const imeiText = normStr(feFilters?.imeiText);
+        const plateText = normalizePlate(feFilters?.plateText || '');
+
+        if ((!imeis || imeis.length === 0) && !imeiText && !plateText) return list;
+
+        // 1) exact by imeis set (from plate mapping)
+        if (imeis && imeis.length > 0) {
+            const set = new Set(imeis.map((x) => normStr(String(x))));
+            return list.filter((row) => set.has(getRowImei(row)));
+        }
+
+        // 2) partial imei
+        if (imeiText) {
+            return list.filter((row) => getRowImei(row).includes(imeiText));
+        }
+
+        // 3) fallback: filter by plate text directly from attached license_plate
+        if (plateText) {
+            return list.filter((row) => getRowPlate(row).includes(plateText));
+        }
+
+        return list;
+    }, [baseRows, feFilters]);
+
+    // ✅ total theo FE filter
+    useEffect(() => {
+        setPagination((p) => ({ ...p, total: feFilteredRows.length }));
+    }, [feFilteredRows.length, setPagination]);
+
+    // ✅ paginate after FE filter
     const pagedData = useMemo(() => {
         const { current, pageSize } = pagination;
         const start = (current - 1) * pageSize;
         const end = start + pageSize;
-        return (baseRows || []).slice(start, end);
-    }, [baseRows, pagination]);
+        return feFilteredRows.slice(start, end);
+    }, [feFilteredRows, pagination]);
 
-    // ✅ keep total synced in full-mode
+    // ✅ clamp current page when filtered length changed
     useEffect(() => {
-        if (!needFullData) return;
-        setPagination((p) => ({ ...p, total: sortedFull.length }));
-    }, [needFullData, sortedFull.length, setPagination]);
+        const total = feFilteredRows.length;
+        const pageSize = pagination.pageSize || 10;
+        const maxPage = Math.max(1, Math.ceil(total / pageSize));
+        if (pagination.current > maxPage) {
+            setPagination((p) => ({ ...p, current: 1 }));
+        }
+    }, [feFilteredRows.length, pagination.pageSize, pagination.current, setPagination]);
 
-    // ✅ excel
+    // ✅ excel export (export theo FE filtered, không export theo raw)
     const { exportExcel } = useChargingSessionExcel({ isEn, t });
-    const onExport = () => exportExcel(baseRows);
+    const onExport = () => exportExcel(feFilteredRows);
 
-    const onFinish = () => {
+    // ✅ Search submit:
+    // - set FE filter (imei/plate)
+    // - call BE fetch (theo chargeCode/soh/timeRange...)
+    const onFinish = async () => {
+        const values = await form.validateFields();
+
+        const plateInput = normalizePlate(values?.license_plate || '');
+        const imeiInput = normStr(values?.imei || '');
+
+        const mappedImeis = plateInput ? plateToImeis?.get?.(plateInput) || [] : [];
+
+        if (imeiInput) {
+            setFeFilters({ imeis: [], imeiText: imeiInput, plateText: '' });
+        } else if (plateInput && mappedImeis.length > 0) {
+            setFeFilters({ imeis: mappedImeis, imeiText: '', plateText: '' });
+        } else if (plateInput) {
+            setFeFilters({ imeis: [], imeiText: '', plateText: plateInput });
+        } else {
+            setFeFilters({ imeis: [], imeiText: '', plateText: '' });
+        }
+
         setPagination((p) => ({ ...p, current: 1 }));
+
+        // gọi BE fetch theo params BE support
         if (needFullData) fetchAll({ force: true });
         else fetchPaged(1, pagination.pageSize, { force: true });
     };
 
     const onReset = () => {
         form.resetFields();
+        setFeFilters({ imeis: [], imeiText: '', plateText: '' });
         setSortMode('none');
         setPagination((p) => ({ ...p, current: 1 }));
         fetchPaged(1, pagination.pageSize, { force: true });
@@ -127,15 +200,15 @@ const ChargingSessionReportPage = () => {
     const handleTableChange = (pager) => {
         const next = { current: pager.current, pageSize: pager.pageSize };
         setPagination((p) => ({ ...p, ...next }));
+
+        // nếu đang paged-mode thì fetch page mới từ BE
         if (!needFullData) fetchPaged(next.current, next.pageSize);
     };
 
-    // ======= Column Manager =======
+    // ===== Column Manager =====
     const [colModalOpen, setColModalOpen] = useState(false);
 
-    const allColsMeta = useMemo(() => {
-        return buildAllColsMeta({ t, isEn, isMobile });
-    }, [t, isEn, isMobile]);
+    const allColsMeta = useMemo(() => buildAllColsMeta({ t, isEn, isMobile }), [t, isEn, isMobile]);
 
     const { columns, visibleOrder, setVisibleOrder, allColsForModal } = useReportColumns({
         storageKey: STORAGE_KEY,
@@ -143,7 +216,6 @@ const ChargingSessionReportPage = () => {
         lockedKeys: LOCKED_KEYS,
     });
 
-    // ✅ label map để compare-table ra đúng tiếng (giống table ngoài)
     const colLabelMap = useMemo(() => {
         const m = new Map();
         (allColsForModal || []).forEach((c) => m.set(c.key, c.label));
@@ -151,13 +223,13 @@ const ChargingSessionReportPage = () => {
     }, [allColsForModal]);
 
     const tableData = useMemo(() => {
-        return (pagedData || []).map((row, idx) => ({
+        return pagedData.map((row, idx) => ({
             ...row,
             __rowNo: (pagination.current - 1) * pagination.pageSize + idx + 1,
         }));
     }, [pagedData, pagination.current, pagination.pageSize]);
 
-    // ======= Compare states =======
+    // ===== Compare states =====
     const [compareOpen, setCompareOpen] = useState(false);
     const [selectedRowKeys, setSelectedRowKeys] = useState([]);
     const [selectedRows, setSelectedRows] = useState([]);
@@ -183,16 +255,14 @@ const ChargingSessionReportPage = () => {
         setSelectedRows([]);
     }, []);
 
-    // =========================
-    // ✅ REPORT CONFIG (kpis + charts) for Charging Session
-    // =========================
+    // ✅ report config from FE filtered
     const reportConfig = useMemo(() => {
         return buildChargingSessionReportConfig({
-            rows: baseRows || [],
+            rows: feFilteredRows || [],
             isEn,
             t,
         });
-    }, [baseRows, isEn, t]);
+    }, [feFilteredRows, isEn, t]);
 
     return (
         <div className="usage-report-page">
@@ -209,6 +279,11 @@ const ChargingSessionReportPage = () => {
                         <Form form={form} layout="vertical" onFinish={onFinish}>
                             <Form.Item label={t.filter.chargeCode} name="chargeCode">
                                 <Input placeholder={t.filter.chargeCodePlaceholder} allowClear />
+                            </Form.Item>
+
+                            {/* ✅ IMEI (FE only) */}
+                            <Form.Item label={isEn ? 'IMEI' : 'IMEI'} name="imei">
+                                <Input placeholder={isEn ? 'Enter IMEI' : 'Nhập IMEI'} allowClear />
                             </Form.Item>
 
                             <Form.Item label={isEn ? 'License plate' : 'Biển số'} name="license_plate">
@@ -249,7 +324,6 @@ const ChargingSessionReportPage = () => {
                         title={t.table.title}
                         extra={
                             <Space size={12} wrap>
-                                {/* ✅ Toggle mode */}
                                 <ReportViewToggle value={viewMode} onChange={setViewMode} locale={isEn ? 'en' : 'vi'} />
 
                                 <ReportSortSelect
@@ -257,12 +331,12 @@ const ChargingSessionReportPage = () => {
                                     value={sortMode}
                                     onChange={(v) => {
                                         setSortMode(v);
+                                        clearSelection();
                                         setPagination((p) => ({ ...p, current: 1 }));
                                     }}
                                     disabled={viewMode !== 'table'}
                                 />
 
-                                {/* ✅ Compare button */}
                                 <Button
                                     size="small"
                                     disabled={viewMode !== 'table' || selectedRows.length < 2}
@@ -325,7 +399,6 @@ const ChargingSessionReportPage = () => {
                 </Col>
             </Row>
 
-            {/* ✅ Compare modal */}
             <ReportCompareModal
                 open={compareOpen}
                 onClose={() => setCompareOpen(false)}

@@ -327,6 +327,7 @@
         "delete": "Delete",
         "view": "View",
         "save": "Save",
+        "vehicleLine": "Vehicle line",
 
         "filters": {
             "phone": "Phone Number",

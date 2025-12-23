@@ -12,19 +12,19 @@ import '../usage-session/usageSession.css';
 import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
 
-// ✅ helper (existing)
+// ✅ helper
 import { buildImeiToLicensePlateMap, attachLicensePlate } from '../../util/deviceMap';
 
-// ✅ reusable (existing)
+// ✅ reusable
 import ColumnManagerModal from '../../components/report/ColumnManagerModal';
 import { useReportColumns } from '../../hooks/useReportColumns';
 import ReportSortSelect from '../../components/report/ReportSortSelect';
 
-// ✅ compare component chung + insight riêng
+// ✅ compare
 import ReportCompareModal from '../../components/report/ReportCompareModal';
 import { buildTripSessionInsight } from '../../features/tripSessionReport/compare/tripSessionCompareInsight';
 
-// ✅ extracted (existing)
+// ✅ extracted
 import { useLangFromPath } from '../../features/usageSessionReport/locale';
 import { LOCKED_KEYS, STORAGE_KEY } from '../../features/tripSessionReport/constants';
 import { buildAllColsMeta } from '../../features/tripSessionReport/columns/buildAllColsMeta';
@@ -33,11 +33,9 @@ import { useTripDeviceMap } from '../../features/tripSessionReport/hooks/useTrip
 import { useTripSessionData } from '../../features/tripSessionReport/hooks/useTripSessionData';
 import { useTripSessionExcel } from '../../features/tripSessionReport/hooks/useTripSessionExcel';
 
-// ✅ NEW: generic report components
+// ✅ report ui
 import ReportViewToggle from '../../components/chart/ReportViewToggle';
 import ReportPanel from '../../components/chart/ReportPanel';
-
-// ✅ NEW: adapter/config for THIS report
 import { buildTripSessionReportConfig } from '../../features/tripSessionReport/reportConfig';
 
 const { RangePicker } = DatePicker;
@@ -45,6 +43,14 @@ const { Title, Text } = Typography;
 const { useBreakpoint } = Grid;
 
 const locales = { vi, en };
+
+const normStr = (v) => (typeof v === 'string' ? v.trim() : '');
+const normalizePlate = (s) =>
+    (s || '').toString().trim().toUpperCase().replace(/\s+/g, '').replace(/[._]/g, '-').replace(/--+/g, '-');
+
+const getRowImei = (row) => normStr(String(row?.imei ?? row?.IMEI ?? row?.deviceImei ?? row?.device?.imei ?? ''));
+const getRowPlate = (row) =>
+    normalizePlate(String(row?.license_plate ?? row?.licensePlate ?? row?.plate ?? row?.licensePlateText ?? ''));
 
 const TripSessionReportPage = () => {
     const [form] = Form.useForm();
@@ -56,15 +62,17 @@ const TripSessionReportPage = () => {
     const { isEn } = useLangFromPath(pathname);
     const t = isEn ? locales.en.tripSessionReport : locales.vi.tripSessionReport;
 
-    // ✅ view mode
     const [viewMode, setViewMode] = useState('table');
+
+    // FE filters
+    const [feFilters, setFeFilters] = useState({ imeis: [], imeiText: '', plateText: '' });
 
     // ✅ device maps
     const { imeiToPlate, plateToImeis, loadingDeviceMap } = useTripDeviceMap({
         buildImeiToLicensePlateMap,
     });
 
-    // ✅ data
+    // ✅ data from BE
     const { serverData, loading, pagination, setPagination, sortMode, setSortMode, fetchBase } = useTripSessionData({
         form,
         getTripSessions,
@@ -76,76 +84,15 @@ const TripSessionReportPage = () => {
         attachLicensePlate,
     });
 
-    // ✅ FE sort + paginate
-    const processedData = useMemo(() => applySortTrip(serverData, sortMode), [serverData, sortMode]);
-
-    const pagedData = useMemo(() => {
-        const { current, pageSize } = pagination;
-        const start = (current - 1) * pageSize;
-        const end = start + pageSize;
-        return (processedData || []).slice(start, end);
-    }, [processedData, pagination]);
-
-    // keep total synced (while still respecting BE total if bigger)
-    useEffect(() => {
-        setPagination((p) => ({ ...p, total: Math.max(p.total || 0, processedData.length) }));
-    }, [processedData.length, setPagination]);
-
-    const onFinish = () => {
-        setPagination((p) => ({ ...p, current: 1 }));
-        fetchBase({ resetPage: true }, { force: true });
-    };
-
-    const onReset = () => {
-        form.resetFields();
-        setSortMode('none');
-        setPagination((p) => ({ ...p, current: 1 }));
-        fetchBase({ resetPage: true }, { force: true });
-    };
-
-    const handleTableChange = (pager) => {
-        setPagination((p) => ({
-            ...p,
-            current: pager.current,
-            pageSize: pager.pageSize,
-        }));
-    };
-
-    // ===== Columns =====
-    const [colModalOpen, setColModalOpen] = useState(false);
-
-    const allColsMeta = useMemo(() => {
-        return buildAllColsMeta({ t, isEn, isMobile });
-    }, [t, isEn, isMobile]);
-
-    const { columns, visibleOrder, setVisibleOrder, allColsForModal } = useReportColumns({
-        storageKey: STORAGE_KEY,
-        allColsMeta,
-        lockedKeys: LOCKED_KEYS,
-    });
-
-    // ✅ label map để compare-table ra đúng tiếng (giống table ngoài)
-    const colLabelMap = useMemo(() => {
-        const m = new Map();
-        (allColsForModal || []).forEach((c) => m.set(c.key, c.label));
-        return m;
-    }, [allColsForModal]);
-
-    const tableData = useMemo(() => {
-        return (pagedData || []).map((row, idx) => ({
-            ...row,
-            __rowNo: (pagination.current - 1) * pagination.pageSize + idx + 1,
-        }));
-    }, [pagedData, pagination.current, pagination.pageSize]);
-
-    // ✅ excel (export current page like old code)
-    const { exportExcel } = useTripSessionExcel({ isEn, t });
-    const onExport = () => exportExcel({ pagedData, pagination });
-
     // ===== Compare states =====
     const [compareOpen, setCompareOpen] = useState(false);
     const [selectedRowKeys, setSelectedRowKeys] = useState([]);
     const [selectedRows, setSelectedRows] = useState([]);
+
+    const clearSelection = useCallback(() => {
+        setSelectedRowKeys([]);
+        setSelectedRows([]);
+    }, []);
 
     const rowSelection = useMemo(
         () => ({
@@ -163,14 +110,136 @@ const TripSessionReportPage = () => {
         [selectedRowKeys],
     );
 
-    const clearSelection = useCallback(() => {
-        setSelectedRowKeys([]);
-        setSelectedRows([]);
-    }, []);
+    // ✅ FE FILTER (IMEI / Biển số)
+    const feFilteredData = useMemo(() => {
+        const list = serverData || [];
 
-    // =========================
-    // ✅ REPORT CONFIG (kpis + charts) - dùng processedData (đã sort) để chart phản ánh đúng
-    // =========================
+        const imeis = feFilters?.imeis || [];
+        const imeiText = normStr(feFilters?.imeiText);
+        const plateText = normalizePlate(feFilters?.plateText || '');
+
+        if ((!imeis || imeis.length === 0) && !imeiText && !plateText) return list;
+
+        // 1) filter exact by imeis set
+        if (imeis && imeis.length > 0) {
+            const set = new Set(imeis.map((x) => normStr(String(x))));
+            return list.filter((row) => set.has(getRowImei(row)));
+        }
+
+        // 2) partial imei
+        if (imeiText) {
+            return list.filter((row) => getRowImei(row).includes(imeiText));
+        }
+
+        // 3) fallback: filter by plate text directly
+        if (plateText) {
+            return list.filter((row) => getRowPlate(row).includes(plateText));
+        }
+
+        return list;
+    }, [serverData, feFilters]);
+
+    // ✅ sort
+    const processedData = useMemo(() => applySortTrip(feFilteredData, sortMode), [feFilteredData, sortMode]);
+
+    // ✅ total theo FE (đã filter + sort)
+    useEffect(() => {
+        setPagination((p) => ({ ...p, total: processedData.length }));
+    }, [processedData.length, setPagination]);
+
+    // ✅ đảm bảo current không vượt maxPage khi total/pageSize đổi
+    useEffect(() => {
+        const total = processedData.length;
+        const pageSize = pagination.pageSize || 10;
+        const maxPage = Math.max(1, Math.ceil(total / pageSize));
+        if (pagination.current > maxPage) {
+            setPagination((p) => ({ ...p, current: 1 }));
+        }
+    }, [processedData.length, pagination.pageSize, pagination.current, setPagination]);
+
+    // ✅ paginate FE bằng slice
+    const pagedData = useMemo(() => {
+        const { current, pageSize } = pagination;
+        const start = (current - 1) * pageSize;
+        const end = start + pageSize;
+        return (processedData || []).slice(start, end);
+    }, [processedData, pagination.current, pagination.pageSize]);
+
+    // table rows with rowNo
+    const tableData = useMemo(() => {
+        return (pagedData || []).map((row, idx) => ({
+            ...row,
+            __rowNo: (pagination.current - 1) * pagination.pageSize + idx + 1,
+        }));
+    }, [pagedData, pagination.current, pagination.pageSize]);
+
+    // ✅ Search
+    const onFinish = async () => {
+        const values = await form.validateFields();
+
+        const plateInput = normalizePlate(values?.license_plate || '');
+        const imeiInput = normStr(values?.imei || '');
+
+        const mappedImeis = plateInput ? plateToImeis?.get?.(plateInput) || [] : [];
+
+        if (imeiInput) {
+            setFeFilters({ imeis: [], imeiText: imeiInput, plateText: '' });
+        } else if (plateInput && mappedImeis.length > 0) {
+            setFeFilters({ imeis: mappedImeis, imeiText: '', plateText: '' });
+        } else if (plateInput) {
+            setFeFilters({ imeis: [], imeiText: '', plateText: plateInput });
+        } else {
+            setFeFilters({ imeis: [], imeiText: '', plateText: '' });
+        }
+
+        clearSelection();
+        setPagination((p) => ({ ...p, current: 1 }));
+
+        // ✅ luôn force fetch (payload y hệt vẫn gọi)
+        fetchBase({ resetPage: true }, { force: true });
+    };
+
+    const onReset = () => {
+        clearSelection();
+        form.resetFields();
+        setFeFilters({ imeis: [], imeiText: '', plateText: '' });
+        setSortMode('none');
+        setPagination((p) => ({ ...p, current: 1 }));
+
+        // ✅ reset cũng force fetch
+        fetchBase({ resetPage: true }, { force: true });
+    };
+
+    const handleTableChange = (pager) => {
+        setPagination((p) => ({
+            ...p,
+            current: pager.current,
+            pageSize: pager.pageSize,
+        }));
+    };
+
+    // ===== Columns =====
+    const [colModalOpen, setColModalOpen] = useState(false);
+
+    const allColsMeta = useMemo(() => buildAllColsMeta({ t, isEn, isMobile }), [t, isEn, isMobile]);
+
+    const { columns, visibleOrder, setVisibleOrder, allColsForModal } = useReportColumns({
+        storageKey: STORAGE_KEY,
+        allColsMeta,
+        lockedKeys: LOCKED_KEYS,
+    });
+
+    const colLabelMap = useMemo(() => {
+        const m = new Map();
+        (allColsForModal || []).forEach((c) => m.set(c.key, c.label));
+        return m;
+    }, [allColsForModal]);
+
+    // ✅ excel
+    const { exportExcel } = useTripSessionExcel({ isEn, t });
+    const onExport = () => exportExcel({ pagedData, pagination });
+
+    // ✅ report config
     const reportConfig = useMemo(() => {
         return buildTripSessionReportConfig({
             rows: processedData || [],
@@ -240,7 +309,6 @@ const TripSessionReportPage = () => {
                         title={t.table.title}
                         extra={
                             <Space size={12} wrap>
-                                {/* ✅ Toggle mode */}
                                 <ReportViewToggle value={viewMode} onChange={setViewMode} locale={isEn ? 'en' : 'vi'} />
 
                                 <ReportSortSelect
@@ -253,7 +321,6 @@ const TripSessionReportPage = () => {
                                     disabled={viewMode !== 'table'}
                                 />
 
-                                {/* ✅ Compare button */}
                                 <Button
                                     size="small"
                                     disabled={viewMode !== 'table' || selectedRows.length < 2}
@@ -319,7 +386,6 @@ const TripSessionReportPage = () => {
                 </Col>
             </Row>
 
-            {/* ✅ Compare modal */}
             <ReportCompareModal
                 open={compareOpen}
                 onClose={() => setCompareOpen(false)}

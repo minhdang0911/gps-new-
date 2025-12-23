@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useMemo, useEffect, useState } from 'react';
+import React, { useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+
 import { Layout, Menu, Typography, Grid, Tooltip } from 'antd';
 import {
     BarChartOutlined,
@@ -13,6 +14,7 @@ import {
     DashboardOutlined,
     QuestionCircleOutlined,
 } from '@ant-design/icons';
+
 import './reportLayout.css';
 import 'antd/dist/reset.css';
 
@@ -28,12 +30,9 @@ const locales = { vi, en };
 const ReportLayout = ({ children }) => {
     const pathname = usePathname();
     const screens = useBreakpoint();
-    const isMobile = !screens.lg;
 
-    const isEnFromPath = useMemo(() => {
-        const parts = pathname.split('/').filter(Boolean);
-        return parts[parts.length - 1] === 'en';
-    }, [pathname]);
+    // ✅ SSR-safe: chỉ mobile khi lg chắc chắn false (undefined => desktop)
+    const isMobile = screens.lg === false;
 
     const isEn = useMemo(() => {
         if (typeof window === 'undefined') return false;
@@ -49,6 +48,7 @@ const ReportLayout = ({ children }) => {
         const saved = localStorage.getItem('iky_lang');
         return saved === 'en';
     }, [pathname]);
+
     const t = isEn ? locales.en.report : locales.vi.report;
 
     const help = useMemo(
@@ -64,12 +64,15 @@ const ReportLayout = ({ children }) => {
             trip: isEn
                 ? 'Trip sessions. Each record is one trip/journey (e.g., 10 trips in a day = 10 records). Shows start/end time, coordinates, distance, and speed per trip.'
                 : 'Phiên hành trình. Mỗi record là 1 chuyến đi (ví dụ: 1 ngày đi 10 chuyến = 10 records). Hiển thị thời gian, tọa độ bắt đầu/kết thúc, quãng đường và vận tốc.',
+
             tripReport: isEn
                 ? 'Trip summary report: aggregates multiple trips into daily/period totals (e.g., 8 trips in a day → 1 summary record). Group by time range or device for analytics.'
                 : 'Báo cáo tổng hợp hành trình: gộp nhiều chuyến đi thành tổng theo ngày . Nhóm theo thời gian hoặc thiết bị để phân tích.',
+
             lastCruise: isEn
                 ? 'Latest cruise list: recent activity / last known positions, useful for quick tracking and monitoring.'
                 : 'Danh sách hành trình gần nhất: theo dõi nhanh hoạt động mới nhất và vị trí gần nhất phục vụ giám sát.',
+
             battery: isEn
                 ? 'Battery daily summary: overview per device by day  (SOC/voltage/temperature/location).'
                 : 'Tổng quan pin theo thiết bị: tổng hợp theo ngày và hiển thị trạng thái  (SOC/điện áp/nhiệt độ/vị trí).',
@@ -127,6 +130,7 @@ const ReportLayout = ({ children }) => {
             helpKey: 'battery',
         },
     ];
+
     const reportMenus = baseMenus.map((menu) => ({
         ...menu,
         href: isEn ? `${menu.basePath}/en` : menu.basePath,
@@ -134,15 +138,14 @@ const ReportLayout = ({ children }) => {
 
     const currentKey = useMemo(() => pathname.replace(/\/en$/, ''), [pathname]);
 
-    // ✅ FIX: HelpIcon với pointer-events để tránh bị Menu can thiệp
-    const HelpIcon = ({ text, isMobile }) => {
+    const HelpIcon = ({ text, isMobile: isMobileLocal }) => {
         if (!text) return null;
 
         return (
             <Tooltip
                 title={text}
                 placement="right"
-                trigger={isMobile ? ['click'] : ['hover']}
+                trigger={isMobileLocal ? ['click'] : ['hover']}
                 mouseEnterDelay={0.1}
                 mouseLeaveDelay={0.1}
                 classNames={{ root: 'report-help-tooltip' }}
@@ -165,6 +168,9 @@ const ReportLayout = ({ children }) => {
         );
     };
 
+    // =========================
+    // MOBILE LAYOUT
+    // =========================
     if (isMobile) {
         return (
             <div className="report-layout-mobile">
@@ -196,7 +202,9 @@ const ReportLayout = ({ children }) => {
         );
     }
 
-    // ===== DESKTOP =====
+    // =========================
+    // DESKTOP LAYOUT
+    // =========================
     const menuItems = reportMenus.map((item) => {
         const helpText = help[item.helpKey];
 
@@ -213,7 +221,6 @@ const ReportLayout = ({ children }) => {
                         gap: 8,
                     }}
                 >
-                    {/* ✅ Tooltip cho text label */}
                     <Tooltip title={item.label} placement="right" mouseEnterDelay={0.5}>
                         <Link
                             href={item.href}
@@ -225,7 +232,6 @@ const ReportLayout = ({ children }) => {
                                 whiteSpace: 'nowrap',
                             }}
                             onClick={(e) => {
-                                // Chặn navigation nếu click vào help icon
                                 if (e.target.closest('.help-icon-wrapper')) {
                                     e.preventDefault();
                                     e.stopPropagation();
@@ -235,7 +241,7 @@ const ReportLayout = ({ children }) => {
                             {item.label}
                         </Link>
                     </Tooltip>
-                    {/* ✅ Wrapper với pointer-events riêng biệt */}
+
                     <span
                         style={{
                             position: 'relative',

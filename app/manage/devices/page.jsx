@@ -561,12 +561,19 @@ export default function ManageDevicesPage() {
             dataIndex: 'driver',
             sorter: (a, b) => (a.driver || '').localeCompare(b.driver || ''),
         },
+        // {
+        //     title: t.customer,
+        //     dataIndex: 'user_id',
+        //     sorter: (a, b) => (a.user_id?.email || '').localeCompare(b.user_id?.email || ''),
+        //     render: (u) => u?.email || t.notAssigned,
+        // },
         {
-            title: t.customer,
-            dataIndex: 'user_id',
-            sorter: (a, b) => (a.user_id?.email || '').localeCompare(b.user_id?.email || ''),
-            render: (u) => u?.email || t.notAssigned,
+            title: t.vehicleLine,
+            dataIndex: 'vehicle_category_id',
+            sorter: (a, b) => (a.vehicle_category_id?.name || '').localeCompare(b.vehicle_category_id?.name || ''),
+            render: (v) => v?.name || '-',
         },
+
         {
             title: t.distributor,
             dataIndex: 'distributor_id',

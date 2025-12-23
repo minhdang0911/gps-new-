@@ -68,7 +68,7 @@ const LastCruiseReportPage = () => {
     }, []);
 
     // device map (dev ~= imei)
-    const { imeiToPlate, loadingDeviceMap } = useLastCruiseDeviceMap({ buildImeiToLicensePlateMap });
+    const { imeiToPlate, plateToImeis, loadingDeviceMap } = useLastCruiseDeviceMap({ buildImeiToLicensePlateMap });
 
     // data + FE filter/sort/paging
     const {
@@ -93,6 +93,7 @@ const LastCruiseReportPage = () => {
         imeiToPlate,
         isEn,
         t,
+        plateToImeis,
     });
 
     // excel
