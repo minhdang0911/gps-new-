@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useMemo, useState, useSyncExternalStore } from 'react';
+import useSWR from 'swr';
 import { Card, Table, Button, Modal, Form, Select, Space, message, Tag, Typography, Popconfirm } from 'antd';
 import { PlusOutlined, ReloadOutlined, DeleteOutlined, UserOutlined, DownloadOutlined } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
@@ -23,26 +24,43 @@ const locales = { vi, en };
 const { Option } = Select;
 const { Text, Title } = Typography;
 
+/** ✅ đọc localStorage “chuẩn React” (khỏi useEffect + setState) */
+function useLocalStorageValue(key, fallback = '') {
+    const subscribe = (callback) => {
+        if (typeof window === 'undefined') return () => {};
+        const handler = (e) => {
+            if (!e || e.key === key) callback();
+        };
+        window.addEventListener('storage', handler);
+        return () => window.removeEventListener('storage', handler);
+    };
+
+    const getSnapshot = () => {
+        if (typeof window === 'undefined') return fallback;
+        return localStorage.getItem(key) ?? fallback;
+    };
+
+    const getServerSnapshot = () => fallback;
+
+    return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+}
+
 export default function DeviceCustomerPage() {
     const pathname = usePathname() || '/';
 
-    const [role, setRole] = useState('');
-    const [token, setToken] = useState('');
+    // ✅ token/role/lang đọc trực tiếp
+    const token = useLocalStorageValue('accessToken', '');
+    const role = useLocalStorageValue('role', '');
+    const langFromStorage = useLocalStorageValue('iky_lang', 'vi');
 
-    const [customers, setCustomers] = useState([]);
-    const [selectedCustomer, setSelectedCustomer] = useState(null);
+    const isEnFromPath = useMemo(() => {
+        const segments = pathname.split('/').filter(Boolean);
+        const last = segments[segments.length - 1];
+        return last === 'en';
+    }, [pathname]);
 
-    const [devices, setDevices] = useState([]);
-    const [loadingDevices, setLoadingDevices] = useState(false);
-
-    const [allDevices, setAllDevices] = useState([]);
-    const [loadingAllDevices, setLoadingAllDevices] = useState(false);
-
-    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    const [form] = Form.useForm();
-
-    // ===== LANG =====
-    const [isEn, setIsEn] = useState(false);
+    const isEn = isEnFromPath ? true : langFromStorage === 'en';
+    const t = isEn ? locales.en.deviceCustomer : locales.vi.deviceCustomer;
 
     const isAdmin = role === 'administrator';
     const isDistributor = role === 'distributor';
@@ -51,117 +69,98 @@ export default function DeviceCustomerPage() {
     const canView = isAdmin || isDistributor;
     const canEdit = isAdmin || isDistributor; // ✅ distributor được add/remove
 
-    const isEnFromPath = useMemo(() => {
-        const segments = pathname.split('/').filter(Boolean);
-        const last = segments[segments.length - 1];
-        return last === 'en';
-    }, [pathname]);
+    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [form] = Form.useForm();
 
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
+    // User chọn customer (nếu chưa chọn => dùng customer đầu tiên từ API)
+    const [selectedCustomer, setSelectedCustomer] = useState(null);
 
-        if (isEnFromPath) {
-            setIsEn(true);
-            localStorage.setItem('iky_lang', 'en');
-        } else {
-            const saved = localStorage.getItem('iky_lang');
-            setIsEn(saved === 'en');
-        }
-    }, [isEnFromPath]);
+    /* =========================
+        SWR: customers (position=customer)
+        Note: getUserList của bạn không cần token theo code cũ
+    ========================= */
+    const customersKey = canView ? ['customers', isEn] : null;
 
-    const t = isEn ? locales.en.deviceCustomer : locales.vi.deviceCustomer;
-
-    // ==== INIT TOKEN + ROLE ====
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-        const tkn = localStorage.getItem('accessToken') || '';
-        const r = localStorage.getItem('role') || '';
-        setToken(tkn);
-        setRole(r);
-    }, []);
-
-    // ==== LOAD CUSTOMERS (user position = customer) ====
-    useEffect(() => {
-        const fetchCustomers = async () => {
-            if (!token) return;
-            try {
-                const res = await getUserList({
-                    page: 1,
-                    limit: 100,
-                });
-
-                const allUsers = res.items || res.users || [];
-                const onlyCustomers = allUsers.filter((u) => u.position === 'customer');
-
-                setCustomers(onlyCustomers);
-
-                // auto select customer đầu tiên
-                if (!selectedCustomer && onlyCustomers.length > 0) {
-                    setSelectedCustomer(onlyCustomers[0]._id);
-                }
-            } catch (err) {
+    const { data: customersRes, isLoading: customersLoading } = useSWR(
+        customersKey,
+        async () => {
+            const res = await getUserList({ page: 1, limit: 100 });
+            const allUsers = res.items || res.users || [];
+            return allUsers.filter((u) => u.position === 'customer');
+        },
+        {
+            revalidateOnFocus: false,
+            dedupingInterval: 30_000,
+            onError: (err) => {
                 console.error('Load customers error:', err);
                 message.error(t.loadCustomersError);
-            }
-        };
+            },
+        },
+    );
 
-        fetchCustomers();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token, isEn]); // đổi lang vẫn xài được message mới
+    const customers = customersRes || [];
+    const firstCustomerId = customers?.[0]?._id || null;
 
-    // ==== LOAD DEVICES CỦA CUSTOMER ĐANG CHỌN ====
-    useEffect(() => {
-        if (!selectedCustomer) return;
-        fetchDevices(selectedCustomer);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedCustomer, isEn]);
+    // ✅ customer hiện tại: ưu tiên user đã chọn, fallback = customer đầu tiên
+    const currentCustomerId = selectedCustomer || firstCustomerId;
 
-    const fetchDevices = async (customerId) => {
-        if (!token || !customerId) return;
+    /* =========================
+        SWR: devices of current customer
+    ========================= */
+    const devicesKey = token && currentCustomerId && canView ? ['customerDevices', token, currentCustomerId] : null;
 
-        try {
-            setLoadingDevices(true);
-            const res = await getDeviceCustomerList(token, customerId, {
-                page: 1,
-                limit: 50,
-            });
+    const {
+        data: devicesRes,
+        isLoading: loadingDevices,
+        isValidating: validatingDevices,
+        mutate: mutateDevices,
+    } = useSWR(
+        devicesKey,
+        async ([, tk, customerId]) => {
+            const res = await getDeviceCustomerList(tk, customerId, { page: 1, limit: 50 });
+            return res.devices || [];
+        },
+        {
+            keepPreviousData: true,
+            revalidateOnFocus: false,
+            dedupingInterval: 10_000,
+            onError: (err) => {
+                console.error('Load device of customer error:', err);
+                message.error(t.loadDevicesError);
+            },
+        },
+    );
 
-            setDevices(res.devices || []);
-        } catch (err) {
-            console.error('Load device of customer error:', err);
-            message.error(t.loadDevicesError);
-        } finally {
-            setLoadingDevices(false);
-        }
-    };
+    const devices = devicesRes || [];
 
-    // ==== LOAD TOÀN BỘ THIẾT BỊ (CHO DROPDOWN IMEI) ====
-    useEffect(() => {
-        const fetchAllDevices = async () => {
-            if (!token) return;
-            try {
-                setLoadingAllDevices(true);
-                const res = await getDevices(token, {
-                    page: 1,
-                    limit: 200,
-                });
+    /* =========================
+        SWR: all devices for dropdown
+    ========================= */
+    const allDevicesKey = token && canView ? ['allDevices', token] : null;
 
-                setAllDevices(res.devices || res.items || []);
-            } catch (err) {
+    const { data: allDevicesRes, isLoading: loadingAllDevices } = useSWR(
+        allDevicesKey,
+        async ([, tk]) => {
+            const res = await getDevices(tk, { page: 1, limit: 200 });
+            return res.devices || res.items || [];
+        },
+        {
+            revalidateOnFocus: false,
+            dedupingInterval: 60_000,
+            onError: (err) => {
                 console.error('Load all devices error:', err);
                 message.error(t.loadAllDevicesError);
-            } finally {
-                setLoadingAllDevices(false);
-            }
-        };
+            },
+        },
+    );
 
-        fetchAllDevices();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token, isEn]);
+    const allDevices = allDevicesRes || [];
 
-    // ==== THÊM THIẾT BỊ VÀO CUSTOMER ====
+    /* =========================
+        ACTIONS
+    ========================= */
     const handleAddDevice = async () => {
-        if (!token || !selectedCustomer) {
+        if (!token || !currentCustomerId) {
             message.error(t.missingTokenOrCustomer);
             return;
         }
@@ -176,18 +175,18 @@ export default function DeviceCustomerPage() {
 
             await addDeviceToCustomer(token, {
                 imei: values.imei,
-                customerId: selectedCustomer,
+                customerId: currentCustomerId,
             });
 
             message.success(t.addSuccess);
             setIsAddModalOpen(false);
             form.resetFields();
-            fetchDevices(selectedCustomer);
+
+            mutateDevices(); // ✅ refresh list
         } catch (err) {
             console.error('Add device error:', err);
 
             const apiData = err?.response?.data || err;
-
             const msg =
                 apiData?.error ||
                 apiData?.message ||
@@ -199,9 +198,8 @@ export default function DeviceCustomerPage() {
         }
     };
 
-    // ==== GỠ THIẾT BỊ KHỎI CUSTOMER ====
     const handleRemoveDevice = async (record) => {
-        if (!token || !selectedCustomer) return;
+        if (!token || !currentCustomerId) return;
 
         if (!canEdit) {
             message.warning(t.noPermissionAction || (isEn ? 'No permission' : 'Bạn không có quyền thao tác'));
@@ -211,16 +209,15 @@ export default function DeviceCustomerPage() {
         try {
             await removeDeviceFromCustomer(token, {
                 imei: record.imei,
-                customerId: selectedCustomer,
+                customerId: currentCustomerId,
             });
 
             message.success(t.removeSuccess);
-            fetchDevices(selectedCustomer);
+            mutateDevices(); // ✅ refresh list
         } catch (err) {
             console.error('Remove device error:', err);
 
             const apiData = err?.response?.data || err;
-
             const msg =
                 apiData?.error ||
                 apiData?.message ||
@@ -232,9 +229,11 @@ export default function DeviceCustomerPage() {
         }
     };
 
-    // ==== EXPORT EXCEL DANH SÁCH THIẾT BỊ CỦA CUSTOMER ====
+    /* =========================
+        EXPORT EXCEL
+    ========================= */
     const exportExcel = () => {
-        if (!selectedCustomer) {
+        if (!currentCustomerId) {
             message.warning(t.exportNeedCustomer);
             return;
         }
@@ -244,11 +243,10 @@ export default function DeviceCustomerPage() {
         }
 
         try {
-            const customer = customers.find((c) => c._id === selectedCustomer);
+            const customer = customers.find((c) => c._id === currentCustomerId);
             const customerLabel =
                 customer?.username || customer?.phone || customer?.email || customer?._id || t.customerFallback;
 
-            // 1. Chuẩn bị data
             const excelData = devices.map((item) => ({
                 [t.columns.imei]: item.imei || '',
                 [t.excel.colPlate]: item.license_plate || '',
@@ -256,11 +254,10 @@ export default function DeviceCustomerPage() {
                 [t.excel.colStatus]: item.status === 10 ? t.status.online : t.status.offline,
             }));
 
-            // 2. Tạo sheet, chừa dòng 1 cho title + dòng 2 cho info khách hàng
             const ws = XLSX.utils.json_to_sheet(excelData, { origin: 'A3' });
             const headers = Object.keys(excelData[0]);
 
-            // 3. Title dòng 1
+            // Title row 1
             const title = t.excel.title;
             ws['A1'] = { v: title, t: 's' };
             ws['!merges'] = ws['!merges'] || [];
@@ -274,7 +271,7 @@ export default function DeviceCustomerPage() {
                 alignment: { horizontal: 'center', vertical: 'center' },
             };
 
-            // 4. Dòng 2: thông tin khách hàng
+            // Row 2: customer info
             const infoText = `${t.excel.customerPrefix}${customerLabel}`;
             ws['A2'] = { v: infoText, t: 's' };
             ws['!merges'].push({
@@ -288,7 +285,7 @@ export default function DeviceCustomerPage() {
 
             ws['!rows'] = [{ hpt: 26 }, { hpt: 20 }, { hpt: 22 }];
 
-            // 5. Header row (row 3 index = 2)
+            // Header row (row 3 index = 2)
             headers.forEach((h, idx) => {
                 const ref = XLSX.utils.encode_cell({ r: 2, c: idx });
                 if (!ws[ref]) return;
@@ -305,7 +302,7 @@ export default function DeviceCustomerPage() {
                 };
             });
 
-            // 6. Style data
+            // Style data
             const range = XLSX.utils.decode_range(ws['!ref']);
             for (let R = range.s.r; R <= range.e.r; R++) {
                 for (let C = range.s.c; C <= range.e.c; C++) {
@@ -322,13 +319,13 @@ export default function DeviceCustomerPage() {
                         right: { style: 'thin', color: { rgb: '000000' } },
                     };
 
-                    // zebra stripe cho row > header (R > 2)
+                    // zebra stripe row > header (R > 2)
                     if (R > 2 && R % 2 === 1) {
                         cell.s.fill = cell.s.fill || {};
                         cell.s.fill.fgColor = cell.s.fill.fgColor || { rgb: 'F9F9F9' };
                     }
 
-                    // Trạng thái online -> xanh nhạt
+                    // status online highlight
                     if (R > 2) {
                         const statusColIndex = headers.indexOf(t.excel.colStatus);
                         if (C === statusColIndex && String(cell.v).trim() === t.status.online) {
@@ -338,13 +335,11 @@ export default function DeviceCustomerPage() {
                 }
             }
 
-            // 7. Auto width
             ws['!cols'] = headers.map((key) => {
                 const maxLen = Math.max(key.length, ...excelData.map((row) => String(row[key] || '').length));
                 return { wch: maxLen + 4 };
             });
 
-            // 8. Auto filter (header row index 2)
             ws['!autofilter'] = {
                 ref: XLSX.utils.encode_range({
                     s: { r: 2, c: 0 },
@@ -352,7 +347,6 @@ export default function DeviceCustomerPage() {
                 }),
             };
 
-            // 9. Workbook + save
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, 'CustomerDevices');
 
@@ -370,7 +364,9 @@ export default function DeviceCustomerPage() {
         }
     };
 
-    // ==== CỘT BẢNG (THÊM SORTER) ====
+    /* =========================
+        TABLE COLUMNS
+    ========================= */
     const columns = [
         {
             title: t.columns.imei,
@@ -450,13 +446,16 @@ export default function DeviceCustomerPage() {
                         <Select
                             className="dcustomer-customer-select"
                             placeholder={t.filter.selectCustomerPlaceholder}
-                            value={selectedCustomer || undefined}
+                            value={currentCustomerId || undefined}
                             onChange={(val) => setSelectedCustomer(val)}
                             showSearch
                             optionFilterProp="children"
                             filterOption={(input, option) =>
-                                (option?.children || '').toLowerCase().includes(input.toLowerCase())
+                                String(option?.children || '')
+                                    .toLowerCase()
+                                    .includes(input.toLowerCase())
                             }
+                            loading={customersLoading}
                         >
                             {customers.map((c) => (
                                 <Option key={c._id} value={c._id}>
@@ -465,17 +464,14 @@ export default function DeviceCustomerPage() {
                             ))}
                         </Select>
 
-                        <Button
-                            icon={<ReloadOutlined />}
-                            onClick={() => selectedCustomer && fetchDevices(selectedCustomer)}
-                        >
+                        <Button icon={<ReloadOutlined />} onClick={() => mutateDevices()} disabled={!currentCustomerId}>
                             {t.buttons.refresh}
                         </Button>
 
                         <Button
                             icon={<DownloadOutlined />}
                             onClick={exportExcel}
-                            disabled={!selectedCustomer || !devices.length}
+                            disabled={!currentCustomerId || !devices.length}
                         >
                             {t.buttons.export}
                         </Button>
@@ -484,7 +480,7 @@ export default function DeviceCustomerPage() {
                             type="primary"
                             icon={<PlusOutlined />}
                             onClick={() => setIsAddModalOpen(true)}
-                            disabled={!selectedCustomer || !canEdit}
+                            disabled={!currentCustomerId || !canEdit}
                         >
                             {t.buttons.addDevice}
                         </Button>
@@ -493,14 +489,14 @@ export default function DeviceCustomerPage() {
             >
                 <Table
                     rowKey="_id"
-                    loading={loadingDevices}
+                    loading={loadingDevices || validatingDevices}
                     columns={columns}
                     dataSource={devices}
                     pagination={false}
                     scroll={{ x: 800 }}
                 />
 
-                {!selectedCustomer && <div className="dcustomer-empty-tip">{t.emptyTip}</div>}
+                {!currentCustomerId && <div className="dcustomer-empty-tip">{t.emptyTip}</div>}
             </Card>
 
             {/* MODAL THÊM THIẾT BỊ */}
@@ -528,7 +524,9 @@ export default function DeviceCustomerPage() {
                             loading={loadingAllDevices}
                             optionFilterProp="children"
                             filterOption={(input, option) =>
-                                (option?.children || '').toLowerCase().includes(input.toLowerCase())
+                                String(option?.children || '')
+                                    .toLowerCase()
+                                    .includes(input.toLowerCase())
                             }
                         >
                             {allDevices.map((d) => (

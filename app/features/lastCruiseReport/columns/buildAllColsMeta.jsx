@@ -27,6 +27,7 @@ export function buildAllColsMeta({ t, isEn, isMobile }) {
         dev: { vi: 'Mã thiết bị trên xe.', en: 'Device ID.' },
         license_plate: { vi: 'Biển số xe tương ứng với thiết bị.', en: 'License plate linked to device.' },
         fwr: { vi: 'Phiên bản firmware của thiết bị.', en: 'Firmware version.' },
+        tim: { vi: 'Thời gian thiết bị (YYMMDDhhmmss).', en: 'Device time (YYMMDDhhmmss).' },
         lat: { vi: 'Vĩ độ vị trí gần nhất.', en: 'Latest latitude.' },
         lon: { vi: 'Kinh độ vị trí gần nhất.', en: 'Latest longitude.' },
         sat: { vi: 'Số vệ tinh GPS bắt được.', en: 'GPS satellites count.' },
@@ -34,6 +35,7 @@ export function buildAllColsMeta({ t, isEn, isMobile }) {
         sos: { vi: 'Trạng thái SOS.', en: 'SOS status.' },
         acc: { vi: 'Trạng thái khóa/nguồn xe.', en: 'Vehicle lock/ignition status.' },
         vgp: { vi: 'Tốc độ ghi nhận (nếu có).', en: 'Recorded speed (if any).' },
+        mil: { vi: 'ODO (mil) - quãng đường tích luỹ.', en: 'ODO (mil) - accumulated distance.' }, // ✅ ADD
         createdAt: { vi: 'Thời điểm dữ liệu được lưu lên hệ thống.', en: 'Saved time in system.' },
     };
 
@@ -124,12 +126,7 @@ export function buildAllColsMeta({ t, isEn, isMobile }) {
             key: 'tim',
             label: t.table.tim,
             column: {
-                title: (
-                    <ColTitle
-                        label={t.table.tim}
-                        tip={isEn ? 'Device time (YYMMDDhhmmss)' : 'Thời gian thiết bị (YYMMDDhhmmss)'}
-                    />
-                ),
+                title: <ColTitle label={t.table.tim} tip={colHelp.tim} />,
                 dataIndex: 'tim',
                 width: 180,
                 render: (v) => {
@@ -204,6 +201,19 @@ export function buildAllColsMeta({ t, isEn, isMobile }) {
                 width: 160,
             },
         },
+
+        // ✅ ADD: mil => ODO
+        {
+            key: 'mil',
+            label: isEn ? 'ODO' : 'ODO',
+            column: {
+                title: <ColTitle label={isEn ? 'ODO' : 'ODO'} tip={colHelp.mil} />,
+                dataIndex: 'mil',
+                width: 120,
+                render: (v) => v ?? '--',
+            },
+        },
+
         {
             key: 'createdAt',
             label: t.table.createdAt,

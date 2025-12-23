@@ -1,7 +1,6 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { useEffect } from 'react';
 import Navbar from './Navbar/Navbar';
 import StatusBar from './StatusBar/StatusBar';
 import TokenRefresher from './TokenRefresher';
@@ -13,16 +12,17 @@ export default function LayoutWrapper({ children }) {
 
     const isLoginPage = pathname === '/login' || pathname === '/login/en' || pathname?.startsWith('/login');
 
+    // 👉 CHỐT: bypass toàn bộ layout cho login
+    if (isLoginPage) {
+        return <>{children}</>;
+    }
+
     return (
         <>
-            {!isLoginPage && (
-                <>
-                    <TokenRefresher />
-                    <MqttConnector />
-                    <Navbar activeKey="monitor" />
-                    <StatusBar />
-                </>
-            )}
+            <TokenRefresher />
+            <MqttConnector />
+            <Navbar activeKey="monitor" />
+            <StatusBar />
 
             <div
                 style={{
@@ -32,8 +32,7 @@ export default function LayoutWrapper({ children }) {
                 }}
             >
                 <main style={{ flex: 1 }}>{children}</main>
-
-                {!isLoginPage && <AppFooter style={{ marginTop: 'auto' }} />}
+                <AppFooter />
             </div>
         </>
     );

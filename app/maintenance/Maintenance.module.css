@@ -1,0 +1,78 @@
+.page {
+    padding: 24px;
+}
+
+.header {
+    margin-bottom: 16px;
+}
+
+.title {
+    margin: 0 !important;
+}
+
+.card {
+    border-radius: 12px;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.select {
+    width: 100%;
+}
+
+.deviceInfo {
+    background: #fafafa;
+    border: 1px solid #f0f0f0;
+    border-radius: 10px;
+    padding: 12px;
+    margin: 12px 0 16px;
+    line-height: 1.8;
+}
+
+.hint {
+    margin-top: 10px;
+}
+
+.center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 160px;
+}
+
+.deviceCell {
+    line-height: 1.35;
+}
+
+.deviceName {
+    font-weight: 600;
+}
+
+.deviceSub {
+    color: #8c8c8c;
+    font-size: 12px;
+    margin-top: 2px;
+}
+
+.cardTitleRow {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+}
+
+.modalInfo {
+    margin-bottom: 12px;
+    padding: 10px;
+    border: 1px dashed #d9d9d9;
+    border-radius: 10px;
+    background: #fcfcfc;
+}
+
+.datePicker {
+    width: 100%;
+}

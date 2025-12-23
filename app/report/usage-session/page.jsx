@@ -11,18 +11,29 @@ import './usageSession.css';
 import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
 
-// ✅ reusable
+// ✅ reusable (existing)
 import ColumnManagerModal from '../../components/report/ColumnManagerModal';
 import { useReportColumns } from '../../hooks/useReportColumns';
 import ReportSortSelect from '../../components/report/ReportSortSelect';
 
-// ✅ extracted
+// ✅ compare modal generic + insight riêng (existing)
+import ReportCompareModal from '../../components/report/ReportCompareModal';
+import { buildUsageSessionInsight } from '../../features/usageSessionReport/compare/usageSessionCompareInsight';
+
+// ✅ extracted (existing)
 import { LOCKED_KEYS, STORAGE_KEY } from '../../features/usageSessionReport/constants';
 import { useLangFromPath } from '../../features/usageSessionReport/locale';
 import { applyClientFilterSort, buildGrouped } from '../../features/usageSessionReport/utils';
 import { buildAllColsMeta } from '../../features/usageSessionReport/columns/buildAllColsMeta';
 import { useUsageSessionData } from '../../features/usageSessionReport/hooks/useUsageSessionData';
 import { useUsageSessionExcel } from '../../features/usageSessionReport/hooks/useUsageSessionExcel';
+
+// ✅ NEW: generic report components
+import ReportViewToggle from '../../components/chart/ReportViewToggle';
+import ReportPanel from '../../components/chart/ReportPanel';
+
+// ✅ NEW: adapter/config for THIS report
+import { buildUsageSessionReportConfig } from '../../features/usageSessionReport/reportConfig';
 
 const { RangePicker } = DatePicker;
 const { Title, Text } = Typography;
@@ -40,6 +51,9 @@ const UsageSessionReportPage = () => {
     const { isEn } = useLangFromPath(pathname);
     const t = isEn ? locales.en.usageSessionReport : locales.vi.usageSessionReport;
 
+    // ✅ view mode: table | report
+    const [viewMode, setViewMode] = useState('table');
+
     const {
         serverData,
         fullData,
@@ -52,7 +66,6 @@ const UsageSessionReportPage = () => {
         tableFilters,
         setTableFilters,
         groupBy,
-        // setGroupBy, // (đang không dùng UI groupBy, nên comment tránh eslint warn)
 
         needFullData,
 
@@ -72,13 +85,11 @@ const UsageSessionReportPage = () => {
     const onReset = () => {
         form.resetFields();
         setTableFilters({ vehicleId: null, batteryId: null });
-        // setGroupBy('none');
         setSortMode('none');
         setPagination((p) => ({ ...p, current: 1 }));
         fetchPaged(1, pagination.pageSize);
     };
 
-    // ======= Build FE processed data (sort/filter/group) =======
     const uniqueFiltersFrom = useMemo(
         () => (needFullData ? fullData : serverData),
         [needFullData, fullData, serverData],
@@ -120,7 +131,7 @@ const UsageSessionReportPage = () => {
         setPagination((p) => ({ ...p, total: processedData.length }));
     }, [needFullData, processedData.length, setPagination]);
 
-    // ======= Column Manager (reusable hook) =======
+    // ======= Column Manager =======
     const [colModalOpen, setColModalOpen] = useState(false);
 
     const allColsMeta = useMemo(() => {
@@ -140,6 +151,12 @@ const UsageSessionReportPage = () => {
         lockedKeys: LOCKED_KEYS,
     });
 
+    const colLabelMap = useMemo(() => {
+        const m = new Map();
+        (allColsForModal || []).forEach((c) => m.set(c.key, c.label));
+        return m;
+    }, [allColsForModal]);
+
     // ======= dataSource gắn __rowNo =======
     const tableData = useMemo(() => {
         return (pagedData || []).map((row, idx) => ({
@@ -147,6 +164,41 @@ const UsageSessionReportPage = () => {
             __rowNo: row?.__group ? '' : (pagination.current - 1) * pagination.pageSize + idx + 1,
         }));
     }, [pagedData, pagination.current, pagination.pageSize]);
+
+    // ======= Compare selection =======
+    const [compareOpen, setCompareOpen] = useState(false);
+    const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+    const [selectedRows, setSelectedRows] = useState([]);
+
+    useEffect(() => {
+        const id = setTimeout(() => {
+            setSelectedRowKeys([]);
+            setSelectedRows([]);
+        }, 0);
+
+        return () => clearTimeout(id);
+    }, [needFullData, pagination.current, pagination.pageSize, sortMode, tableFilters]);
+
+    const rowSelection = useMemo(
+        () => ({
+            selectedRowKeys,
+            onChange: (keys, rows) => {
+                if (keys.length > 3) {
+                    const nextKeys = keys.slice(0, 3);
+                    const nextRows = rows.slice(0, 3);
+                    setSelectedRowKeys(nextKeys);
+                    setSelectedRows(nextRows);
+                    return;
+                }
+                setSelectedRowKeys(keys);
+                setSelectedRows(rows);
+            },
+            getCheckboxProps: (record) => ({
+                disabled: record?.__group,
+            }),
+        }),
+        [selectedRowKeys],
+    );
 
     // ======= Handle Table change (pagination + filters) =======
     const handleTableChange = (pager, filters) => {
@@ -173,6 +225,17 @@ const UsageSessionReportPage = () => {
             fetchPaged(nextPager.current, nextPager.pageSize);
         }
     };
+
+    // =========================
+    // ✅ REPORT CONFIG (kpis + charts) - page chỉ build config, UI render bởi component chung
+    // =========================
+    const reportConfig = useMemo(() => {
+        return buildUsageSessionReportConfig({
+            rows: processedData || [],
+            isEn,
+            t,
+        });
+    }, [processedData, isEn, t]);
 
     return (
         <div className="usage-report-page">
@@ -237,10 +300,10 @@ const UsageSessionReportPage = () => {
                         title={t.table.title}
                         extra={
                             <Space size={12} wrap>
-                                {/* <Text type="secondary" style={{ fontSize: 12 }}>
-                                    {t.table.total.replace('{total}', String(pagination.total))}
-                                </Text> */}
+                                {/* ✅ Toggle mode: extracted */}
+                                <ReportViewToggle value={viewMode} onChange={setViewMode} locale={isEn ? 'en' : 'vi'} />
 
+                                {/* Table-only controls */}
                                 <ReportSortSelect
                                     locale={isEn ? 'en' : 'vi'}
                                     value={sortMode}
@@ -248,43 +311,89 @@ const UsageSessionReportPage = () => {
                                         setSortMode(v);
                                         setPagination((p) => ({ ...p, current: 1 }));
                                     }}
+                                    disabled={viewMode !== 'table'}
                                 />
 
-                                <Button size="small" icon={<SettingOutlined />} onClick={() => setColModalOpen(true)}>
+                                <Button
+                                    size="small"
+                                    disabled={viewMode !== 'table' || selectedRows.length < 2}
+                                    onClick={() => setCompareOpen(true)}
+                                >
+                                    {isEn ? `Compare (${selectedRows.length})` : `So sánh (${selectedRows.length})`}
+                                </Button>
+
+                                <Button
+                                    size="small"
+                                    icon={<SettingOutlined />}
+                                    onClick={() => setColModalOpen(true)}
+                                    disabled={viewMode !== 'table'}
+                                >
                                     {isEn ? 'Columns' : 'Cột'}
                                 </Button>
 
                                 <Button size="small" onClick={exportExcel} loading={exporting}>
                                     {t.excel?.buttonText || (!isEn ? 'Xuất Excel' : 'Export Excel')}
                                 </Button>
+
+                                {selectedRows.length > 0 && viewMode === 'table' && (
+                                    <Button
+                                        size="small"
+                                        onClick={() => {
+                                            setSelectedRowKeys([]);
+                                            setSelectedRows([]);
+                                        }}
+                                    >
+                                        {isEn ? 'Clear selection' : 'Bỏ chọn'}
+                                    </Button>
+                                )}
                             </Space>
                         }
                     >
-                        <Table
-                            rowKey={(record) => record._id || record.usageCode}
-                            columns={columns}
-                            dataSource={tableData}
-                            loading={loading}
-                            locale={{ emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu' }}
-                            pagination={{
-                                current: pagination.current,
-                                pageSize: pagination.pageSize,
-                                total: pagination.total,
-                                showSizeChanger: true,
-                                pageSizeOptions: ['10', '20', '50', '100'],
-                                showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
-                                showQuickJumper: true,
-                            }}
-                            onChange={handleTableChange}
-                            scroll={{ x: 2400 }}
-                            expandable={
-                                groupBy !== 'none' ? { defaultExpandAllRows: false, indentSize: 18 } : undefined
-                            }
-                            rowClassName={(record) => (record?.__group ? 'iky-group-row' : '')}
-                        />
+                        {viewMode === 'table' ? (
+                            <Table
+                                rowKey={(record) => record._id || record.usageCode}
+                                columns={columns}
+                                dataSource={tableData}
+                                loading={loading}
+                                locale={{ emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu' }}
+                                rowSelection={rowSelection}
+                                pagination={{
+                                    current: pagination.current,
+                                    pageSize: pagination.pageSize,
+                                    total: pagination.total,
+                                    showSizeChanger: true,
+                                    pageSizeOptions: ['10', '20', '50', '100'],
+                                    showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
+                                    showQuickJumper: true,
+                                }}
+                                onChange={handleTableChange}
+                                scroll={{ x: 2400 }}
+                                expandable={
+                                    groupBy !== 'none' ? { defaultExpandAllRows: false, indentSize: 18 } : undefined
+                                }
+                                rowClassName={(record) => (record?.__group ? 'iky-group-row' : '')}
+                            />
+                        ) : (
+                            <ReportPanel
+                                title={isEn ? 'Report' : 'Báo cáo'}
+                                kpis={reportConfig?.kpis || []}
+                                charts={reportConfig?.charts || []}
+                            />
+                        )}
                     </Card>
                 </Col>
             </Row>
+
+            {/* Compare modal */}
+            <ReportCompareModal
+                open={compareOpen}
+                onClose={() => setCompareOpen(false)}
+                rows={selectedRows}
+                uiColumns={columns}
+                colLabelMap={colLabelMap}
+                ctx={{ isEn, t }}
+                buildInsight={buildUsageSessionInsight}
+            />
 
             <ColumnManagerModal
                 open={colModalOpen}

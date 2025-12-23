@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography, Select, Grid } from 'antd';
 import { SearchOutlined, ReloadOutlined, DownloadOutlined, SettingOutlined } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
@@ -13,6 +13,10 @@ import ColumnManagerModal from '../../components/report/ColumnManagerModal';
 import { useReportColumns } from '../../hooks/useReportColumns';
 import ReportSortSelect from '../../components/report/ReportSortSelect';
 
+// ✅ compare (component chung + insight riêng)
+import ReportCompareModal from '../../components/report/ReportCompareModal';
+import { buildLastCruiseInsight } from '../../features/lastCruiseReport/compare/lastCruiseCompareInsight';
+
 import { LOCKED_KEYS, STORAGE_KEY } from '../../features/lastCruiseReport/constants';
 import { useLangFromPath } from '../../features/lastCruiseReport/locale/useLangFromPath';
 import { buildAllColsMeta } from '../../features/lastCruiseReport/columns/buildAllColsMeta';
@@ -22,6 +26,13 @@ import { useLastCruiseExcel } from '../../features/lastCruiseReport/hooks/useLas
 
 import { getLastCruiseList } from '../../lib/api/report';
 import { buildImeiToLicensePlateMap } from '../../util/deviceMap';
+
+// ✅ NEW: generic report components
+import ReportViewToggle from '../../components/chart/ReportViewToggle';
+import ReportPanel from '../../components/chart/ReportPanel';
+
+// ✅ NEW: adapter/config for THIS report
+import { buildLastCruiseReportConfig } from '../../features/lastCruiseReport/reportConfig';
 
 const { useBreakpoint } = Grid;
 const { RangePicker } = DatePicker;
@@ -41,19 +52,29 @@ const LastCruiseReportPage = () => {
     const screens = useBreakpoint();
     const isMobile = !screens.lg;
 
+    // ✅ view mode
+    const [viewMode, setViewMode] = useState('table');
+
     const [colModalOpen, setColModalOpen] = useState(false);
 
+    // ✅ Compare states
+    const [compareOpen, setCompareOpen] = useState(false);
+    const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+    const [selectedRows, setSelectedRows] = useState([]);
+
+    const clearSelection = useCallback(() => {
+        setSelectedRowKeys([]);
+        setSelectedRows([]);
+    }, []);
+
     // device map (dev ~= imei)
-    const { imeiToPlate, loadingDeviceMap } = useLastCruiseDeviceMap({ buildImeiToLicensePlateMap });
+    const { imeiToPlate } = useLastCruiseDeviceMap({ buildImeiToLicensePlateMap });
 
     // data + FE filter/sort/paging
     const {
         loading,
         pagination,
         setPagination,
-
-        filterValues,
-        setFilterValues,
 
         sortMode,
         setSortMode,
@@ -91,7 +112,39 @@ const LastCruiseReportPage = () => {
         lockedKeys: LOCKED_KEYS,
     });
 
+    // ✅ label map để compare-table ra đúng label VI/EN + lọc field đúng theo table
+    const colLabelMap = useMemo(() => {
+        const m = new Map();
+        (allColsForModal || []).forEach((c) => m.set(c.key, c.label));
+        return m;
+    }, [allColsForModal]);
+
     const customLocale = { emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu ' };
+
+    const rowSelection = useMemo(
+        () => ({
+            selectedRowKeys,
+            onChange: (keys, rows) => {
+                if (keys.length > 3) {
+                    setSelectedRowKeys(keys.slice(0, 3));
+                    setSelectedRows(rows.slice(0, 3));
+                    return;
+                }
+                setSelectedRowKeys(keys);
+                setSelectedRows(rows);
+            },
+        }),
+        [selectedRowKeys],
+    );
+
+    // ✅ report config from processedData
+    const reportConfig = useMemo(() => {
+        return buildLastCruiseReportConfig({
+            rows: processedData || [],
+            isEn,
+            t,
+        });
+    }, [processedData, isEn, t]);
 
     return (
         <div className="usage-report-page">
@@ -110,9 +163,8 @@ const LastCruiseReportPage = () => {
                             form={form}
                             layout="vertical"
                             onFinish={() => {
-                                const values = form.getFieldsValue();
-                                setFilterValues(values);
                                 onSearch();
+                                clearSelection();
                             }}
                         >
                             <Form.Item label={t.filter.dev} name="dev">
@@ -157,26 +209,23 @@ const LastCruiseReportPage = () => {
                                     >
                                         {t.filter.search}
                                     </Button>
-                                    <Button icon={<ReloadOutlined />} onClick={onReset} disabled={loading}>
+                                    <Button
+                                        icon={<ReloadOutlined />}
+                                        onClick={() => {
+                                            onReset();
+                                            clearSelection();
+                                        }}
+                                        disabled={loading}
+                                    >
                                         {t.filter.reset}
                                     </Button>
                                 </Space>
                             </Form.Item>
-
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                                {loadingDeviceMap
-                                    ? isEn
-                                        ? 'Loading devices…'
-                                        : 'Đang tải danh sách xe…'
-                                    : isEn
-                                    ? 'Devices loaded'
-                                    : 'Đã tải danh sách xe'}
-                            </Text>
                         </Form>
                     </Card>
                 </Col>
 
-                {/* TABLE */}
+                {/* TABLE / REPORT */}
                 <Col xs={24} lg={17}>
                     <Card
                         className="usage-table-card"
@@ -184,9 +233,8 @@ const LastCruiseReportPage = () => {
                         title={t.table.title}
                         extra={
                             <Space wrap size={12}>
-                                {/* <Text type="secondary" style={{ fontSize: 12 }}>
-                                    {t.table.total.replace('{total}', String(totalRecords))}
-                                </Text> */}
+                                {/* ✅ Toggle mode */}
+                                <ReportViewToggle value={viewMode} onChange={setViewMode} locale={isEn ? 'en' : 'vi'} />
 
                                 <ReportSortSelect
                                     locale={isEn ? 'en' : 'vi'}
@@ -194,10 +242,32 @@ const LastCruiseReportPage = () => {
                                     onChange={(v) => {
                                         setSortMode(v);
                                         setPagination((p) => ({ ...p, current: 1 }));
+                                        clearSelection();
                                     }}
+                                    disabled={viewMode !== 'table'}
                                 />
 
-                                <Button size="small" icon={<SettingOutlined />} onClick={() => setColModalOpen(true)}>
+                                {/* ✅ Compare */}
+                                <Button
+                                    size="small"
+                                    disabled={viewMode !== 'table' || selectedRows.length < 2}
+                                    onClick={() => setCompareOpen(true)}
+                                >
+                                    {isEn ? `Compare (${selectedRows.length})` : `So sánh (${selectedRows.length})`}
+                                </Button>
+
+                                {selectedRows.length > 0 && viewMode === 'table' && (
+                                    <Button size="small" onClick={clearSelection}>
+                                        {isEn ? 'Clear selection' : 'Bỏ chọn'}
+                                    </Button>
+                                )}
+
+                                <Button
+                                    size="small"
+                                    icon={<SettingOutlined />}
+                                    onClick={() => setColModalOpen(true)}
+                                    disabled={viewMode !== 'table'}
+                                >
                                     {isEn ? 'Columns' : 'Cột'}
                                 </Button>
 
@@ -207,27 +277,52 @@ const LastCruiseReportPage = () => {
                             </Space>
                         }
                     >
-                        <Table
-                            rowKey={(record) => record._id || `${record.dev}-${record.createdAt || record.tim || ''}`}
-                            columns={columns}
-                            locale={customLocale}
-                            dataSource={tableData}
-                            loading={loading}
-                            pagination={{
-                                current: pagination.current,
-                                pageSize: pagination.pageSize,
-                                total: totalRecords,
-                                showSizeChanger: true,
-                                pageSizeOptions: ['10', '20', '50', '100'],
-                                showQuickJumper: true,
-                                showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
-                            }}
-                            onChange={handleTableChange}
-                            scroll={{ x: 2350, y: 600 }}
-                        />
+                        {viewMode === 'table' ? (
+                            <Table
+                                rowKey={(record) =>
+                                    record._id || `${record.dev}-${record.createdAt || record.tim || ''}`
+                                }
+                                columns={columns}
+                                locale={customLocale}
+                                dataSource={tableData}
+                                loading={loading}
+                                rowSelection={rowSelection}
+                                pagination={{
+                                    current: pagination.current,
+                                    pageSize: pagination.pageSize,
+                                    total: totalRecords,
+                                    showSizeChanger: true,
+                                    pageSizeOptions: ['10', '20', '50', '100'],
+                                    showQuickJumper: true,
+                                    showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
+                                }}
+                                onChange={(...args) => {
+                                    handleTableChange(...args);
+                                    clearSelection();
+                                }}
+                                scroll={{ x: 2350, y: 600 }}
+                            />
+                        ) : (
+                            <ReportPanel
+                                title={isEn ? 'Report' : 'Báo cáo'}
+                                kpis={reportConfig?.kpis || []}
+                                charts={reportConfig?.charts || []}
+                            />
+                        )}
                     </Card>
                 </Col>
             </Row>
+
+            {/* ✅ Compare modal */}
+            <ReportCompareModal
+                open={compareOpen}
+                onClose={() => setCompareOpen(false)}
+                rows={selectedRows}
+                uiColumns={columns}
+                colLabelMap={colLabelMap}
+                ctx={{ isEn, t }}
+                buildInsight={buildLastCruiseInsight}
+            />
 
             {/* Column modal */}
             <ColumnManagerModal

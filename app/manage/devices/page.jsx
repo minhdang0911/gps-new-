@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import useSWR from 'swr';
 import {
     Card,
     Input,
@@ -29,9 +30,6 @@ import {
 
 import { usePathname } from 'next/navigation';
 
-// ❗ ĐÃ BỎ import * as XLSX / file-saver ở đây
-// để chuyển sang dynamic import trong exportExcel
-
 import markerIcon from '../../assets/marker-red.png';
 import { getTodayForFileName } from '../../util/FormatDate';
 
@@ -56,15 +54,21 @@ const { Option } = Select;
 export default function ManageDevicesPage() {
     const pathname = usePathname() || '/';
 
-    const [loading, setLoading] = useState(false);
-    const [LMap, setLMap] = useState(null);
-    const [token, setToken] = useState('');
-    const [currentRole, setCurrentRole] = useState('');
+    // ✅ đọc token/role ngay ở initial state để giảm “nháy trắng”
+    const [token] = useState(() => {
+        if (typeof window === 'undefined') return '';
+        return localStorage.getItem('accessToken') || '';
+    });
+    const [currentRole] = useState(() => {
+        if (typeof window === 'undefined') return '';
+        return localStorage.getItem('role') || '';
+    });
 
-    // ===== LANG =====const canViewDetail = currentRole === 'administrator' || currentRole === 'distributor';
+    const [LMap, setLMap] = useState(null);
+
     const canEditDevice = currentRole === 'administrator' || currentRole === 'distributor';
-    const canAddDevice = currentRole === 'administrator'; // giữ như cũ
-    const canDeleteDevice = currentRole === 'administrator'; // giữ như cũ
+    const canAddDevice = currentRole === 'administrator';
+    const canDeleteDevice = currentRole === 'administrator';
 
     const [isEn, setIsEn] = useState(false);
 
@@ -90,15 +94,6 @@ export default function ManageDevicesPage() {
 
     const t = isEn ? locales.en.manageDevices : locales.vi.manageDevices;
 
-    // API DATA
-    const [devices, setDevices] = useState([]);
-    const [deviceCategories, setDeviceCategories] = useState([]);
-    const [vehicleCategories, setVehicleCategories] = useState([]);
-    const [userOptions, setUserOptions] = useState([]);
-
-    const [cruiseInfo, setCruiseInfo] = useState(null);
-    const [batteryInfo, setBatteryInfo] = useState(null);
-
     // FILTER STATE
     const [filters, setFilters] = useState({
         phone_number: '',
@@ -121,71 +116,89 @@ export default function ManageDevicesPage() {
     // PAGINATION STATE
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
-    const [total, setTotal] = useState(0);
 
     /* =========================
-        LOAD LIST (có pagination)
+        SWR: LIST DEVICES (pagination + filter)
+        - keepPreviousData: giữ list cũ khi đổi page/filter
     ========================= */
-    const loadDevices = async (page = 1, limit = pageSize) => {
-        if (!token) return;
+    const listParams = useMemo(
+        () => ({
+            page: currentPage,
+            limit: pageSize,
+            ...filters,
+        }),
+        [currentPage, pageSize, filters],
+    );
 
-        try {
-            setLoading(true);
-            const res = await getDevices(token, {
-                page,
-                limit,
-                ...filters,
-            });
+    const devicesKey = token ? ['devices', token, listParams] : null;
 
-            setDevices(res?.devices || []);
-
-            const totalFromApi =
-                res?.total ?? res?.pagination?.total ?? (Array.isArray(res?.devices) ? res.devices.length : 0);
-
-            setTotal(totalFromApi);
-            setCurrentPage(page);
-            setPageSize(limit);
-        } catch (err) {
-            console.error(err);
-            message.error(t.loadError);
-        } finally {
-            setLoading(false);
-        }
+    const devicesFetcher = async ([, tk, params]) => {
+        return getDevices(tk, params);
     };
+
+    const {
+        data: devicesRes,
+        isLoading: devicesLoading,
+        isValidating: devicesValidating,
+        mutate: mutateDevices,
+    } = useSWR(devicesKey, devicesFetcher, {
+        keepPreviousData: true,
+        revalidateOnFocus: false,
+        dedupingInterval: 10_000,
+    });
+
+    const devices = devicesRes?.devices || [];
+    const total =
+        devicesRes?.total ??
+        devicesRes?.pagination?.total ??
+        (Array.isArray(devicesRes?.devices) ? devicesRes.devices.length : 0);
 
     /* =========================
-        LOAD OPTIONS
+        SWR: OPTIONS
     ========================= */
-    const loadOptions = async () => {
-        if (!token) return;
-        try {
-            const dc = await getDeviceCategories(token, { limit: 1000 });
-            setDeviceCategories(dc.items || []);
+    const { data: dcRes } = useSWR(
+        token ? ['deviceCategories', token] : null,
+        ([, tk]) => getDeviceCategories(tk, { limit: 1000 }),
+        { revalidateOnFocus: false, dedupingInterval: 60_000 },
+    );
 
-            const vc = await getVehicleCategories(token, { limit: 1000 });
-            setVehicleCategories(vc.items || []);
+    const { data: vcRes } = useSWR(
+        token ? ['vehicleCategories', token] : null,
+        ([, tk]) => getVehicleCategories(tk, { limit: 1000 }),
+        { revalidateOnFocus: false, dedupingInterval: 60_000 },
+    );
 
-            const users = await getUserList({ limit: 2000 });
-            setUserOptions(users.items || []);
-        } catch (err) {
-            console.error(err);
-            message.error(t.configLoadError);
-        }
-    };
+    const { data: usersRes } = useSWR(['users'], () => getUserList({ limit: 2000 }), {
+        revalidateOnFocus: false,
+        dedupingInterval: 60_000,
+    });
 
-    useEffect(() => {
-        if (typeof window !== 'undefined') {
-            setToken(localStorage.getItem('accessToken') || '');
-            setCurrentRole(localStorage.getItem('role') || '');
-        }
-    }, []);
+    const deviceCategories = dcRes?.items || [];
+    const vehicleCategories = vcRes?.items || [];
+    const userOptions = usersRes?.items || [];
 
-    useEffect(() => {
-        if (!token) return;
-        loadDevices(1, pageSize);
-        loadOptions();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token]);
+    /* =========================
+        SWR: DETAIL (CRUISE + BATTERY)
+        - battery refresh interval (tuỳ bạn chỉnh)
+    ========================= */
+    const selectedImei = selectedDevice?.imei;
+
+    const { data: cruiseInfo } = useSWR(
+        token && viewMode === 'detail' && selectedImei ? ['lastCruise', token, selectedImei] : null,
+        ([, tk, imei]) => getLastCruise(tk, imei),
+        { revalidateOnFocus: false },
+    );
+
+    const { data: batteryRes } = useSWR(
+        token && viewMode === 'detail' && selectedImei ? ['battery', token, selectedImei] : null,
+        ([, tk, imei]) => getBatteryStatusByImei(tk, imei),
+        {
+            revalidateOnFocus: false,
+            refreshInterval: 30_000, // ⭐ pin refresh mỗi 30s (muốn tắt: xoá dòng này)
+        },
+    );
+
+    const batteryInfo = batteryRes?.batteryStatus || null;
 
     /* =========================
         EXPORT EXCEL (dynamic import)
@@ -229,14 +242,11 @@ export default function ManageDevicesPage() {
                 alignment: { horizontal: 'center', vertical: 'center' },
             };
 
-            ws['!rows'] = [
-                { hpt: 28 }, // row 1
-                { hpt: 22 }, // row 2
-            ];
+            ws['!rows'] = [{ hpt: 28 }, { hpt: 22 }];
 
             // HEADER ROW
             headers.forEach((h, idx) => {
-                const cellRef = XLSX.utils.encode_cell({ r: 1, c: idx }); // row 2
+                const cellRef = XLSX.utils.encode_cell({ r: 1, c: idx });
                 if (!ws[cellRef]) return;
 
                 ws[cellRef].s = {
@@ -401,7 +411,8 @@ export default function ManageDevicesPage() {
             }
 
             setModalMode(null);
-            loadDevices(currentPage, pageSize);
+            // ✅ refresh list nhanh
+            mutateDevices();
         } catch (err) {
             message.error(extractErrorMsg(err));
         }
@@ -420,7 +431,8 @@ export default function ManageDevicesPage() {
                 try {
                     await deleteDevice(token, id);
                     message.success(t.deleteSuccess);
-                    loadDevices(currentPage, pageSize);
+                    // ✅ refresh list nhanh
+                    mutateDevices();
                 } catch (err) {
                     message.error(extractErrorMsg(err));
                 }
@@ -430,28 +442,16 @@ export default function ManageDevicesPage() {
 
     /* =========================
         SELECT DEVICE (DETAIL)
+        - chỉ set state, SWR tự fetch cruise/battery theo key
     ========================= */
-    const handleSelectDevice = async (item) => {
+    const handleSelectDevice = (item) => {
         setSelectedDevice(item);
         setViewMode('detail');
-
-        try {
-            const cruise = await getLastCruise(token, item.imei);
-            const battery = await getBatteryStatusByImei(token, item.imei);
-
-            setCruiseInfo(cruise);
-            setBatteryInfo(battery?.batteryStatus || null);
-        } catch (err) {
-            console.error(err);
-            message.error(isEn ? 'Failed to load device data' : 'Không tải được dữ liệu hành trình / pin');
-        }
     };
 
     const goBack = () => {
         setViewMode('list');
         setSelectedDevice(null);
-        setCruiseInfo(null);
-        setBatteryInfo(null);
 
         if (mapRef.current) {
             mapRef.current.remove();
@@ -661,7 +661,14 @@ export default function ManageDevicesPage() {
                 </Row>
 
                 <Row justify="end" style={{ marginTop: 12 }}>
-                    <Button type="primary" icon={<SearchOutlined />} onClick={() => loadDevices(1, pageSize)}>
+                    <Button
+                        type="primary"
+                        icon={<SearchOutlined />}
+                        onClick={() => {
+                            // ✅ chỉ reset page, SWR tự fetch theo key
+                            setCurrentPage(1);
+                        }}
+                    >
                         {t.search}
                     </Button>
                 </Row>
@@ -671,18 +678,21 @@ export default function ManageDevicesPage() {
                 <Text strong>
                     {t.deviceList} ({total || devices.length})
                 </Text>
+
                 <Table
                     dataSource={devices}
                     columns={columns}
                     rowKey="_id"
-                    loading={loading}
+                    // ✅ loading list = loading lần đầu hoặc đang revalidate
+                    loading={devicesLoading || devicesValidating}
                     pagination={{
                         current: currentPage,
                         pageSize,
                         total,
                         showSizeChanger: true,
                         onChange: (page, size) => {
-                            loadDevices(page, size || pageSize);
+                            setCurrentPage(page);
+                            setPageSize(size || pageSize);
                         },
                     }}
                     style={{ marginTop: 12 }}
@@ -692,7 +702,6 @@ export default function ManageDevicesPage() {
         </Space>
     );
 
-    console.log('selectedDevice', selectedDevice);
     /* =========================
         RENDER DETAIL MODE
     ========================= */
@@ -709,12 +718,14 @@ export default function ManageDevicesPage() {
                 <Col xs={24} md={12}>
                     <Card title={t.deviceInfo}>
                         <Descriptions column={1} bordered size="small">
-                            <Descriptions.Item label={t.imei}>{selectedDevice.imei}</Descriptions.Item>
-                            <Descriptions.Item label={t.phone}>{selectedDevice.phone_number || '-'}</Descriptions.Item>
-                            <Descriptions.Item label={t.plate}>{selectedDevice.license_plate || '-'}</Descriptions.Item>
-                            <Descriptions.Item label={t.driver}>{selectedDevice.driver || '-'}</Descriptions.Item>
+                            <Descriptions.Item label={t.imei}>{selectedDevice?.imei}</Descriptions.Item>
+                            <Descriptions.Item label={t.phone}>{selectedDevice?.phone_number || '-'}</Descriptions.Item>
+                            <Descriptions.Item label={t.plate}>
+                                {selectedDevice?.license_plate || '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label={t.driver}>{selectedDevice?.driver || '-'}</Descriptions.Item>
                             <Descriptions.Item label={t.deviceType}>
-                                {selectedDevice.device_category_id?.name}
+                                {selectedDevice?.device_category_id?.name}
                             </Descriptions.Item>
                             <Descriptions.Item label={t.firmware}>{cruiseInfo?.fwr || '-'}</Descriptions.Item>
                             <Descriptions.Item label={t.battery}>{batteryInfo?.soc ?? '--'}%</Descriptions.Item>
@@ -733,11 +744,11 @@ export default function ManageDevicesPage() {
                     <Card title={t.ownerInfo}>
                         <Descriptions column={1} bordered size="small">
                             <Descriptions.Item label={t.customer}>
-                                {selectedDevice.user_id ? selectedDevice.user_id.email : t.notAssigned}
+                                {selectedDevice?.user_id ? selectedDevice.user_id.email : t.notAssigned}
                             </Descriptions.Item>
 
                             <Descriptions.Item label={t.distributor}>
-                                {selectedDevice.distributor_id ? selectedDevice.distributor_id.username : '-'}
+                                {selectedDevice?.distributor_id ? selectedDevice.distributor_id.username : '-'}
                             </Descriptions.Item>
                         </Descriptions>
                     </Card>
@@ -761,6 +772,7 @@ export default function ManageDevicesPage() {
                 onOk={handleSave}
                 okText={t.save}
                 width={600}
+                confirmLoading={false}
             >
                 <Form form={form} layout="vertical">
                     <Form.Item name="imei" label="IMEI" rules={[{ required: true }]}>

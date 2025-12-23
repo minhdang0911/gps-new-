@@ -33,6 +33,7 @@ export function useLastCruiseExcel({ processedData, isEn, t }) {
 
         const rows = processedData.map((item, index) => {
             const timDate = parseTimToDate(item.tim);
+
             return {
                 [t.table.index]: index + 1,
                 [t.table.dev]: item.dev,
@@ -46,6 +47,10 @@ export function useLastCruiseExcel({ processedData, isEn, t }) {
                 [t.table.sos]: formatSos(item.sos),
                 [t.table.acc]: formatAcc(item.acc),
                 [t.table.vgp]: item.vgp,
+
+                // ✅ ADD: mil => ODO
+                [isEn ? 'ODO' : 'ODO']: item.mil ?? '',
+
                 [t.table.createdAt]: formatDateTime(item.createdAt),
             };
         });

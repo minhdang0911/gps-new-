@@ -12,6 +12,7 @@ import baocao from '../../assets/baocao.webp';
 import quanly from '../../assets/quanly.webp';
 import hotro from '../../assets/hotro.png';
 import logo from '../../assets/logo-iky.webp';
+import maintaince from '../../assets/maintaince.png';
 
 import flagVi from '../../assets/flag-vi.png';
 import flagEn from '../../assets/flag-en.png';
@@ -25,6 +26,9 @@ const navItems = [
     { key: 'monitor', labelVi: 'Giám Sát', labelEn: 'Monitor', img: giamsat, path: '/' },
     { key: 'route', labelVi: 'Hành Trình', labelEn: 'Cruise', img: hanhtrinh, path: '/cruise' },
     { key: 'report', labelVi: 'Báo cáo', labelEn: 'Report', img: baocao, path: '/report' },
+
+    // { key: 'maintenance', labelVi: 'Bảo trì', labelEn: 'Maintenance', img: maintaince, path: '/maintenance' },
+
     { key: 'manage', labelVi: 'Quản Lý', labelEn: 'Manage', img: quanly, path: '/manage' },
     { key: 'support', labelVi: 'Hỗ Trợ', labelEn: 'Support', img: hotro, path: '/support' },
 ];
@@ -178,9 +182,14 @@ const Navbar = () => {
                         className={'iky-nav__item' + (item.key === computedActiveKey ? ' iky-nav__item--active' : '')}
                         onClick={() => handleClickItem(item)}
                     >
-                        <div className="iky-nav__item-icon">
+                        <div
+                            className={
+                                'iky-nav__item-icon' + (item.key === 'maintenance' ? ' iky-nav__item-icon--lg' : '')
+                            }
+                        >
                             <Image src={item.img} alt={isEn ? item.labelEn : item.labelVi} width={26} height={26} />
                         </div>
+
                         <span className="iky-nav__item-label">{isEn ? item.labelEn : item.labelVi}</span>
                     </button>
                 ))}

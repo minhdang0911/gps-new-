@@ -1,43 +1,69 @@
-import { useEffect, useMemo, useState } from 'react';
+// features/batteryReport/hooks/useBatteryReportData.js
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import useSWR from 'swr';
 import { message } from 'antd';
 import dayjs from 'dayjs';
 import { normalize } from '../utils';
 import { attachLicensePlate } from '../../../util/deviceMap';
 
-export function useBatteryReportData({ form, getBatteryReport, getUserList, imeiToPlate, isEn, t }) {
-    const [distributorMap, setDistributorMap] = useState({});
-    const [rawData, setRawData] = useState([]);
-    const [loading, setLoading] = useState(false);
+function stableStringify(obj) {
+    if (!obj) return '';
+    const keys = [];
+    JSON.stringify(obj, (k, v) => {
+        keys.push(k);
+        return v;
+    });
+    keys.sort();
+    return JSON.stringify(obj, keys);
+}
+function makeKey(prefix, params) {
+    return params ? [prefix, stableStringify(params)] : null;
+}
 
-    // ✅ BE paginate
+export function useBatteryReportData({ form, getBatteryReport, getUserList, imeiToPlate, isEn, t }) {
+    // ===== UI state =====
     const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 });
     const [tableScrollY, setTableScrollY] = useState(400);
 
-    const [filterValues, setFilterValues] = useState({});
-    const [sortMode, setSortMode] = useState('none'); // dropdown sort
-    const [tableSorter, setTableSorter] = useState({ field: null, order: null }); // ✅ sorter per column
+    const [filterValues, _setFilterValues] = useState({});
+    const [sortMode, _setSortMode] = useState('none'); // dropdown sort
+    const [tableSorter, setTableSorter] = useState({ field: null, order: null }); // sorter per column
 
-    const getDistributorLabel = (id) => {
-        if (!id) return '';
-        return distributorMap[id] || id;
-    };
+    // ===== SWR params =====
+    const [reportParams, setReportParams] = useState(null);
 
-    const fetchDistributors = async () => {
-        try {
-            const res = await getUserList({ position: 'distributor' });
-            const items = res?.items || res?.data || [];
-            const map = {};
-            items.forEach((item) => {
-                const label = (item.name && item.name.trim()) || item.email || item.username;
-                map[item._id] = label;
-            });
-            setDistributorMap(map);
-        } catch (err) {
-            console.error('Lỗi lấy danh sách đại lý: ', err);
-        }
-    };
+    // ===== Distributors via SWR =====
+    const distributorFetcher = useCallback(async () => {
+        const res = await getUserList({ position: 'distributor' });
+        const items = res?.items || res?.data || [];
+        const map = {};
+        items.forEach((item) => {
+            const label = (item.name && item.name.trim()) || item.email || item.username;
+            map[item._id] = label;
+        });
+        return map;
+    }, [getUserList]);
 
-    const buildQueryPayload = (values, page, limit, sorter) => {
+    const swrDistributor = useSWR('batteryReport:distributors', distributorFetcher, {
+        revalidateOnFocus: false,
+        revalidateOnReconnect: false,
+        revalidateIfStale: false,
+        dedupingInterval: 30 * 60 * 1000,
+        shouldRetryOnError: false,
+    });
+
+    const distributorMap = swrDistributor.data || {};
+
+    const getDistributorLabel = useCallback(
+        (id) => {
+            if (!id) return '';
+            return distributorMap[id] || id;
+        },
+        [distributorMap],
+    );
+
+    // ===== Build payload for BE =====
+    const buildQueryPayload = useCallback((values, page, limit, sorter) => {
         const payload = { page, limit };
 
         if (values?.license_plate) payload.license_plate = String(values.license_plate).trim();
@@ -55,54 +81,80 @@ export function useBatteryReportData({ form, getBatteryReport, getUserList, imei
             payload.sort = values.__sortMode;
         }
 
-        // ✅ sort theo cột BE (full dataset)
+        // sort theo cột BE
         if (sorter?.field && sorter?.order) {
             payload.sortField = sorter.field;
             payload.sortOrder = sorter.order === 'ascend' ? 'asc' : 'desc';
         }
 
         return payload;
-    };
-
-    const fetchData = async (page = pagination.current, pageSize = pagination.pageSize, sorter = tableSorter) => {
-        try {
-            setLoading(true);
-
-            const payload = buildQueryPayload({ ...filterValues, __sortMode: sortMode }, page, pageSize, sorter);
-
-            const res = await getBatteryReport(payload);
-
-            const list = res?.data || res?.items || [];
-            const total = res?.total ?? res?.pagination?.total ?? list.length;
-
-            const enriched = attachLicensePlate(list, imeiToPlate);
-
-            setRawData(enriched);
-            setPagination((p) => ({
-                ...p,
-                current: page,
-                pageSize,
-                total,
-            }));
-        } catch (err) {
-            console.error('Lỗi lấy battery report: ', err);
-            message.error(isEn ? 'Failed to load battery report' : 'Không tải được báo cáo pin');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        fetchDistributors();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    useEffect(() => {
-        fetchData(1, pagination.pageSize);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [imeiToPlate]);
+    // ===== SWR fetch battery report =====
+    const reportFetcher = useCallback(
+        async ([, paramsJson]) => {
+            const payload = JSON.parse(paramsJson);
+            return getBatteryReport(payload);
+        },
+        [getBatteryReport],
+    );
 
-    // ✅ responsive height
+    // ✅ cache-first
+    const swrReport = useSWR(makeKey('batteryReport:list', reportParams), reportFetcher, {
+        revalidateOnFocus: false,
+        revalidateOnReconnect: false,
+        revalidateIfStale: false,
+        keepPreviousData: true,
+        dedupingInterval: 5 * 60 * 1000,
+        shouldRetryOnError: false,
+    });
+
+    const loading = swrReport.isLoading || swrReport.isValidating || swrDistributor.isLoading;
+
+    // raw list từ BE
+    const apiList = useMemo(() => {
+        const res = swrReport.data;
+        return res?.data || res?.items || [];
+    }, [swrReport.data]);
+
+    // enrich plate theo imeiToPlate (map đổi => chỉ recompute, KHÔNG refetch)
+    const rawData = useMemo(() => {
+        try {
+            return attachLicensePlate(apiList, imeiToPlate);
+        } catch (e) {
+            console.error(e);
+            return apiList;
+        }
+    }, [apiList, imeiToPlate]);
+
+    // sync total từ BE
+    useEffect(() => {
+        const res = swrReport.data;
+        if (!res) return;
+
+        const list = apiList || [];
+        const total = res?.total ?? res?.pagination?.total ?? list.length;
+
+        setPagination((p) => ({
+            ...p,
+            total: Number(total) || 0,
+        }));
+    }, [swrReport.data, apiList]);
+
+    // error toast
+    useEffect(() => {
+        if (swrDistributor.error) {
+            console.error('Lỗi lấy danh sách đại lý: ', swrDistributor.error);
+        }
+    }, [swrDistributor.error]);
+
+    useEffect(() => {
+        if (!swrReport.error) return;
+        console.error('Lỗi lấy battery report: ', swrReport.error);
+        message.error(isEn ? 'Failed to load battery report' : 'Không tải được báo cáo pin');
+    }, [swrReport.error, isEn]);
+
+    // ===== responsive height =====
     useEffect(() => {
         if (typeof window === 'undefined') return;
         const calcTableHeight = () => {
@@ -115,7 +167,7 @@ export function useBatteryReportData({ form, getBatteryReport, getUserList, imei
         return () => window.removeEventListener('resize', calcTableHeight);
     }, []);
 
-    // ✅ processedData (FE filter bổ sung nếu cần)
+    // ===== FE processedData (lọc thêm nếu cần) =====
     const processedData = useMemo(() => {
         const values = filterValues || {};
         const { imei, license_plate, batteryId, connectionStatus, utilization, timeRange } = values;
@@ -158,11 +210,39 @@ export function useBatteryReportData({ form, getBatteryReport, getUserList, imei
         }));
     }, [processedData, pagination.current, pagination.pageSize]);
 
+    // ===== Setters that reset page (avoid setState-in-effect warning) =====
+    const setFilterValues = useCallback((next) => {
+        setPagination((p) => ({ ...p, current: 1 }));
+        _setFilterValues((prev) => (typeof next === 'function' ? next(prev) : next));
+    }, []);
+
+    const setSortMode = useCallback((next) => {
+        setPagination((p) => ({ ...p, current: 1 }));
+        _setSortMode(next);
+    }, []);
+
+    // ===== Core "fetchData": chỉ set reportParams để SWR fetch/cached =====
+    const fetchData = useCallback(
+        (page = pagination.current, pageSize = pagination.pageSize, sorter = tableSorter) => {
+            const payload = buildQueryPayload({ ...filterValues, __sortMode: sortMode }, page, pageSize, sorter);
+            setReportParams(payload); // key đổi => SWR fetch 1 lần
+        },
+        [buildQueryPayload, filterValues, sortMode, pagination.current, pagination.pageSize, tableSorter],
+    );
+
+    // initial fetch once
+    useEffect(() => {
+        // load default (page 1) một lần khi mount
+        fetchData(1, pagination.pageSize, tableSorter);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // ===== Actions used by UI =====
     const onSearch = () => {
         const values = form.getFieldsValue();
         setFilterValues(values);
         setPagination((p) => ({ ...p, current: 1 }));
-        fetchData(1, pagination.pageSize);
+        fetchData(1, pagination.pageSize, tableSorter);
     };
 
     const onReset = () => {
@@ -185,7 +265,6 @@ export function useBatteryReportData({ form, getBatteryReport, getUserList, imei
         };
 
         const sorterChanged = nextSorter.field !== tableSorter.field || nextSorter.order !== tableSorter.order;
-
         const finalPage = sorterChanged ? 1 : nextPage;
 
         setPagination((p) => ({ ...p, current: finalPage, pageSize: nextSize }));
@@ -193,6 +272,9 @@ export function useBatteryReportData({ form, getBatteryReport, getUserList, imei
 
         fetchData(finalPage, nextSize, nextSorter);
     };
+
+    const fetchDistributors = useCallback(() => swrDistributor.mutate(), [swrDistributor]);
+    const mutate = useCallback(() => swrReport.mutate(), [swrReport]);
 
     return {
         loading,
@@ -221,5 +303,7 @@ export function useBatteryReportData({ form, getBatteryReport, getUserList, imei
         onSearch,
         onReset,
         handleTableChange,
+
+        mutate,
     };
 }

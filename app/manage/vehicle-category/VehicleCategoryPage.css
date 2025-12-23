@@ -28,7 +28,6 @@
 /* filter area */
 .vc-filter {
     display: flex;
-    flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 16px;
 }

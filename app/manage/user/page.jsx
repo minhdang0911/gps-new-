@@ -1,5 +1,7 @@
 'use client';
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+
+import React, { useMemo, useRef, useState, useEffect, useSyncExternalStore, useCallback } from 'react';
+import useSWR from 'swr';
 import { Card, Input, Button, Table, Space, Modal, Typography, Select, Descriptions, message, Row, Col } from 'antd';
 import {
     PlusOutlined,
@@ -10,12 +12,15 @@ import {
     DownloadOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
+
 import { createUser, updateUser, deleteUser, getUserInfo, getUserList } from '../../lib/api/user';
 import UserForm from '../../components/UserForm';
 import './ManageUserPage.css';
+
 import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
 import { getTodayForFileName } from '../../util/FormatDate';
+
 import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
 
@@ -38,9 +43,52 @@ const EMPTY_FORM = {
     address_lng: null,
 };
 
+function useLocalStorageValue(key, fallback = '') {
+    const subscribe = (callback) => {
+        if (typeof window === 'undefined') return () => {};
+        const handler = (e) => {
+            if (!e || e.key === key) callback();
+        };
+        window.addEventListener('storage', handler);
+        return () => window.removeEventListener('storage', handler);
+    };
+
+    const getSnapshot = () => {
+        if (typeof window === 'undefined') return fallback;
+        return localStorage.getItem(key) ?? fallback;
+    };
+
+    const getServerSnapshot = () => fallback;
+
+    return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+}
+
+/** debounce value để khỏi setTimeout effect + setState warning */
+function useDebouncedValue(value, delay = 400) {
+    const [debounced, setDebounced] = useState(value);
+    useEffect(() => {
+        const t = setTimeout(() => setDebounced(value), delay);
+        return () => clearTimeout(t);
+    }, [value, delay]);
+    return debounced;
+}
+
 export default function ManageUserPage() {
     const pathname = usePathname() || '/';
-    const [currentRole, setCurrentRole] = useState(null);
+
+    // ✅ token/role/lang đọc trực tiếp (khỏi setState trong effect)
+    const token = useLocalStorageValue('accessToken', '');
+    const currentRole = useLocalStorageValue('role', '');
+    const langFromStorage = useLocalStorageValue('iky_lang', 'vi');
+
+    const isEnFromPath = useMemo(() => {
+        const segments = pathname.split('/').filter(Boolean);
+        const last = segments[segments.length - 1];
+        return last === 'en';
+    }, [pathname]);
+
+    const isEn = isEnFromPath ? true : langFromStorage === 'en';
+    const t = isEn ? locales.en.manageUser : locales.vi.manageUser;
 
     const isAdmin = currentRole === 'administrator';
     const isDistributor = currentRole === 'distributor';
@@ -50,131 +98,163 @@ export default function ManageUserPage() {
     const canCreate = isAdmin;
     const canDelete = isAdmin;
 
-    const [users, setUsers] = useState([]);
-    const [loadingUsers, setLoadingUsers] = useState(false);
+    // ✅ thêm reporter
+    const roleLabelMap = useMemo(
+        () =>
+            isEn
+                ? {
+                      administrator: 'Admin',
+                      distributor: 'Distributor',
+                      reporter: 'Reporter',
+                      customer: 'Customer',
+                  }
+                : {
+                      administrator: 'Quản trị',
+                      distributor: 'Đại lý',
+                      reporter: 'Giám sát',
+                      customer: 'Khách hàng',
+                  },
+        [isEn],
+    );
 
+    // Filters UI (typing)
     const [searchUsername, setSearchUsername] = useState('');
     const [searchEmail, setSearchEmail] = useState('');
     const [searchPhone, setSearchPhone] = useState('');
     const [filterRole, setFilterRole] = useState('');
 
+    // ✅ Debounce để đỡ call API dồn dập
+    const dUsername = useDebouncedValue(searchUsername, 450);
+    const dEmail = useDebouncedValue(searchEmail, 450);
+    const dPhone = useDebouncedValue(searchPhone, 450);
+    const dRole = useDebouncedValue(filterRole, 250);
+
+    // Modal state
     const [userModalVisible, setUserModalVisible] = useState(false);
     const [viewUserModalVisible, setViewUserModalVisible] = useState(false);
-    const [viewUserData, setViewUserData] = useState(null);
     const [editingUser, setEditingUser] = useState(null);
 
-    const [distributorOptions, setDistributorOptions] = useState([]);
+    const [viewUserId, setViewUserId] = useState(null);
+
+    // Form data ref (for saving) + state (for render initialData)
     const userFormDataRef = useRef(EMPTY_FORM);
+    const [initialFormData, setInitialFormData] = useState(EMPTY_FORM);
 
-    // ===== LANG DETECT =====
-    const [isEn, setIsEn] = useState(false);
+    /* =========================
+        SWR: USERS LIST
+    ========================= */
+    const listParams = useMemo(() => {
+        const params = {
+            username: dUsername || undefined,
+            email: dEmail || undefined,
+            phone: dPhone || undefined,
+            page: 1,
+            limit: 50,
+        };
+        if (dRole) params.position = dRole;
+        return params;
+    }, [dUsername, dEmail, dPhone, dRole]);
 
-    const isEnFromPath = useMemo(() => {
-        const segments = pathname.split('/').filter(Boolean);
-        const last = segments[segments.length - 1];
-        return last === 'en';
-    }, [pathname]);
+    // Nếu customer hoặc role rỗng thì chặn key
+    const usersKey = canView ? ['users', listParams, isEn] : null;
 
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-
-        if (isEnFromPath) {
-            setIsEn(true);
-            localStorage.setItem('iky_lang', 'en');
-        } else {
-            const saved = localStorage.getItem('iky_lang');
-            setIsEn(saved === 'en');
-        }
-    }, [isEnFromPath]);
-
-    const t = isEn ? locales.en.manageUser : locales.vi.manageUser;
-
-    // ✅ thêm reporter
-    const roleLabelMap = isEn
-        ? {
-              administrator: 'Admin',
-              distributor: 'Distributor',
-              reporter: 'Reporter',
-              customer: 'Customer',
-          }
-        : {
-              administrator: 'Quản trị',
-              distributor: 'Đại lý',
-              reporter: 'Giám sát',
-              customer: 'Khách hàng',
-          };
-
-    // ===== INIT ROLE =====
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-        const role = localStorage.getItem('role');
-        setCurrentRole(role);
-    }, []);
-
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            loadUsers();
-        }, 500);
-        return () => clearTimeout(timer);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [searchUsername, searchEmail, searchPhone, filterRole, currentRole]);
-
-    const loadUsers = async () => {
-        try {
-            setLoadingUsers(true);
-
-            const params = {
-                username: searchUsername,
-                email: searchEmail,
-                phone: searchPhone,
-                page: 1,
-                limit: 50,
-            };
-
-            if (filterRole) {
-                params.position = filterRole;
-            }
-
+    const {
+        data: usersRes,
+        isLoading: loadingUsers,
+        isValidating: validatingUsers,
+        mutate: mutateUsers,
+    } = useSWR(
+        usersKey,
+        async ([, params]) => {
             const res = await getUserList(params);
-            setUsers(res?.items || []);
-        } catch (err) {
-            console.log('LOAD USER ERROR', err);
-            message.error(t.messages.loadUsersError);
-        } finally {
-            setLoadingUsers(false);
-        }
-    };
+            return res?.items || [];
+        },
+        {
+            keepPreviousData: true,
+            revalidateOnFocus: false,
+            dedupingInterval: 10_000,
+            onError: (err) => {
+                console.log('LOAD USER ERROR', err);
+                message.error(t.messages.loadUsersError);
+            },
+        },
+    );
 
-    const loadDistributors = async () => {
-        try {
+    const users = usersRes || [];
+
+    /* =========================
+        SWR: DISTRIBUTORS OPTIONS
+        - chỉ load khi mở modal
+    ========================= */
+    const distributorsKey = userModalVisible ? ['distributors', isEn] : null;
+
+    const { data: distributorsRes, isLoading: loadingDistributors } = useSWR(
+        distributorsKey,
+        async () => {
             const res = await getUserList({
                 position: 'distributor',
                 page: 1,
                 limit: 100,
             });
-            setDistributorOptions(res?.items || []);
-        } catch (err) {
-            console.log('LOAD DISTRIBUTOR ERROR', err);
-            message.error(t.messages.loadDistributorsError);
-        }
-    };
+            return res?.items || [];
+        },
+        {
+            revalidateOnFocus: false,
+            dedupingInterval: 60_000,
+            onError: (err) => {
+                console.log('LOAD DISTRIBUTOR ERROR', err);
+                message.error(t.messages.loadDistributorsError);
+            },
+        },
+    );
 
-    const handleOpenAddUser = async () => {
+    const distributorOptions = distributorsRes || [];
+
+    /* =========================
+        SWR: VIEW USER INFO
+        - load khi mở modal view + có id
+    ========================= */
+    const viewKey = viewUserModalVisible && viewUserId ? ['userInfo', viewUserId, isEn] : null;
+
+    const { data: viewRes, isLoading: loadingViewUser } = useSWR(
+        viewKey,
+        async ([, id]) => {
+            const res = await getUserInfo(id);
+            return res?.user || null;
+        },
+        {
+            revalidateOnFocus: false,
+            dedupingInterval: 10_000,
+            onError: (err) => {
+                console.log(err);
+                message.error(t.messages.viewUserError);
+            },
+        },
+    );
+
+    const viewUserData = viewRes;
+
+    /* =========================
+        OPEN / CLOSE MODALS
+    ========================= */
+    const handleOpenAddUser = () => {
         if (!canCreate) return;
 
         setEditingUser(null);
-        userFormDataRef.current = { ...EMPTY_FORM };
 
-        await loadDistributors();
+        const init = { ...EMPTY_FORM };
+        userFormDataRef.current = init;
+        setInitialFormData(init);
+
         setUserModalVisible(true);
     };
 
-    const handleOpenEditUser = async (record) => {
+    const handleOpenEditUser = (record) => {
         if (!canEdit) return;
 
         setEditingUser(record);
 
-        userFormDataRef.current = {
+        const init = {
             username: record.username || '',
             password: '',
             name: record.name || '',
@@ -189,23 +269,29 @@ export default function ManageUserPage() {
             address_lng: record.address_lng || null,
         };
 
-        await loadDistributors();
+        userFormDataRef.current = init;
+        setInitialFormData(init);
+
         setUserModalVisible(true);
     };
 
-    const handleViewUser = async (record) => {
+    const handleViewUser = (record) => {
         if (!canView) return;
-
-        try {
-            const res = await getUserInfo(record._id);
-            setViewUserData(res.user);
-            setViewUserModalVisible(true);
-        } catch (err) {
-            console.log(err);
-            message.error(t.messages.viewUserError);
-        }
+        setViewUserId(record._id);
+        setViewUserModalVisible(true);
     };
 
+    const closeUserModal = useCallback(() => {
+        setUserModalVisible(false);
+        setEditingUser(null);
+
+        userFormDataRef.current = EMPTY_FORM;
+        setInitialFormData(EMPTY_FORM);
+    }, []);
+
+    /* =========================
+        SAVE / DELETE
+    ========================= */
     const handleSaveUser = async () => {
         if (!canEdit) return;
 
@@ -260,8 +346,8 @@ export default function ManageUserPage() {
                 message.success(t.messages.createSuccess);
             }
 
-            setUserModalVisible(false);
-            loadUsers();
+            closeUserModal();
+            mutateUsers(); // ✅ refresh list
         } catch (err) {
             console.log('SAVE USER ERROR', err);
 
@@ -292,7 +378,7 @@ export default function ManageUserPage() {
                 try {
                     await deleteUser(record._id);
                     message.success(t.messages.deleteSuccess);
-                    loadUsers();
+                    mutateUsers(); // ✅ refresh list
                 } catch (err) {
                     console.log('DELETE USER ERROR', err);
                     message.error(t.messages.deleteFailed);
@@ -301,6 +387,9 @@ export default function ManageUserPage() {
         });
     };
 
+    /* =========================
+        EXPORT EXCEL
+    ========================= */
     const exportExcel = () => {
         if (!canExport) return;
 
@@ -368,6 +457,7 @@ export default function ManageUserPage() {
                     const ref = XLSX.utils.encode_cell({ r: R, c: C });
                     const cell = ws[ref];
                     if (!cell) continue;
+
                     cell.s = cell.s || {};
                     cell.s.alignment = { horizontal: 'center', vertical: 'center' };
                     cell.s.border = {
@@ -376,6 +466,7 @@ export default function ManageUserPage() {
                         left: { style: 'thin', color: { rgb: '000000' } },
                         right: { style: 'thin', color: { rgb: '000000' } },
                     };
+
                     if (R > 1 && R % 2 === 0) {
                         cell.s.fill = cell.s.fill || {};
                         cell.s.fill.fgColor = cell.s.fill.fgColor || { rgb: 'F9F9F9' };
@@ -412,6 +503,9 @@ export default function ManageUserPage() {
         }
     };
 
+    /* =========================
+        TABLE COLUMNS
+    ========================= */
     const userColumns = [
         {
             title: t.table.username,
@@ -545,7 +639,7 @@ export default function ManageUserPage() {
                             >
                                 <Option value="administrator">{roleLabelMap.administrator}</Option>
                                 <Option value="distributor">{roleLabelMap.distributor}</Option>
-                                <Option value="reporter">{roleLabelMap.reporter}</Option> {/* ✅ thêm */}
+                                <Option value="reporter">{roleLabelMap.reporter}</Option>
                                 <Option value="customer">{roleLabelMap.customer}</Option>
                             </Select>
                         </Col>
@@ -555,7 +649,7 @@ export default function ManageUserPage() {
                 <Table
                     rowKey="_id"
                     columns={userColumns}
-                    loading={loadingUsers}
+                    loading={loadingUsers || validatingUsers}
                     dataSource={users}
                     className="user-page__table"
                     scroll={{ x: 900 }}
@@ -566,7 +660,7 @@ export default function ManageUserPage() {
             <Modal
                 title={editingUser ? t.modal.editTitle : t.modal.createTitle}
                 open={userModalVisible}
-                onCancel={() => setUserModalVisible(false)}
+                onCancel={closeUserModal}
                 onOk={handleSaveUser}
                 okText={t.modal.okText}
                 cancelText={t.modal.cancelText}
@@ -575,9 +669,10 @@ export default function ManageUserPage() {
                 okButtonProps={{ disabled: !canEdit }}
             >
                 <UserForm
-                    initialData={userFormDataRef.current}
+                    initialData={initialFormData}
                     currentRole={currentRole}
                     distributors={distributorOptions}
+                    distributorsLoading={loadingDistributors} // (nếu UserForm support)
                     isEditing={!!editingUser}
                     onChange={(data) => {
                         userFormDataRef.current = data;
@@ -588,12 +683,17 @@ export default function ManageUserPage() {
             <Modal
                 title={t.view.title}
                 open={viewUserModalVisible}
-                onCancel={() => setViewUserModalVisible(false)}
+                onCancel={() => {
+                    setViewUserModalVisible(false);
+                    setViewUserId(null);
+                }}
                 footer={<Button onClick={() => setViewUserModalVisible(false)}>{t.view.close}</Button>}
                 wrapClassName="user-modal"
                 destroyOnHidden
             >
-                {viewUserData ? (
+                {loadingViewUser ? (
+                    t.view.loading
+                ) : viewUserData ? (
                     <Descriptions column={1} bordered>
                         <Descriptions.Item label={t.view.fields.username}>{viewUserData.username}</Descriptions.Item>
                         <Descriptions.Item label={t.view.fields.name}>{viewUserData.name}</Descriptions.Item>

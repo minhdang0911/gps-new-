@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography, Grid } from 'antd';
 import { SearchOutlined, ReloadOutlined, DownloadOutlined, SettingOutlined } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
@@ -20,7 +20,11 @@ import ColumnManagerModal from '../../components/report/ColumnManagerModal';
 import { useReportColumns } from '../../hooks/useReportColumns';
 import ReportSortSelect from '../../components/report/ReportSortSelect';
 
-// ✅ extracted (new)
+// ✅ compare component chung + insight riêng
+import ReportCompareModal from '../../components/report/ReportCompareModal';
+import { buildTripSessionInsight } from '../../features/tripSessionReport/compare/tripSessionCompareInsight';
+
+// ✅ extracted (existing)
 import { useLangFromPath } from '../../features/usageSessionReport/locale';
 import { LOCKED_KEYS, STORAGE_KEY } from '../../features/tripSessionReport/constants';
 import { buildAllColsMeta } from '../../features/tripSessionReport/columns/buildAllColsMeta';
@@ -28,6 +32,13 @@ import { applySortTrip } from '../../features/tripSessionReport/utils';
 import { useTripDeviceMap } from '../../features/tripSessionReport/hooks/useTripDeviceMap';
 import { useTripSessionData } from '../../features/tripSessionReport/hooks/useTripSessionData';
 import { useTripSessionExcel } from '../../features/tripSessionReport/hooks/useTripSessionExcel';
+
+// ✅ NEW: generic report components
+import ReportViewToggle from '../../components/chart/ReportViewToggle';
+import ReportPanel from '../../components/chart/ReportPanel';
+
+// ✅ NEW: adapter/config for THIS report
+import { buildTripSessionReportConfig } from '../../features/tripSessionReport/reportConfig';
 
 const { RangePicker } = DatePicker;
 const { Title, Text } = Typography;
@@ -44,6 +55,9 @@ const TripSessionReportPage = () => {
 
     const { isEn } = useLangFromPath(pathname);
     const t = isEn ? locales.en.tripSessionReport : locales.vi.tripSessionReport;
+
+    // ✅ view mode
+    const [viewMode, setViewMode] = useState('table');
 
     // ✅ device maps
     const { imeiToPlate, plateToImeis, loadingDeviceMap } = useTripDeviceMap({
@@ -110,6 +124,13 @@ const TripSessionReportPage = () => {
         lockedKeys: LOCKED_KEYS,
     });
 
+    // ✅ label map để compare-table ra đúng tiếng (giống table ngoài)
+    const colLabelMap = useMemo(() => {
+        const m = new Map();
+        (allColsForModal || []).forEach((c) => m.set(c.key, c.label));
+        return m;
+    }, [allColsForModal]);
+
     const tableData = useMemo(() => {
         return (pagedData || []).map((row, idx) => ({
             ...row,
@@ -120,6 +141,43 @@ const TripSessionReportPage = () => {
     // ✅ excel (export current page like old code)
     const { exportExcel } = useTripSessionExcel({ isEn, t });
     const onExport = () => exportExcel({ pagedData, pagination });
+
+    // ===== Compare states =====
+    const [compareOpen, setCompareOpen] = useState(false);
+    const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+    const [selectedRows, setSelectedRows] = useState([]);
+
+    const rowSelection = useMemo(
+        () => ({
+            selectedRowKeys,
+            onChange: (keys, rows) => {
+                if (keys.length > 3) {
+                    setSelectedRowKeys(keys.slice(0, 3));
+                    setSelectedRows(rows.slice(0, 3));
+                    return;
+                }
+                setSelectedRowKeys(keys);
+                setSelectedRows(rows);
+            },
+        }),
+        [selectedRowKeys],
+    );
+
+    const clearSelection = useCallback(() => {
+        setSelectedRowKeys([]);
+        setSelectedRows([]);
+    }, []);
+
+    // =========================
+    // ✅ REPORT CONFIG (kpis + charts) - dùng processedData (đã sort) để chart phản ánh đúng
+    // =========================
+    const reportConfig = useMemo(() => {
+        return buildTripSessionReportConfig({
+            rows: processedData || [],
+            isEn,
+            t,
+        });
+    }, [processedData, isEn, t]);
 
     return (
         <div className="usage-report-page">
@@ -174,7 +232,7 @@ const TripSessionReportPage = () => {
                     </Card>
                 </Col>
 
-                {/* TABLE */}
+                {/* TABLE / REPORT */}
                 <Col xs={24} lg={17}>
                     <Card
                         className="usage-table-card"
@@ -182,9 +240,8 @@ const TripSessionReportPage = () => {
                         title={t.table.title}
                         extra={
                             <Space size={12} wrap>
-                                {/* <Text type="secondary" style={{ fontSize: 12 }}>
-                                    {t.table.total.replace('{total}', String(pagination.total))}
-                                </Text> */}
+                                {/* ✅ Toggle mode */}
+                                <ReportViewToggle value={viewMode} onChange={setViewMode} locale={isEn ? 'en' : 'vi'} />
 
                                 <ReportSortSelect
                                     locale={isEn ? 'en' : 'vi'}
@@ -193,41 +250,85 @@ const TripSessionReportPage = () => {
                                         setSortMode(v);
                                         setPagination((p) => ({ ...p, current: 1 }));
                                     }}
+                                    disabled={viewMode !== 'table'}
                                 />
 
-                                <Button icon={<SettingOutlined />} size="small" onClick={() => setColModalOpen(true)}>
+                                {/* ✅ Compare button */}
+                                <Button
+                                    size="small"
+                                    disabled={viewMode !== 'table' || selectedRows.length < 2}
+                                    onClick={() => setCompareOpen(true)}
+                                >
+                                    {isEn ? `Compare (${selectedRows.length})` : `So sánh (${selectedRows.length})`}
+                                </Button>
+
+                                <Button
+                                    icon={<SettingOutlined />}
+                                    size="small"
+                                    onClick={() => setColModalOpen(true)}
+                                    disabled={viewMode !== 'table'}
+                                >
                                     {isEn ? 'Columns' : 'Cột'}
                                 </Button>
 
                                 <Button icon={<DownloadOutlined />} size="small" onClick={onExport}>
                                     {isEn ? 'Export Excel' : 'Xuất Excel'}
                                 </Button>
+
+                                {selectedRows.length > 0 && viewMode === 'table' && (
+                                    <Button size="small" onClick={clearSelection}>
+                                        {isEn ? 'Clear selection' : 'Bỏ chọn'}
+                                    </Button>
+                                )}
                             </Space>
                         }
                     >
-                        <Table
-                            locale={{ emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu' }}
-                            rowKey={(r) =>
-                                r._id || r.sessionId || r.tripCode || `${r.tripCode}-${dayjs(r.startTime).valueOf()}`
-                            }
-                            columns={columns}
-                            dataSource={tableData}
-                            loading={loading}
-                            pagination={{
-                                current: pagination.current,
-                                pageSize: pagination.pageSize,
-                                total: pagination.total,
-                                showSizeChanger: true,
-                                pageSizeOptions: ['10', '20', '50', '100'],
-                                showQuickJumper: true,
-                                showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
-                            }}
-                            onChange={handleTableChange}
-                            scroll={{ x: 1400 }}
-                        />
+                        {viewMode === 'table' ? (
+                            <Table
+                                locale={{ emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu' }}
+                                rowKey={(r) =>
+                                    r._id ||
+                                    r.sessionId ||
+                                    r.tripCode ||
+                                    `${r.tripCode}-${dayjs(r.startTime).valueOf()}`
+                                }
+                                columns={columns}
+                                dataSource={tableData}
+                                loading={loading}
+                                rowSelection={rowSelection}
+                                pagination={{
+                                    current: pagination.current,
+                                    pageSize: pagination.pageSize,
+                                    total: pagination.total,
+                                    showSizeChanger: true,
+                                    pageSizeOptions: ['10', '20', '50', '100'],
+                                    showQuickJumper: true,
+                                    showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
+                                }}
+                                onChange={handleTableChange}
+                                scroll={{ x: 1400 }}
+                            />
+                        ) : (
+                            <ReportPanel
+                                title={isEn ? 'Report' : 'Báo cáo'}
+                                kpis={reportConfig?.kpis || []}
+                                charts={reportConfig?.charts || []}
+                            />
+                        )}
                     </Card>
                 </Col>
             </Row>
+
+            {/* ✅ Compare modal */}
+            <ReportCompareModal
+                open={compareOpen}
+                onClose={() => setCompareOpen(false)}
+                rows={selectedRows}
+                uiColumns={columns}
+                colLabelMap={colLabelMap}
+                ctx={{ isEn, t }}
+                buildInsight={buildTripSessionInsight}
+            />
 
             <ColumnManagerModal
                 open={colModalOpen}

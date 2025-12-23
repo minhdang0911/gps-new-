@@ -1,14 +1,31 @@
 // features/usageSessionReport/hooks/useUsageSessionData.js
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
+import useSWR from 'swr';
 import { message } from 'antd';
 import { API_SAFE_LIMIT } from '../constants';
 import { buildParams } from '../utils';
 
-export function useUsageSessionData({ form, getUsageSessions, isEn, t }) {
-    const [serverData, setServerData] = useState([]);
-    const [fullData, setFullData] = useState([]);
-    const [loading, setLoading] = useState(false);
+/**
+ * stable stringify để key không đổi lung tung
+ * - sort keys để JSON.stringify ổn định
+ * - NOTE: buildParams nên trả về primitive (string/number), tránh dayjs/moment object.
+ */
+function stableStringify(obj) {
+    if (!obj) return '';
+    const allKeys = [];
+    JSON.stringify(obj, (key, value) => {
+        allKeys.push(key);
+        return value;
+    });
+    allKeys.sort();
+    return JSON.stringify(obj, allKeys);
+}
 
+function makeKey(prefix, params) {
+    return params ? [prefix, stableStringify(params)] : null;
+}
+
+export function useUsageSessionData({ form, getUsageSessions, isEn, t }) {
     const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 });
 
     const [sortMode, setSortMode] = useState('none');
@@ -20,78 +37,156 @@ export function useUsageSessionData({ form, getUsageSessions, isEn, t }) {
         return sortMode !== 'none' || hasTableFilter || groupBy !== 'none';
     }, [sortMode, tableFilters, groupBy]);
 
-    const fetchPaged = async (page = 1, pageSize = 20) => {
-        try {
-            setLoading(true);
-            const values = form.getFieldsValue();
-            const params = buildParams(values, 1, API_SAFE_LIMIT);
-            const res = await getUsageSessions(params);
-            const list = res.data || [];
+    // params quyết định SWR fetch cái gì
+    const [pagedParams, setPagedParams] = useState(null);
+    const [allParams, setAllParams] = useState(null);
 
-            setServerData(list);
+    const fetcher = useCallback(
+        async ([, paramsJson]) => {
+            const params = JSON.parse(paramsJson);
+            return getUsageSessions(params);
+        },
+        [getUsageSessions],
+    );
 
-            const safeTotal = Math.max(res.total || 0, list.length);
-            setPagination((p) => ({ ...p, current: page, pageSize, total: safeTotal }));
+    // ✅ cấu hình "cache-first": không tự gọi lại khi mount/focus/reconnect
+    const swrOpt = useMemo(
+        () => ({
+            revalidateOnFocus: false,
+            revalidateOnReconnect: false,
 
-            if (list.length >= API_SAFE_LIMIT) {
-                message.warning(
-                    isEn
-                        ? `Data may be truncated (limit=${API_SAFE_LIMIT}).`
-                        : `Dữ liệu có thể bị cắt (limit=${API_SAFE_LIMIT}).`,
+            revalidateIfStale: false, // ✅ stale cũng không auto gọi
+            keepPreviousData: true,
+            dedupingInterval: 5 * 60 * 1000, // ✅ 5 phút cùng key sẽ dedupe (optional)
+            shouldRetryOnError: false,
+        }),
+        [],
+    );
+
+    // --- SWR paged ---
+    const pagedKey = useMemo(() => {
+        if (needFullData) return null;
+        return makeKey('usageSessions:paged', pagedParams);
+    }, [needFullData, pagedParams]);
+
+    const swrPaged = useSWR(pagedKey, fetcher, swrOpt);
+
+    // --- SWR full ---
+    const allKey = useMemo(() => {
+        if (!needFullData) return null;
+        return makeKey('usageSessions:all', allParams);
+    }, [needFullData, allParams]);
+
+    const swrAll = useSWR(allKey, fetcher, swrOpt);
+
+    const loading = needFullData
+        ? swrAll.isLoading || swrAll.isValidating
+        : swrPaged.isLoading || swrPaged.isValidating;
+
+    const serverData = useMemo(() => (swrPaged.data?.data ? swrPaged.data.data : []), [swrPaged.data]);
+    const fullData = useMemo(() => (swrAll.data?.data ? swrAll.data.data : []), [swrAll.data]);
+
+    // ✅ giữ API cũ cho page gọi
+    // IMPORTANT: KHÔNG mutate sau khi setParams (tránh gọi 2 lần)
+    const fetchPaged = useCallback(
+        (page = 1, pageSize = pagination.pageSize || 20) => {
+            try {
+                const values = form.getFieldsValue();
+                const params = buildParams(values, page, pageSize);
+
+                setPagination((p) => ({ ...p, current: page, pageSize }));
+                setPagedParams(params); // key đổi => SWR tự fetch (1 lần)
+            } catch (err) {
+                console.error(err);
+                message.error(
+                    t.messages?.loadError ||
+                        (!isEn ? 'Không tải được danh sách phiên sử dụng' : 'Failed to load usage sessions'),
                 );
             }
-        } catch (err) {
-            console.error(err);
-            message.error(
-                t.messages?.loadError ||
-                    (!isEn ? 'Không tải được danh sách phiên sử dụng' : 'Failed to load usage sessions'),
-            );
-        } finally {
-            setLoading(false);
-        }
-    };
+        },
+        [form, pagination.pageSize, isEn, t],
+    );
 
-    const fetchAll = async () => {
+    const fetchAll = useCallback(() => {
         try {
-            setLoading(true);
             const values = form.getFieldsValue();
             const params = buildParams(values, 1, API_SAFE_LIMIT);
-            const res = await getUsageSessions(params);
-            const list = res.data || [];
 
-            setFullData(list);
-            const safeTotal = Math.max(res.total || 0, list.length);
-            setPagination((p) => ({ ...p, total: safeTotal }));
+            setPagination((p) => ({ ...p, current: 1 }));
+            setAllParams(params); // key đổi => SWR tự fetch (1 lần)
         } catch (err) {
             console.error(err);
             message.error(
                 t.messages?.loadError ||
                     (!isEn ? 'Không tải được danh sách phiên sử dụng' : 'Failed to load usage sessions'),
             );
-        } finally {
-            setLoading(false);
         }
-    };
+    }, [form, isEn, t]);
 
-    // initial load
+    // initial load (paged)
     useEffect(() => {
-        fetchPaged(1, pagination.pageSize);
+        const values = form.getFieldsValue();
+        const params = buildParams(values, 1, pagination.pageSize);
+        setPagedParams(params); // key xuất hiện lần đầu => SWR fetch 1 lần
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // when needFullData changes -> ensure full data
+    // khi needFullData bật -> chuẩn bị allParams
     useEffect(() => {
         if (!needFullData) return;
+
+        const values = form.getFieldsValue();
+        const params = buildParams(values, 1, API_SAFE_LIMIT);
+
         setPagination((p) => ({ ...p, current: 1 }));
-        fetchAll();
+        setAllParams(params);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [needFullData]);
 
+    // update total + warning truncation
+    useEffect(() => {
+        if (!needFullData) {
+            const list = serverData || [];
+            const safeTotal = Math.max(swrPaged.data?.total || 0, list.length);
+            setPagination((p) => ({ ...p, total: safeTotal }));
+            return;
+        }
+
+        const list = fullData || [];
+        const safeTotal = Math.max(swrAll.data?.total || 0, list.length);
+        setPagination((p) => ({ ...p, total: safeTotal }));
+
+        if (list.length >= API_SAFE_LIMIT) {
+            message.warning(
+                isEn
+                    ? `Data may be truncated (limit=${API_SAFE_LIMIT}).`
+                    : `Dữ liệu có thể bị cắt (limit=${API_SAFE_LIMIT}).`,
+            );
+        }
+    }, [needFullData, serverData, fullData, swrPaged.data, swrAll.data, isEn]);
+
+    // handle error
+    useEffect(() => {
+        const err = needFullData ? swrAll.error : swrPaged.error;
+        if (!err) return;
+
+        console.error(err);
+        message.error(
+            t.messages?.loadError ||
+                (!isEn ? 'Không tải được danh sách phiên sử dụng' : 'Failed to load usage sessions'),
+        );
+    }, [needFullData, swrAll.error, swrPaged.error, isEn, t]);
+
+    // expose mutate để bạn có nút "Reload"
+    const mutate = useCallback(() => {
+        if (needFullData) return swrAll.mutate();
+        return swrPaged.mutate();
+    }, [needFullData, swrAll, swrPaged]);
+
     return {
-        // data
         serverData,
         fullData,
-        // ui state
+
         loading,
         pagination,
         sortMode,
@@ -101,9 +196,11 @@ export function useUsageSessionData({ form, getUsageSessions, isEn, t }) {
         groupBy,
         setGroupBy,
         needFullData,
-        // actions
+
         fetchPaged,
         fetchAll,
         setPagination,
+
+        mutate,
     };
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Form, Input, Button, Typography, message } from 'antd';
 import { UserOutlined, LockOutlined } from '@ant-design/icons';
 import { useRouter, usePathname } from 'next/navigation';
@@ -20,6 +20,7 @@ const LoginPage = () => {
 
     const router = useRouter();
     const pathname = usePathname() || '/login';
+    const dropdownRef = useRef(null);
 
     const { isEnFromPath, normalizedPath } = useMemo(() => {
         const segments = pathname.split('/').filter(Boolean);
@@ -47,26 +48,20 @@ const LoginPage = () => {
         }
     }, [isEnFromPath]);
 
+    // Close language dropdown when clicking outside
     useEffect(() => {
-        const handleBeforeUnload = (e) => {
-            debugger; // ← Dừng lại đây
-            console.log('🔥 RELOAD DETECTED!');
-            e.preventDefault();
-            e.returnValue = '';
-            return '';
+        const onMouseDown = (e) => {
+            if (!dropdownRef.current) return;
+            if (!dropdownRef.current.contains(e.target)) {
+                setLangOpen(false);
+            }
         };
-
-        window.addEventListener('beforeunload', handleBeforeUnload);
-
-        return () => {
-            window.removeEventListener('beforeunload', handleBeforeUnload);
-        };
+        document.addEventListener('mousedown', onMouseDown);
+        return () => document.removeEventListener('mousedown', onMouseDown);
     }, []);
 
     const handleSwitchLang = (lang) => {
-        if (typeof window !== 'undefined') {
-            localStorage.setItem('iky_lang', lang);
-        }
+        localStorage.setItem('iky_lang', lang);
 
         if (lang === 'vi') {
             if (!isEn && !isEnFromPath) return;
@@ -79,114 +74,85 @@ const LoginPage = () => {
         setIsEn(true);
 
         const newPath = normalizedPath === '/login' ? '/login/en' : `${normalizedPath}/en`;
+
         router.push(newPath);
     };
 
     const getRandomDeviceId = () => 'dev_' + Math.random().toString(36).substring(2, 12);
+
     const setUser = useAuthStore((state) => state.setUser);
 
     const onFinish = async (values) => {
-        console.log('🔵 [1] onFinish STARTED');
-
         try {
             setLoading(true);
-            console.log('🔵 [2] setLoading = true');
 
             const device = getRandomDeviceId();
             localStorage.setItem('device', device);
-            console.log('🔵 [3] device set:', device);
 
-            console.log('🔵 [4] Calling login API...');
             const res = await login(values.username, values.password, device);
-            console.log('✅ [5] Login SUCCESS:', res);
 
             setUser(res.user);
             localStorage.setItem('role', res?.user?.position || '');
+            localStorage.setItem('userid', res?.user?._id || '');
 
             message.success({
                 content: isEn ? 'Login successful!' : 'Đăng nhập thành công!',
                 duration: 2,
             });
 
-            setTimeout(() => {
-                router.push('/');
-            }, 800);
+            setTimeout(() => router.push('/'), 600);
         } catch (err) {
-            console.log('❌ [6] Login FAILED - catch block');
-            console.error('❌ [7] Error details:', err);
-            console.error('❌ [8] Error message:', err?.message);
-            console.error('❌ [9] Error response:', err?.response);
-
-            // ✅ Lấy message từ response.data của server
             const errorMessage =
                 err?.response?.data?.message ||
                 err?.response?.data?.error ||
                 err?.message ||
                 (isEn ? 'Login failed. Please check your credentials.' : 'Sai thông tin đăng nhập');
 
-            console.log('❌ [10] Showing error message:', errorMessage);
             message.error({
                 content: errorMessage,
                 duration: 3,
             });
-
-            console.log('❌ [11] Error message shown, catch block DONE');
         } finally {
-            console.log('🔵 [12] Finally block - setLoading = false');
             setLoading(false);
-            console.log('🔵 [13] onFinish COMPLETED');
         }
     };
+
     return (
         <div className="iky-login">
             <div className="iky-login__card">
-                <div className="iky-login__lang-dropdown">
+                {/* Language */}
+                <div className="iky-login__lang-dropdown" ref={dropdownRef}>
                     <button type="button" className="iky-login__lang-trigger" onClick={() => setLangOpen((p) => !p)}>
-                        <span>{isEn ? 'EN' : 'VI'}</span>
-                        <span>{isEn ? 'English' : 'Tiếng Việt'}</span>
-                        <span>▾</span>
+                        <span className="iky-login__lang-badge">{isEn ? 'EN' : 'VI'}</span>
+                        <span className="iky-login__lang-name">{isEn ? 'English' : 'Tiếng Việt'}</span>
+                        <span className="iky-login__caret">▾</span>
                     </button>
 
                     {langOpen && (
                         <div className="iky-login__lang-menu">
-                            <button
-                                onClick={() => {
-                                    setLangOpen(false);
-                                    handleSwitchLang('vi');
-                                }}
-                            >
-                                VI - Tiếng Việt
-                            </button>
-                            <button
-                                onClick={() => {
-                                    setLangOpen(false);
-                                    handleSwitchLang('en');
-                                }}
-                            >
-                                EN - English
-                            </button>
+                            <button onClick={() => handleSwitchLang('vi')}>VI - Tiếng Việt</button>
+                            <button onClick={() => handleSwitchLang('en')}>EN - English</button>
                         </div>
                     )}
                 </div>
 
+                {/* Logo */}
                 <div className="iky-login__logo">
-                    <Image src={logo} alt="IKY GPS Logo" width={150} height={150} priority />
+                    <Image src={logo} alt="IKY GPS Logo" width={120} height={120} priority />
                 </div>
 
+                {/* Header */}
                 <div className="iky-login__header">
-                    <Title level={3}>{isEn ? 'Welcome back' : 'Chào mừng trở lại'}</Title>
-                    <Text type="secondary">
+                    <Title level={3} className="iky-login__title">
+                        {isEn ? 'Welcome back' : 'Chào mừng trở lại'}
+                    </Title>
+                    <Text type="secondary" className="iky-login__subtitle">
                         {isEn ? 'Sign in to manage the GPS system' : 'Đăng nhập để quản lý hệ thống GPS'}
                     </Text>
                 </div>
-                <Form
-                    layout="vertical"
-                    onFinish={onFinish}
-                    onFinishFailed={(errorInfo) => {
-                        console.log('Form validation failed:', errorInfo);
-                    }}
-                    requiredMark={false}
-                >
+
+                {/* Form */}
+                <Form layout="vertical" onFinish={onFinish} requiredMark={false} className="iky-login__form">
                     <Form.Item
                         label={isEn ? 'Username' : 'Tên đăng nhập'}
                         name="username"
@@ -201,6 +167,7 @@ const LoginPage = () => {
                             size="large"
                             prefix={<UserOutlined />}
                             placeholder={isEn ? 'Enter username' : 'Nhập tên đăng nhập'}
+                            autoComplete="username"
                         />
                     </Form.Item>
 
@@ -218,6 +185,7 @@ const LoginPage = () => {
                             size="large"
                             prefix={<LockOutlined />}
                             placeholder={isEn ? 'Enter password' : 'Nhập mật khẩu'}
+                            autoComplete="current-password"
                         />
                     </Form.Item>
 
@@ -226,6 +194,7 @@ const LoginPage = () => {
                     </Button>
                 </Form>
 
+                {/* Footer */}
                 <div className="iky-login__footer">
                     <Text>
                         © {new Date().getFullYear()} <b>IKY GPS</b>

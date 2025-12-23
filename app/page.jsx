@@ -737,6 +737,7 @@ const MonitorPage = () => {
         const info = deviceInfo || selectedDevice;
         const src = liveTelemetry || lastCruise || {};
         const mqttSrc = liveTelemetry || {};
+        const odo = mqttSrc.mil ?? src.mil; // mil = ODO
 
         const speed = mqttSrc.spd;
         const distance = mqttSrc.dst;
@@ -818,6 +819,7 @@ const MonitorPage = () => {
                         {t.statusInfo.distance} {distance} km
                     </div>
                 )}
+                {odo != null && <div>ODO {odo} km</div>}
 
                 <div className="iky-monitor__location-row">
                     <span className="iky-monitor__location-label">{t.statusInfo.location}</span>

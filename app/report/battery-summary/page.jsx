@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography, Select, Grid } from 'antd';
 import { SearchOutlined, ReloadOutlined, DownloadOutlined, SettingOutlined } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
@@ -9,10 +9,20 @@ import '../usage-session/usageSession.css';
 import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
 
+import ReportCompareModal from '../../components/report/ReportCompareModal';
+import { buildBatteryInsight } from '../../features/batteryReport/compare/batteryCompareInsight';
+
 // reusable
 import ReportSortSelect from '../../components/report/ReportSortSelect';
 import ColumnManagerModal from '../../components/report/ColumnManagerModal';
 import { useReportColumns } from '../../hooks/useReportColumns';
+
+// ✅ NEW: generic report components
+import ReportViewToggle from '../../components/chart/ReportViewToggle';
+import ReportPanel from '../../components/chart/ReportPanel';
+
+// ✅ NEW: report config adapter
+import { buildBatteryReportConfig } from '../../features/batteryReport/reportConfig';
 
 // extracted
 import { LOCKED_KEYS, STORAGE_KEY } from '../../features/batteryReport/constants';
@@ -44,6 +54,9 @@ const BatterySummaryReportPage = () => {
     const screens = useBreakpoint();
     const isMobile = !screens.lg;
 
+    // ✅ view mode
+    const [viewMode, setViewMode] = useState('table');
+
     const rawLocale = isEn ? locales.en : locales.vi;
 
     const defaultT = {
@@ -67,46 +80,7 @@ const BatterySummaryReportPage = () => {
         },
         table: {
             title: 'Danh sách pin',
-            index: 'STT',
-            imei: 'IMEI',
-            licensePlate: 'Biển số',
-            batteryId: 'Battery ID',
-            date: 'Ngày',
-            chargingDurationToday: 'Thời gian sạc hôm nay',
-            consumedKwToday: 'Điện năng tiêu thụ (kWh) hôm nay',
-            consumedPercentToday: 'Phần trăm tiêu thụ hôm nay',
-            mileageToday: 'Quãng đường hôm nay (km)',
-            numberOfChargingToday: 'Số lần sạc hôm nay',
-            socToday: 'SOC hôm nay (%)',
-            sohToday: 'SOH hôm nay (%)',
-            speedMaxToday: 'Tốc độ tối đa hôm nay',
-            tempAvgToday: 'Nhiệt độ TB hôm nay',
-            tempMaxToday: 'Nhiệt độ max hôm nay',
-            tempMinToday: 'Nhiệt độ min hôm nay',
-            usageDurationToday: 'Thời gian sử dụng hôm nay',
-            voltageAvgToday: 'Điện áp TB hôm nay',
-            voltageMaxToday: 'Điện áp max hôm nay',
-            voltageMinToday: 'Điện áp min hôm nay',
-            connectionStatus: 'Kết nối',
-            utilization: 'Sử dụng',
-            realtime_soc: 'SOC realtime',
-            realtime_soh: 'SOH realtime',
-            realtime_voltage: 'Điện áp realtime',
-            realtime_temperature: 'Nhiệt độ realtime',
-            realtime_status: 'Trạng thái realtime',
-            realtime_lat: 'Lat realtime',
-            realtime_lon: 'Lon realtime',
-            createdAt: 'Tạo lúc',
-            last_update: 'Cập nhật thiết bị',
-            distributor_id: 'Distributor',
-            total: 'Tổng {total} bản ghi',
             showTotal: 'Tổng {total} bản ghi',
-            currentBatteryPower: 'SOC realtime',
-            currentMaxPower: 'Điện áp realtime',
-            batteryUsageToday: 'Battery Usage Today',
-            batteryConsumedToday: 'Phần trăm tiêu thụ hôm nay',
-            wattageConsumedToday: 'Điện năng tiêu thụ (kWh) hôm nay',
-            lastLocation: 'Last location',
         },
     };
 
@@ -116,8 +90,18 @@ const BatterySummaryReportPage = () => {
 
     const [colModalOpen, setColModalOpen] = useState(false);
 
+    // ✅ compare states
+    const [compareOpen, setCompareOpen] = useState(false);
+    const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+    const [selectedRows, setSelectedRows] = useState([]);
+
+    const clearSelection = useCallback(() => {
+        setSelectedRowKeys([]);
+        setSelectedRows([]);
+    }, []);
+
     // device map
-    const { imeiToPlate, loadingDeviceMap } = useBatteryReportDeviceMap({ buildImeiToLicensePlateMap });
+    const { imeiToPlate } = useBatteryReportDeviceMap({ buildImeiToLicensePlateMap });
 
     // data
     const {
@@ -128,7 +112,6 @@ const BatterySummaryReportPage = () => {
 
         sortMode,
         setSortMode,
-        filterValues,
         setFilterValues,
 
         distributorMap,
@@ -170,13 +153,45 @@ const BatterySummaryReportPage = () => {
             formatDateTime,
             formatStatus,
         });
-    }, [t, isEn, isMobile, distributorMap, getDistributorLabel, formatDateTime, formatStatus]);
+    }, [t, isEn, isMobile, distributorMap, getDistributorLabel]);
 
     const { columns, visibleOrder, setVisibleOrder, allColsForModal } = useReportColumns({
         storageKey: STORAGE_KEY,
         allColsMeta,
         lockedKeys: LOCKED_KEYS,
     });
+
+    // ✅ label map cho compare
+    const colLabelMap = useMemo(() => {
+        const m = new Map();
+        (allColsForModal || []).forEach((c) => m.set(c.key, c.label));
+        return m;
+    }, [allColsForModal]);
+
+    const rowSelection = useMemo(
+        () => ({
+            selectedRowKeys,
+            onChange: (keys, rows) => {
+                if (keys.length > 3) {
+                    setSelectedRowKeys(keys.slice(0, 3));
+                    setSelectedRows(rows.slice(0, 3));
+                    return;
+                }
+                setSelectedRowKeys(keys);
+                setSelectedRows(rows);
+            },
+        }),
+        [selectedRowKeys],
+    );
+
+    // ✅ report config from processedData
+    const reportConfig = useMemo(() => {
+        return buildBatteryReportConfig({
+            rows: processedData || [],
+            isEn,
+            t,
+        });
+    }, [processedData, isEn, t]);
 
     return (
         <div className="usage-report-page">
@@ -198,6 +213,7 @@ const BatterySummaryReportPage = () => {
                                 const values = form.getFieldsValue();
                                 setFilterValues(values);
                                 onSearch();
+                                clearSelection();
                             }}
                         >
                             <Form.Item
@@ -243,26 +259,23 @@ const BatterySummaryReportPage = () => {
                                     >
                                         {t.filter.search}
                                     </Button>
-                                    <Button icon={<ReloadOutlined />} onClick={onReset} disabled={loading}>
+                                    <Button
+                                        icon={<ReloadOutlined />}
+                                        onClick={() => {
+                                            onReset();
+                                            clearSelection();
+                                        }}
+                                        disabled={loading}
+                                    >
                                         {t.filter.reset}
                                     </Button>
                                 </Space>
                             </Form.Item>
-
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                                {loadingDeviceMap
-                                    ? isEn
-                                        ? 'Loading devices…'
-                                        : 'Đang tải danh sách xe…'
-                                    : isEn
-                                    ? 'Devices loaded'
-                                    : 'Đã tải danh sách xe'}
-                            </Text>
                         </Form>
                     </Card>
                 </Col>
 
-                {/* TABLE */}
+                {/* TABLE / REPORT */}
                 <Col xs={24} lg={17}>
                     <Card
                         className="usage-table-card"
@@ -270,17 +283,40 @@ const BatterySummaryReportPage = () => {
                         title={t.table.title}
                         extra={
                             <Space size="middle" wrap>
-                                {/* <Text type="secondary" style={{ fontSize: 12 }}>
-                                    {t.table.total.replace('{total}', String(totalRecords))}
-                                </Text> */}
+                                {/* ✅ Toggle mode */}
+                                <ReportViewToggle value={viewMode} onChange={setViewMode} locale={isEn ? 'en' : 'vi'} />
 
                                 <ReportSortSelect
                                     locale={isEn ? 'en' : 'vi'}
                                     value={sortMode}
-                                    onChange={(v) => setSortMode(v)}
+                                    onChange={(v) => {
+                                        setSortMode(v);
+                                        clearSelection();
+                                    }}
+                                    disabled={viewMode !== 'table'}
                                 />
 
-                                <Button size="small" icon={<SettingOutlined />} onClick={() => setColModalOpen(true)}>
+                                {/* ✅ Compare */}
+                                <Button
+                                    size="small"
+                                    disabled={viewMode !== 'table' || selectedRows.length < 2}
+                                    onClick={() => setCompareOpen(true)}
+                                >
+                                    {isEn ? `Compare (${selectedRows.length})` : `So sánh (${selectedRows.length})`}
+                                </Button>
+
+                                {selectedRows.length > 0 && viewMode === 'table' && (
+                                    <Button size="small" onClick={clearSelection}>
+                                        {isEn ? 'Clear selection' : 'Bỏ chọn'}
+                                    </Button>
+                                )}
+
+                                <Button
+                                    size="small"
+                                    icon={<SettingOutlined />}
+                                    onClick={() => setColModalOpen(true)}
+                                    disabled={viewMode !== 'table'}
+                                >
                                     {isEn ? 'Columns' : 'Cột'}
                                 </Button>
 
@@ -290,27 +326,52 @@ const BatterySummaryReportPage = () => {
                             </Space>
                         }
                     >
-                        <Table
-                            locale={customLocale}
-                            rowKey={(record) => record._id || `${record.imei}-${record.date}-${record.batteryId || ''}`}
-                            columns={columns}
-                            dataSource={tableData}
-                            loading={loading}
-                            pagination={{
-                                current: pagination.current,
-                                pageSize: pagination.pageSize,
-                                total: totalRecords,
-                                showSizeChanger: true,
-                                pageSizeOptions: ['10', '20', '50', '100'],
-                                showQuickJumper: true,
-                                showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
-                            }}
-                            onChange={handleTableChange}
-                            scroll={{ x: 2750, y: tableScrollY }}
-                        />
+                        {viewMode === 'table' ? (
+                            <Table
+                                locale={customLocale}
+                                rowKey={(record) =>
+                                    record._id || `${record.imei}-${record.date}-${record.batteryId || ''}`
+                                }
+                                columns={columns}
+                                dataSource={tableData}
+                                loading={loading}
+                                rowSelection={rowSelection}
+                                pagination={{
+                                    current: pagination.current,
+                                    pageSize: pagination.pageSize,
+                                    total: totalRecords,
+                                    showSizeChanger: true,
+                                    pageSizeOptions: ['10', '20', '50', '100'],
+                                    showQuickJumper: true,
+                                    showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
+                                }}
+                                onChange={(...args) => {
+                                    handleTableChange(...args);
+                                    clearSelection();
+                                }}
+                                scroll={{ x: 2750, y: tableScrollY }}
+                            />
+                        ) : (
+                            <ReportPanel
+                                title={isEn ? 'Report' : 'Báo cáo'}
+                                kpis={reportConfig?.kpis || []}
+                                charts={reportConfig?.charts || []}
+                            />
+                        )}
                     </Card>
                 </Col>
             </Row>
+
+            {/* ✅ Compare modal */}
+            <ReportCompareModal
+                open={compareOpen}
+                onClose={() => setCompareOpen(false)}
+                rows={selectedRows}
+                uiColumns={columns}
+                colLabelMap={colLabelMap}
+                ctx={{ isEn, t }}
+                buildInsight={buildBatteryInsight}
+            />
 
             <ColumnManagerModal
                 open={colModalOpen}

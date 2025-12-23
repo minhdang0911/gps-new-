@@ -1,55 +1,88 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 
 const sameArray = (a = [], b = []) => a.length === b.length && a.every((x, i) => x === b[i]);
+
+function safeParseArray(raw) {
+    try {
+        const v = JSON.parse(raw);
+        return Array.isArray(v) ? v : null;
+    } catch {
+        return null;
+    }
+}
+
+/** Tính order cuối cùng từ allKeys + lockedKeys + localStorage */
+function computeOrder({ storageKey, allKeys, lockedKeys }) {
+    const locked = allKeys.filter((k) => lockedKeys.includes(k));
+    const rest = allKeys.filter((k) => !lockedKeys.includes(k));
+    const fallback = [...locked, ...rest];
+
+    if (typeof window === 'undefined') return fallback;
+
+    const raw = localStorage.getItem(storageKey);
+    const saved = raw ? safeParseArray(raw) : null;
+
+    if (!saved) return fallback;
+
+    // chỉ lấy key hợp lệ
+    const cleaned = saved.filter((k) => allKeys.includes(k));
+
+    // locked luôn đứng đầu
+    let next = [...locked, ...cleaned.filter((k) => !lockedKeys.includes(k))];
+
+    // append cột mới
+    const missing = allKeys.filter((k) => !next.includes(k));
+    next = [...next, ...missing];
+
+    if (!next.length) return fallback;
+    return next;
+}
+
+/** Subscribe storage đúng chuẩn external store */
+function useStorageSignal(storageKey) {
+    return useSyncExternalStore(
+        (cb) => {
+            if (typeof window === 'undefined') return () => {};
+            const onStorage = (e) => {
+                if (!e || e.key === storageKey) cb();
+            };
+            window.addEventListener('storage', onStorage);
+            return () => window.removeEventListener('storage', onStorage);
+        },
+        () => {
+            if (typeof window === 'undefined') return 0;
+            // snapshot chỉ cần thay đổi khi storage thay đổi
+            return localStorage.getItem(storageKey) ?? '';
+        },
+        () => '',
+    );
+}
 
 /**
  * allColsMeta: [{ key, label, column }]
  * lockedKeys: keys luôn hiển thị & luôn ở đầu (vd: ['index'])
  */
 export function useReportColumns({ storageKey, allColsMeta, lockedKeys = ['index'] }) {
-    const [visibleOrder, setVisibleOrder] = useState([]);
-
-    // Chỉ phụ thuộc danh sách keys để tránh re-init theo object reference
+    // keys ổn định
     const allKeys = useMemo(() => allColsMeta.map((c) => c.key), [allColsMeta]);
-    const allKeysKey = useMemo(() => allKeys.join('|'), [allKeys]);
+    const lockedKeysStable = useMemo(() => lockedKeys, [lockedKeys.join('|')]); // tránh array ref đổi liên tục
 
-    // lockedKeysKey ổn định (tránh ['index'] tạo mới mỗi render)
-    const lockedKeysKey = useMemo(() => lockedKeys.join('|'), [lockedKeys]);
+    // 👇 signal sẽ đổi khi localStorage key đổi (tab khác)
+    const storageSnapshot = useStorageSignal(storageKey);
 
+    // ✅ init state bằng lazy initializer (KHÔNG dùng effect để init)
+    const [visibleOrder, setVisibleOrder] = useState(() =>
+        computeOrder({ storageKey, allKeys, lockedKeys: lockedKeysStable }),
+    );
+
+    // ✅ Recompute khi: đổi report (storageKey), đổi allKeys, đổi lockedKeys, hoặc storage thay đổi (external)
     useEffect(() => {
-        if (typeof window === 'undefined') return;
-
-        const locked = allKeys.filter((k) => lockedKeys.includes(k));
-        const rest = allKeys.filter((k) => !lockedKeys.includes(k));
-        const fallback = [...locked, ...rest];
-
-        let next = fallback;
-
-        try {
-            const raw = localStorage.getItem(storageKey);
-            if (raw) {
-                const saved = JSON.parse(raw);
-                if (Array.isArray(saved)) {
-                    // chỉ lấy key hợp lệ, giữ locked luôn đứng đầu
-                    const cleaned = saved.filter((k) => allKeys.includes(k));
-                    next = [...locked, ...cleaned.filter((k) => !lockedKeys.includes(k))];
-
-                    // nếu saved thiếu cột mới => append vào cuối
-                    const missing = allKeys.filter((k) => !next.includes(k));
-                    next = [...next, ...missing];
-
-                    if (!next.length) next = fallback;
-                }
-            }
-        } catch {
-            next = fallback;
-        }
-
-        // chống loop: chỉ setState nếu khác thật
+        const next = computeOrder({ storageKey, allKeys, lockedKeys: lockedKeysStable });
         setVisibleOrder((prev) => (sameArray(prev, next) ? prev : next));
-    }, [storageKey, allKeysKey, lockedKeysKey]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [storageKey, storageSnapshot, allKeys.join('|'), lockedKeysStable.join('|')]);
 
     const allColsForModal = useMemo(() => allColsMeta.map((c) => ({ key: c.key, label: c.label })), [allColsMeta]);
 
@@ -58,17 +91,21 @@ export function useReportColumns({ storageKey, allColsMeta, lockedKeys = ['index
         return visibleOrder.map((k) => map.get(k)).filter(Boolean);
     }, [allColsMeta, visibleOrder]);
 
-    const persist = (nextOrder) => {
-        try {
-            localStorage.setItem(storageKey, JSON.stringify(nextOrder));
-        } catch {}
-    };
+    const persist = useCallback(
+        (nextOrder) => {
+            try {
+                localStorage.setItem(storageKey, JSON.stringify(nextOrder));
+                window.dispatchEvent(new StorageEvent('storage', { key: storageKey }));
+            } catch {}
+        },
+        [storageKey],
+    );
 
     return {
         columns,
         visibleOrder,
         setVisibleOrder,
         allColsForModal,
-        persist, // optional: nếu muốn lưu ngoài modal
+        persist,
     };
 }

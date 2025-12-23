@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useMemo, useState, useSyncExternalStore } from 'react';
+import useSWR from 'swr';
 import { Table, Button, Modal, Form, Input, Select, Space, Popconfirm, message, Card } from 'antd';
 import {
     PlusOutlined,
@@ -37,36 +38,51 @@ import en from '../../locales/en.json';
 const locales = { vi, en };
 const { Option } = Select;
 
+/**
+ * ✅ đọc localStorage “chuẩn React” (không cần useEffect + setState)
+ * - tự update khi có storage event (đa tab) / hoặc khi bạn tự dispatch event (cùng tab)
+ */
+function useLocalStorageValue(key, fallback = '') {
+    const subscribe = (callback) => {
+        if (typeof window === 'undefined') return () => {};
+        const handler = (e) => {
+            // storage event chỉ bắn khi đổi từ tab khác.
+            // nếu bạn muốn cùng tab cũng update => bạn có thể dispatch Event('storage') thủ công sau khi setItem
+            if (!e || e.key === key) callback();
+        };
+        window.addEventListener('storage', handler);
+        return () => window.removeEventListener('storage', handler);
+    };
+
+    const getSnapshot = () => {
+        if (typeof window === 'undefined') return fallback;
+        return localStorage.getItem(key) ?? fallback;
+    };
+
+    const getServerSnapshot = () => fallback;
+
+    return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+}
+
 const VehicleCategoryPage = () => {
     const pathname = usePathname() || '/';
 
-    const [loading, setLoading] = useState(false);
-    const [data, setData] = useState([]);
-    const [pagination, setPagination] = useState({
-        current: 1,
-        pageSize: 20,
-        total: 0,
-    });
+    // ✅ đọc token/role/lang trực tiếp từ localStorage store
+    const token = useLocalStorageValue('accessToken', '');
+    const role = useLocalStorageValue('role', '');
 
-    const [filters, setFilters] = useState({
-        name: '',
-        manufacturer: '',
-        year: '',
-        model: '',
-        madeInFrom: '',
-    });
+    // ===== LANG =====
+    // ✅ không dùng setIsEn trong effect nữa
+    const isEnFromPath = useMemo(() => {
+        const segments = pathname.split('/').filter(Boolean);
+        const last = segments[segments.length - 1];
+        return last === 'en';
+    }, [pathname]);
 
-    const [mifOptions, setMifOptions] = useState([]); // xuất xứ
-    const [manufacturerOptions, setManufacturerOptions] = useState([]); // hãng xe
-    const [deviceTypeOptions, setDeviceTypeOptions] = useState([]); // dòng thiết bị
+    const langFromStorage = useLocalStorageValue('iky_lang', 'vi');
 
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [editingItem, setEditingItem] = useState(null);
-    const [form] = Form.useForm();
-
-    const [role, setRole] = useState(null); // customer | distributor | administrator
-
-    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : '';
+    const isEn = isEnFromPath ? true : langFromStorage === 'en';
+    const t = isEn ? locales.en.vehicleCategory : locales.vi.vehicleCategory;
 
     const isAdmin = role === 'administrator';
     const isDistributor = role === 'distributor';
@@ -76,28 +92,66 @@ const VehicleCategoryPage = () => {
     const canCreate = isAdmin;
     const canDelete = isAdmin;
 
-    // ===== LANG =====
-    const [isEn, setIsEn] = useState(false);
+    // FILTERS
+    const [filters, setFilters] = useState({
+        name: '',
+        manufacturer: '',
+        year: '',
+        model: '',
+        madeInFrom: '',
+    });
 
-    const isEnFromPath = useMemo(() => {
-        const segments = pathname.split('/').filter(Boolean);
-        const last = segments[segments.length - 1];
-        return last === 'en';
-    }, [pathname]);
+    // pagination state: chỉ là nguồn từ UI (không sync ngược từ response bằng effect)
+    const [pagination, setPagination] = useState({
+        current: 1,
+        pageSize: 20,
+    });
 
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
+    const total = 0; // sẽ lấy từ listRes
 
-        if (isEnFromPath) {
-            setIsEn(true);
-            localStorage.setItem('iky_lang', 'en');
-        } else {
-            const saved = localStorage.getItem('iky_lang');
-            setIsEn(saved === 'en');
-        }
-    }, [isEnFromPath]);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingItem, setEditingItem] = useState(null);
+    const [form] = Form.useForm();
 
-    const t = isEn ? locales.en.vehicleCategory : locales.vi.vehicleCategory;
+    /* =========================
+        SWR: options
+    ========================= */
+    const mifKey = token ? ['madeInFromOptions', token] : null;
+    const manuKey = token ? ['manufacturerOptions', token] : null;
+    const deviceTypeKey = token ? ['deviceTypeOptions', token] : null;
+
+    const { data: mifRes } = useSWR(mifKey, ([, tk]) => getMadeInFromOptions(tk), {
+        revalidateOnFocus: false,
+        dedupingInterval: 60_000,
+    });
+
+    const { data: manuRes } = useSWR(manuKey, ([, tk]) => getManufacturerOptions(tk), {
+        revalidateOnFocus: false,
+        dedupingInterval: 60_000,
+    });
+
+    const { data: dcRes } = useSWR(deviceTypeKey, ([, tk]) => getDeviceCategories(tk, { page: 1, limit: 100 }), {
+        revalidateOnFocus: false,
+        dedupingInterval: 60_000,
+    });
+
+    const mifOptions = useMemo(() => {
+        const res = mifRes || {};
+        return Object.entries(res).map(([value, label]) => ({ value, label }));
+    }, [mifRes]);
+
+    const manufacturerOptions = useMemo(() => {
+        const res = manuRes || {};
+        return Object.entries(res).map(([value, label]) => ({ value, label }));
+    }, [manuRes]);
+
+    const deviceTypeOptions = useMemo(() => {
+        const items = dcRes?.items || [];
+        return items.map((item) => ({
+            value: item._id,
+            label: item.name || item.code || 'Không tên',
+        }));
+    }, [dcRes]);
 
     // helper label: Xuất xứ
     const getMifLabel = (value) => {
@@ -106,11 +160,8 @@ const VehicleCategoryPage = () => {
         const key = String(value);
         const cfg = MADE_IN_FROM_MAP?.[key];
 
-        if (cfg) {
-            return isEn ? cfg.en : cfg.vi;
-        }
+        if (cfg) return isEn ? cfg.en : cfg.vi;
 
-        // fallback: API label
         const found = mifOptions.find((opt) => String(opt.value) === key);
         if (found?.label) return found.label;
 
@@ -128,103 +179,62 @@ const VehicleCategoryPage = () => {
         return found ? found.label : value || '';
     };
 
-    // Lấy role từ localStorage
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-        const storedRole = localStorage.getItem('role');
-        setRole(storedRole);
-    }, []);
-
-    // Load options: xuất xứ + hãng + dòng thiết bị
-    useEffect(() => {
-        const fetchOptions = async () => {
-            if (!token) return;
-            try {
-                // Xuất xứ (madeInFrom)
-                const mifRes = await getMadeInFromOptions(token);
-                const mifOpts = Object.entries(mifRes || {}).map(([value, label]) => ({
-                    value,
-                    label,
-                }));
-                setMifOptions(mifOpts);
-
-                // Hãng xe (manufacturer)
-                const manuRes = await getManufacturerOptions(token);
-                const manuOpts = Object.entries(manuRes || {}).map(([value, label]) => ({
-                    value,
-                    label,
-                }));
-                setManufacturerOptions(manuOpts);
-
-                // Dòng thiết bị (device category)
-                const dcRes = await getDeviceCategories(token, {
-                    page: 1,
-                    limit: 100,
-                });
-                const dcItems = dcRes.items || [];
-                const dtOpts = dcItems.map((item) => ({
-                    value: item._id,
-                    label: item.name || item.code || 'Không tên',
-                }));
-                setDeviceTypeOptions(dtOpts);
-            } catch (err) {
-                console.error('Load options vehicle category error:', err);
-            }
+    /* =========================
+        SWR: list vehicle categories
+        - key gồm pagination + filters
+        - keepPreviousData để tránh “trống 0.5s”
+    ========================= */
+    const listParams = useMemo(() => {
+        return {
+            page: pagination.current,
+            limit: pagination.pageSize,
+            name: filters.name || undefined,
+            manufacturer: filters.manufacturer || undefined,
+            year: filters.year || undefined,
+            model: filters.model || undefined,
+            madeInFrom: filters.madeInFrom || undefined,
         };
+    }, [pagination.current, pagination.pageSize, filters]);
 
-        fetchOptions();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token]);
+    const listKey = token && role && role !== 'customer' ? ['vehicleCategories', token, listParams] : null;
 
-    const fetchList = async (page = 1, pageSize = 20, extraFilter = {}) => {
-        if (!token) {
-            message.error(t.missingToken);
-            return;
-        }
+    const listFetcher = async ([, tk, params]) => {
+        if (role === 'customer') return { items: [], page: 1, limit: params.limit, total: 0 };
+        return getVehicleCategories(tk, params);
+    };
 
-        // customer không cần gọi API
-        if (role === 'customer') return;
-
-        try {
-            setLoading(true);
-            const params = {
-                page,
-                limit: pageSize,
-                name: filters.name || undefined,
-                manufacturer: filters.manufacturer || undefined,
-                year: filters.year || undefined,
-                model: filters.model || undefined,
-                madeInFrom: filters.madeInFrom || undefined,
-                ...extraFilter,
-            };
-
-            const res = await getVehicleCategories(token, params);
-
-            setData(res.items || []);
-            setPagination({
-                current: res.page || page,
-                pageSize: res.limit || pageSize,
-                total: res.total || 0,
-            });
-        } catch (err) {
+    const {
+        data: listRes,
+        isLoading: listLoading,
+        isValidating: listValidating,
+        mutate: mutateList,
+    } = useSWR(listKey, listFetcher, {
+        keepPreviousData: true,
+        revalidateOnFocus: false,
+        dedupingInterval: 10_000,
+        onError: (err) => {
             console.error('Load vehicle categories error:', err);
             message.error(t.loadError);
-        } finally {
-            setLoading(false);
-        }
-    };
+        },
+    });
 
-    // Chỉ fetch list khi đã biết role và role != customer
-    useEffect(() => {
-        if (!role || role === 'customer') return;
-        fetchList(pagination.current, pagination.pageSize);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [role]);
+    const data = listRes?.items || [];
+    const apiTotal = listRes?.total ?? 0;
 
+    /* =========================
+        TABLE CHANGE
+        - ✅ không cần setPagination trong effect
+    ========================= */
     const handleTableChange = (pag) => {
-        fetchList(pag.current, pag.pageSize);
+        setPagination({
+            current: pag.current,
+            pageSize: pag.pageSize,
+        });
     };
 
+    /* =========================
+        MODAL
+    ========================= */
     const openCreateModal = () => {
         if (!isAdmin) {
             message.warning(t.noPermissionCreate);
@@ -263,7 +273,7 @@ const VehicleCategoryPage = () => {
         try {
             await deleteVehicleCategory(token, record._id);
             message.success(t.deleteSuccess);
-            fetchList(pagination.current, pagination.pageSize);
+            mutateList();
         } catch (err) {
             console.error('Delete vehicle category error:', err);
             message.error(t.deleteFailed);
@@ -288,9 +298,7 @@ const VehicleCategoryPage = () => {
                 madeInFrom: values.madeInFrom,
             };
 
-            if (values.deviceTypeId) {
-                payload.deviceTypeId = values.deviceTypeId;
-            }
+            if (values.deviceTypeId) payload.deviceTypeId = values.deviceTypeId;
 
             if (editingItem) {
                 await updateVehicleCategory(token, editingItem._id, payload);
@@ -302,16 +310,13 @@ const VehicleCategoryPage = () => {
 
             setIsModalOpen(false);
             form.resetFields();
-            fetchList(pagination.current, pagination.pageSize);
+            mutateList();
         } catch (err) {
-            if (err?.errorFields) {
-                return;
-            }
+            if (err?.errorFields) return;
 
             console.error('Save vehicle category error:', err);
 
             const apiData = err?.response?.data;
-
             const msg =
                 apiData?.error ||
                 apiData?.message ||
@@ -323,8 +328,11 @@ const VehicleCategoryPage = () => {
         }
     };
 
+    /* =========================
+        SEARCH / RESET
+    ========================= */
     const handleSearch = () => {
-        fetchList(1, pagination.pageSize);
+        setPagination((p) => ({ ...p, current: 1 }));
     };
 
     const handleResetFilter = () => {
@@ -335,13 +343,7 @@ const VehicleCategoryPage = () => {
             model: '',
             madeInFrom: '',
         });
-        fetchList(1, pagination.pageSize, {
-            name: undefined,
-            manufacturer: undefined,
-            year: undefined,
-            model: undefined,
-            madeInFrom: undefined,
-        });
+        setPagination((p) => ({ ...p, current: 1 }));
     };
 
     /* =========================
@@ -366,7 +368,6 @@ const VehicleCategoryPage = () => {
             const ws = XLSX.utils.json_to_sheet(excelData, { origin: 'A2' });
             const headers = Object.keys(excelData[0]);
 
-            // Title
             const title = t.exportTitle;
             ws['A1'] = { v: title, t: 's' };
             ws['!merges'] = [
@@ -382,7 +383,6 @@ const VehicleCategoryPage = () => {
             };
             ws['!rows'] = [{ hpt: 26 }, { hpt: 22 }];
 
-            // Header row (index 1)
             headers.forEach((h, idx) => {
                 const ref = XLSX.utils.encode_cell({ r: 1, c: idx });
                 if (!ws[ref]) return;
@@ -401,7 +401,6 @@ const VehicleCategoryPage = () => {
 
             const range = XLSX.utils.decode_range(ws['!ref']);
 
-            // Style data
             for (let R = range.s.r; R <= range.e.r; R++) {
                 for (let C = range.s.c; C <= range.e.c; C++) {
                     const ref = XLSX.utils.encode_cell({ r: R, c: C });
@@ -424,13 +423,11 @@ const VehicleCategoryPage = () => {
                 }
             }
 
-            // Auto width
             ws['!cols'] = headers.map((key) => {
                 const maxLen = Math.max(key.length, ...excelData.map((row) => String(row[key] || '').length));
                 return { wch: maxLen + 4 };
             });
 
-            // Auto filter
             ws['!autofilter'] = {
                 ref: XLSX.utils.encode_range({
                     s: { r: 1, c: 0 },
@@ -456,7 +453,7 @@ const VehicleCategoryPage = () => {
     };
 
     /* =========================
-       COLUMNS + SORTER
+       COLUMNS
     ========================= */
     const columns = [
         {
@@ -496,10 +493,6 @@ const VehicleCategoryPage = () => {
             title: t.columns.deviceType,
             dataIndex: 'deviceTypeId',
             key: 'deviceTypeId',
-            sorter: (a, b) =>
-                getDeviceTypeLabel(a.deviceTypeId || a.deviceType_id).localeCompare(
-                    getDeviceTypeLabel(b.deviceTypeId || b.deviceType_id),
-                ),
             render: (value, record) => {
                 const v = value || record.deviceType_id;
                 return getDeviceTypeLabel(v) || '-';
@@ -539,15 +532,17 @@ const VehicleCategoryPage = () => {
         return (
             <div className="vc-page">
                 <Card className="vc-card" title={t.title}>
-                    <p
-                        style={{
-                            color: '#ef4444',
-                            fontWeight: 500,
-                            margin: 0,
-                        }}
-                    >
-                        {t.noPermissionPage}
-                    </p>
+                    <p style={{ color: '#ef4444', fontWeight: 500, margin: 0 }}>{t.noPermissionPage}</p>
+                </Card>
+            </div>
+        );
+    }
+
+    if (!canView) {
+        return (
+            <div className="vc-page">
+                <Card className="vc-card" title={t.title}>
+                    <p style={{ color: '#ef4444', fontWeight: 500, margin: 0 }}>{t.noPermissionPage}</p>
                 </Card>
             </div>
         );
@@ -560,10 +555,7 @@ const VehicleCategoryPage = () => {
                 title={t.title}
                 extra={
                     <Space className="vc-card__actions">
-                        <Button
-                            icon={<ReloadOutlined />}
-                            onClick={() => fetchList(pagination.current, pagination.pageSize)}
-                        >
+                        <Button icon={<ReloadOutlined />} onClick={() => mutateList()}>
                             {t.refresh}
                         </Button>
                         <Button icon={<DownloadOutlined />} onClick={exportExcel} disabled={!data.length}>
@@ -584,23 +576,14 @@ const VehicleCategoryPage = () => {
                         prefix={<SearchOutlined />}
                         placeholder={t.filters.name}
                         value={filters.name}
-                        onChange={(e) =>
-                            setFilters((prev) => ({
-                                ...prev,
-                                name: e.target.value,
-                            }))
-                        }
+                        onChange={(e) => setFilters((prev) => ({ ...prev, name: e.target.value }))}
                     />
+
                     <Select
                         allowClear
                         placeholder={t.filters.manufacturer}
                         value={filters.manufacturer || undefined}
-                        onChange={(value) =>
-                            setFilters((prev) => ({
-                                ...prev,
-                                manufacturer: value || '',
-                            }))
-                        }
+                        onChange={(value) => setFilters((prev) => ({ ...prev, manufacturer: value || '' }))}
                         style={{ minWidth: 180 }}
                     >
                         {manufacturerOptions.map((opt) => (
@@ -609,38 +592,26 @@ const VehicleCategoryPage = () => {
                             </Option>
                         ))}
                     </Select>
+
                     <Input
                         allowClear
                         placeholder={t.filters.year}
                         value={filters.year}
-                        onChange={(e) =>
-                            setFilters((prev) => ({
-                                ...prev,
-                                year: e.target.value,
-                            }))
-                        }
+                        onChange={(e) => setFilters((prev) => ({ ...prev, year: e.target.value }))}
                     />
+
                     <Input
                         allowClear
                         placeholder={t.filters.model}
                         value={filters.model}
-                        onChange={(e) =>
-                            setFilters((prev) => ({
-                                ...prev,
-                                model: e.target.value,
-                            }))
-                        }
+                        onChange={(e) => setFilters((prev) => ({ ...prev, model: e.target.value }))}
                     />
+
                     <Select
                         allowClear
                         placeholder={t.filters.origin}
                         value={filters.madeInFrom || undefined}
-                        onChange={(value) =>
-                            setFilters((prev) => ({
-                                ...prev,
-                                madeInFrom: value || '',
-                            }))
-                        }
+                        onChange={(value) => setFilters((prev) => ({ ...prev, madeInFrom: value || '' }))}
                         style={{ minWidth: 180 }}
                     >
                         {mifOptions.map((opt) => (
@@ -661,10 +632,15 @@ const VehicleCategoryPage = () => {
                 {/* Bảng */}
                 <Table
                     rowKey="_id"
-                    loading={loading}
+                    loading={listLoading || listValidating}
                     columns={columns}
                     dataSource={data}
-                    pagination={pagination}
+                    pagination={{
+                        current: pagination.current,
+                        pageSize: pagination.pageSize,
+                        total: apiTotal,
+                        showSizeChanger: true,
+                    }}
                     onChange={handleTableChange}
                     className="vc-table"
                     scroll={{ x: 900 }}
@@ -690,12 +666,7 @@ const VehicleCategoryPage = () => {
                     <Form.Item
                         label={t.form.nameLabel}
                         name="name"
-                        rules={[
-                            {
-                                required: true,
-                                message: t.form.nameRequired,
-                            },
-                        ]}
+                        rules={[{ required: true, message: t.form.nameRequired }]}
                     >
                         <Input />
                     </Form.Item>
@@ -717,12 +688,7 @@ const VehicleCategoryPage = () => {
                     <Form.Item
                         label={t.form.yearLabel}
                         name="year"
-                        rules={[
-                            {
-                                required: true,
-                                message: t.form.yearRequired,
-                            },
-                        ]}
+                        rules={[{ required: true, message: t.form.yearRequired }]}
                     >
                         <Input />
                     </Form.Item>
@@ -730,12 +696,7 @@ const VehicleCategoryPage = () => {
                     <Form.Item
                         label={t.form.modelLabel}
                         name="model"
-                        rules={[
-                            {
-                                required: true,
-                                message: t.form.modelRequired,
-                            },
-                        ]}
+                        rules={[{ required: true, message: t.form.modelRequired }]}
                     >
                         <Input />
                     </Form.Item>

@@ -1,149 +1,126 @@
-/* ROOT */
+/* =========================
+   ROOT – CENTER ABSOLUTE
+========================= */
 .iky-login {
     min-height: 100vh;
+    width: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, #e0f7fa, #ffffff);
-    padding: 2vw;
+    padding: clamp(12px, 2.2vw, 28px);
+    background: radial-gradient(1200px 800px at 20% 10%, #e8fbff 0%, #ffffff 45%, #f7f7ff 100%);
 }
 
-/* CARD */
+/* =========================
+   CARD
+========================= */
 .iky-login__card {
-    width: 100%;
-    max-width: 420px;
-    background: #ffffff;
-    border-radius: 16px;
-    padding: clamp(28px, 5vw, 40px);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.08);
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-.iky-login__card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.12);
+    width: min(420px, 100%);
+    margin: 0 auto;
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid rgba(17, 17, 17, 0.06);
+    border-radius: 18px;
+    padding: clamp(18px, 3.2vw, 28px);
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.08);
+    backdrop-filter: blur(10px);
+
+    --gap: clamp(10px, 1.6vw, 16px);
 }
 
-/* LANGUAGE DROPDOWN */
+.iky-login__card:hover {
+    transform: translateY(-2px);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: 0 18px 54px rgba(0, 0, 0, 0.12);
+}
+
+/* =========================
+   TOP BAR (LANG – VISUAL BALANCE)
+========================= */
 .iky-login__lang-dropdown {
     display: flex;
     justify-content: flex-end;
     position: relative;
-    margin-bottom: 16px;
+    margin-bottom: var(--gap);
 }
 
+/* =========================
+   LANGUAGE BUTTON
+========================= */
 .iky-login__lang-trigger {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
+    gap: 8px;
+    padding: 6px 10px;
     border-radius: 999px;
-    border: 1px solid #d9d9d9;
+    border: 1px solid rgba(17, 17, 17, 0.14);
     background: #fff;
     font-size: 13px;
     cursor: pointer;
-    transition: all 0.2s ease;
-}
-.iky-login__lang-trigger:hover {
-    background: #f5f5f5;
+    transition: all 0.18s ease;
 }
 
+.iky-login__lang-trigger:hover {
+    background: rgba(0, 0, 0, 0.04);
+    border-color: rgba(17, 17, 17, 0.25);
+}
+
+.iky-login__lang-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 20px;
+    min-width: 28px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: rgba(17, 17, 17, 0.08);
+    font-weight: 700;
+    font-size: 12px;
+}
+
+.iky-login__lang-name {
+    font-weight: 600;
+}
+
+.iky-login__caret {
+    opacity: 0.7;
+}
+
+/* =========================
+   LANGUAGE MENU
+========================= */
 .iky-login__lang-menu {
     position: absolute;
     right: 0;
-    top: 110%;
-    margin-top: 4px;
+    top: calc(100% + 8px);
     background: #fff;
-    border: 1px solid #d9d9d9;
-    border-radius: 10px;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+    border: 1px solid rgba(17, 17, 17, 0.12);
+    border-radius: 12px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
     overflow: hidden;
-    min-width: 160px;
+    min-width: 180px;
     z-index: 10;
-    animation: fadeIn 0.2s ease-out;
+    animation: ikyFadeIn 0.18s ease-out;
 }
+
 .iky-login__lang-menu button {
     width: 100%;
-    padding: 8px 12px;
+    padding: 10px 12px;
     text-align: left;
     font-size: 13px;
     background: #fff;
     border: none;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: background 0.15s ease;
 }
+
 .iky-login__lang-menu button:hover {
-    background: #f0f8ff;
+    background: rgba(0, 0, 0, 0.04);
 }
 
-/* LOGO */
-.iky-login__logo {
-    display: flex;
-    justify-content: center;
-    margin-bottom: 24px;
-}
-.iky-login__logo img {
-    border-radius: 12px;
-    transition: transform 0.3s ease;
-}
-.iky-login__logo img:hover {
-    transform: scale(1.05);
-}
-
-/* HEADER */
-.iky-login__header {
-    text-align: center;
-    margin-bottom: 26px;
-}
-.iky-login__header h3 {
-    font-weight: 700;
-    letter-spacing: 0.5px;
-}
-.iky-login__header .ant-typography-secondary {
-    font-size: 13px;
-}
-
-/* INPUT */
-.ant-input,
-.ant-input-affix-wrapper {
-    border-radius: 10px !important;
-    border-color: #d1d5db;
-    transition: all 0.2s ease;
-}
-.ant-input-affix-wrapper:hover {
-    border-color: #111;
-}
-.ant-input-affix-wrapper-focused {
-    border-color: #111 !important;
-    box-shadow: 0 0 0 2px rgba(17, 17, 17, 0.12);
-}
-
-/* BUTTON */
-.ant-btn-primary {
-    margin-top: 8px;
-    border-radius: 10px !important;
-    background: linear-gradient(90deg, #111, #333) !important;
-    border-color: #111 !important;
-    font-weight: 600;
-    transition: all 0.2s ease;
-}
-.ant-btn-primary:hover {
-    background: linear-gradient(90deg, #333, #111) !important;
-    transform: scale(1.03);
-}
-
-/* FOOTER */
-.iky-login__footer {
-    text-align: center;
-    margin-top: 24px;
-    font-size: 12px;
-    color: #6b7280;
-}
-
-/* ANIMATIONS */
-@keyframes fadeIn {
+@keyframes ikyFadeIn {
     from {
         opacity: 0;
-        transform: translateY(-5px);
+        transform: translateY(-6px);
     }
     to {
         opacity: 1;
@@ -151,16 +128,149 @@
     }
 }
 
-/* RESPONSIVE */
+/* =========================
+   LOGO
+========================= */
+.iky-login__logo {
+    display: flex;
+    justify-content: center;
+    margin-bottom: var(--gap);
+}
+
+.iky-login__logo img {
+    width: clamp(84px, 18vw, 120px);
+    height: auto;
+    border-radius: 14px;
+}
+
+/* =========================
+   HEADER (CENTER PERFECT)
+========================= */
+.iky-login__header {
+    text-align: center;
+    margin-bottom: calc(var(--gap) + 2px);
+    display: grid;
+    justify-items: center;
+}
+
+.iky-login__title {
+    margin: 0 !important;
+    font-weight: 800 !important;
+    letter-spacing: 0.2px;
+}
+
+.iky-login__subtitle {
+    margin-top: 4px;
+    font-size: 13px;
+}
+
+/* =========================
+   FORM (ANTD SCOPED FIX)
+========================= */
+.iky-login__form {
+    width: 100%;
+}
+
+.iky-login__form .ant-form-item {
+    margin-bottom: 12px;
+}
+
+.iky-login__form .ant-form-item-label {
+    padding: 0 0 4px !important;
+}
+
+.iky-login__form .ant-form-item-label > label {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+/* INPUT */
+.iky-login__form .ant-input,
+.iky-login__form .ant-input-affix-wrapper {
+    border-radius: 12px !important;
+    border-color: rgba(17, 17, 17, 0.16);
+    transition: all 0.18s ease;
+}
+
+.iky-login__form .ant-input-affix-wrapper:hover {
+    border-color: rgba(17, 17, 17, 0.32);
+}
+
+.iky-login__form .ant-input-affix-wrapper-focused {
+    border-color: rgba(17, 17, 17, 0.6) !important;
+    box-shadow: 0 0 0 3px rgba(17, 17, 17, 0.1);
+}
+
+.iky-login__form .ant-input-prefix {
+    opacity: 0.65;
+}
+
+/* BUTTON */
+.iky-login__form .ant-btn-primary {
+    margin-top: 6px;
+    height: 44px;
+    border-radius: 12px !important;
+    background: linear-gradient(90deg, #111, #2b2b2b) !important;
+    border-color: #111 !important;
+    font-weight: 700;
+    transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.iky-login__form .ant-btn-primary:hover {
+    filter: brightness(1.05);
+    transform: translateY(-1px);
+}
+
+.iky-login__form .ant-btn-primary:active {
+    transform: translateY(0);
+}
+
+/* =========================
+   FOOTER
+========================= */
+.iky-login__footer {
+    text-align: center;
+    margin-top: var(--gap);
+    font-size: 12px;
+    color: rgba(107, 114, 128, 1);
+}
+
+/* =========================
+   MOBILE
+========================= */
 @media (max-width: 480px) {
     .iky-login__card {
-        padding: 24px 20px;
-        border-radius: 12px;
+        border-radius: 14px;
     }
-    .iky-login__header h3 {
-        font-size: clamp(18px, 4vw, 22px);
+
+    .iky-login__lang-name {
+        display: none; /* tránh lệch thị giác */
     }
-    .ant-btn-primary {
-        font-size: 14px;
+
+    .iky-login__subtitle {
+        font-size: 12.5px;
+    }
+
+    .iky-login__form .ant-form-item {
+        margin-bottom: 10px;
+    }
+
+    .iky-login__form .ant-btn-primary {
+        height: 42px;
+    }
+}
+
+/* =========================
+   SMALL HEIGHT DEVICES
+========================= */
+@media (max-height: 560px) {
+    .iky-login {
+        align-items: flex-start;
+        padding-top: 16px;
+        padding-bottom: 16px;
+    }
+
+    .iky-login__logo {
+        display: none;
     }
 }

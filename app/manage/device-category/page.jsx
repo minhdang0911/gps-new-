@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useMemo, useState, useSyncExternalStore } from 'react';
+import useSWR from 'swr';
 import { Table, Button, Modal, Form, Input, Select, Space, Popconfirm, message, Card } from 'antd';
 import {
     PlusOutlined,
@@ -20,8 +21,8 @@ import {
     deleteDeviceCategory,
     getMadeInFromOptions,
 } from '../../lib/api/deviceCategory';
-import { MADE_IN_FROM_MAP } from '../../util/ConverMadeIn';
 
+import { MADE_IN_FROM_MAP } from '../../util/ConverMadeIn';
 import './DeviceCategoryPage.css';
 
 import { getTodayForFileName } from '../../util/FormatDate';
@@ -36,34 +37,45 @@ import en from '../../locales/en.json';
 const locales = { vi, en };
 const { Option } = Select;
 
+/** ✅ đọc localStorage “chuẩn React”, không cần useEffect + setState */
+function useLocalStorageValue(key, fallback = '') {
+    const subscribe = (callback) => {
+        if (typeof window === 'undefined') return () => {};
+        const handler = (e) => {
+            // storage event chỉ bắn khi đổi từ tab khác.
+            // nếu muốn cùng tab cũng update => dispatch StorageEvent thủ công ở nơi setItem
+            if (!e || e.key === key) callback();
+        };
+        window.addEventListener('storage', handler);
+        return () => window.removeEventListener('storage', handler);
+    };
+
+    const getSnapshot = () => {
+        if (typeof window === 'undefined') return fallback;
+        return localStorage.getItem(key) ?? fallback;
+    };
+
+    const getServerSnapshot = () => fallback;
+
+    return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+}
+
 const DeviceCategoryPage = () => {
     const pathname = usePathname() || '/';
 
-    const [loading, setLoading] = useState(false);
-    const [data, setData] = useState([]);
-    const [pagination, setPagination] = useState({
-        current: 1,
-        pageSize: 20,
-        total: 0,
-    });
+    // ✅ token/role/lang đọc trực tiếp (không setState trong effect)
+    const token = useLocalStorageValue('accessToken', '');
+    const role = useLocalStorageValue('role', '');
+    const langFromStorage = useLocalStorageValue('iky_lang', 'vi');
 
-    const [filters, setFilters] = useState({
-        name: '',
-        code: '',
-        year: '',
-        model: '',
-        madeInFrom: '',
-    });
+    const isEnFromPath = useMemo(() => {
+        const segments = pathname.split('/').filter(Boolean);
+        const last = segments[segments.length - 1];
+        return last === 'en';
+    }, [pathname]);
 
-    const [mifOptions, setMifOptions] = useState([]);
-
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [editingItem, setEditingItem] = useState(null);
-    const [form] = Form.useForm();
-
-    const [role, setRole] = useState(null); // customer | distributor | administrator
-
-    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : '';
+    const isEn = isEnFromPath ? true : langFromStorage === 'en';
+    const t = isEn ? locales.en.deviceCategory : locales.vi.deviceCategory;
 
     const isAdmin = role === 'administrator';
     const isDistributor = role === 'distributor';
@@ -73,124 +85,110 @@ const DeviceCategoryPage = () => {
     const canCreate = isAdmin;
     const canDelete = isAdmin;
 
-    // ===== LANG =====
-    const [isEn, setIsEn] = useState(false);
+    // FILTERS
+    const [filters, setFilters] = useState({
+        name: '',
+        code: '',
+        year: '',
+        model: '',
+        madeInFrom: '',
+    });
 
-    const isEnFromPath = useMemo(() => {
-        const segments = pathname.split('/').filter(Boolean);
-        const last = segments[segments.length - 1];
-        return last === 'en';
-    }, [pathname]);
+    // pagination: chỉ giữ current/pageSize (total lấy từ API response)
+    const [pagination, setPagination] = useState({
+        current: 1,
+        pageSize: 20,
+    });
 
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [editingItem, setEditingItem] = useState(null);
+    const [form] = Form.useForm();
 
-        if (isEnFromPath) {
-            setIsEn(true);
-            localStorage.setItem('iky_lang', 'en');
-        } else {
-            const saved = localStorage.getItem('iky_lang');
-            setIsEn(saved === 'en');
-        }
-    }, [isEnFromPath]);
-
-    const t = isEn ? locales.en.deviceCategory : locales.vi.deviceCategory;
-
-    // helper lấy label xuất xứ
-    const getMadeInFromLabel = (value) => {
+    // helper label xuất xứ
+    const getMadeInFromLabel = (value, mifOptions = []) => {
         if (!value && value !== 0) return '';
 
         const key = String(value);
-        const cfg = MADE_IN_FROM_MAP[key];
+        const cfg = MADE_IN_FROM_MAP?.[key];
 
-        // Nếu mình có map thì ưu tiên dùng
-        if (cfg) {
-            return isEn ? cfg.en : cfg.vi;
-        }
+        if (cfg) return isEn ? cfg.en : cfg.vi;
 
-        // fallback: lấy label từ API (trong mifOptions), nếu API sau này thêm nước mới
         const found = mifOptions.find((opt) => String(opt.value) === key);
         if (found?.label) return found.label;
 
         return key;
     };
 
-    // Lấy role từ localStorage
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-        const storedRole = localStorage.getItem('role');
-        setRole(storedRole);
-    }, []);
+    /* =========================
+        SWR: madeInFrom options
+    ========================= */
+    const mifKey = token ? ['madeInFromOptions', token] : null;
 
-    // load madeInFrom options
-    useEffect(() => {
-        const fetchMif = async () => {
-            try {
-                if (!token) return;
-                const res = await getMadeInFromOptions(token);
-                const opts = Object.entries(res || {}).map(([value, label]) => ({
-                    value,
-                    label,
-                }));
-                setMifOptions(opts);
-            } catch (err) {
-                console.error('Load madeInFrom options error:', err);
-            }
+    const { data: mifRes } = useSWR(mifKey, ([, tk]) => getMadeInFromOptions(tk), {
+        revalidateOnFocus: false,
+        dedupingInterval: 60_000,
+    });
+
+    const mifOptions = useMemo(() => {
+        const res = mifRes || {};
+        return Object.entries(res).map(([value, label]) => ({ value, label }));
+    }, [mifRes]);
+
+    /* =========================
+        SWR: list device categories
+        - key gồm pagination + filters
+        - keepPreviousData: giữ list cũ khi đổi page/filter
+    ========================= */
+    const listParams = useMemo(() => {
+        return {
+            page: pagination.current,
+            limit: pagination.pageSize,
+            name: filters.name || undefined,
+            code: filters.code || undefined,
+            year: filters.year || undefined,
+            model: filters.model || undefined,
+            madeInFrom: filters.madeInFrom || undefined,
         };
+    }, [pagination.current, pagination.pageSize, filters]);
 
-        fetchMif();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [token]);
+    const listKey = token && role && role !== 'customer' ? ['deviceCategories', token, listParams] : null;
 
-    const fetchList = async (page = 1, pageSize = 20, extraFilter = {}) => {
-        if (!token) {
-            message.error(t.missingToken);
-            return;
-        }
+    const listFetcher = async ([, tk, params]) => {
+        if (role === 'customer') return { items: [], page: 1, limit: params.limit, total: 0 };
+        return getDeviceCategories(tk, params);
+    };
 
-        // customer không cần gọi API luôn
-        if (role === 'customer') return;
-
-        try {
-            setLoading(true);
-            const params = {
-                page,
-                limit: pageSize,
-                name: filters.name || undefined,
-                code: filters.code || undefined,
-                year: filters.year || undefined,
-                model: filters.model || undefined,
-                madeInFrom: filters.madeInFrom || undefined,
-                ...extraFilter,
-            };
-
-            const res = await getDeviceCategories(token, params);
-
-            setData(res.items || []);
-            setPagination({
-                current: res.page || page,
-                pageSize: res.limit || pageSize,
-                total: res.total || 0,
-            });
-        } catch (err) {
+    const {
+        data: listRes,
+        isLoading: listLoading,
+        isValidating: listValidating,
+        mutate: mutateList,
+    } = useSWR(listKey, listFetcher, {
+        keepPreviousData: true,
+        revalidateOnFocus: false,
+        dedupingInterval: 10_000,
+        onError: (err) => {
             console.error('Load device categories error:', err);
             message.error(t.loadError);
-        } finally {
-            setLoading(false);
-        }
-    };
+        },
+    });
 
-    // Chỉ load list khi đã biết role và role != customer
-    useEffect(() => {
-        if (!role || role === 'customer') return;
-        fetchList(pagination.current, pagination.pageSize);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [role]);
+    const data = listRes?.items || [];
+    const apiTotal = listRes?.total ?? 0;
 
+    /* =========================
+        TABLE CHANGE
+    ========================= */
     const handleTableChange = (pag) => {
-        fetchList(pag.current, pag.pageSize);
+        setPagination({
+            current: pag.current,
+            pageSize: pag.pageSize,
+        });
     };
 
+    /* =========================
+        MODAL
+    ========================= */
     const openCreateModal = () => {
         if (!isAdmin) {
             message.warning(t.noPermissionCreate);
@@ -200,6 +198,7 @@ const DeviceCategoryPage = () => {
         form.resetFields();
         setIsModalOpen(true);
     };
+
     const openEditModal = (record) => {
         if (!canEdit) {
             message.warning(t.noPermissionEdit);
@@ -228,7 +227,7 @@ const DeviceCategoryPage = () => {
         try {
             await deleteDeviceCategory(token, record._id);
             message.success(t.deleteSuccess);
-            fetchList(pagination.current, pagination.pageSize);
+            mutateList();
         } catch (err) {
             console.error('Delete device category error:', err);
             message.error(t.deleteFailed);
@@ -263,16 +262,13 @@ const DeviceCategoryPage = () => {
 
             setIsModalOpen(false);
             form.resetFields();
-            fetchList(pagination.current, pagination.pageSize);
+            mutateList();
         } catch (err) {
-            if (err?.errorFields) {
-                return;
-            }
+            if (err?.errorFields) return;
 
             console.error('Save device category error:', err);
 
             const apiData = err?.response?.data;
-
             const msg =
                 apiData?.error ||
                 apiData?.message ||
@@ -284,8 +280,11 @@ const DeviceCategoryPage = () => {
         }
     };
 
+    /* =========================
+        SEARCH / RESET
+    ========================= */
     const handleSearch = () => {
-        fetchList(1, pagination.pageSize);
+        setPagination((p) => ({ ...p, current: 1 }));
     };
 
     const handleResetFilter = () => {
@@ -296,13 +295,7 @@ const DeviceCategoryPage = () => {
             model: '',
             madeInFrom: '',
         });
-        fetchList(1, pagination.pageSize, {
-            name: undefined,
-            code: undefined,
-            year: undefined,
-            model: undefined,
-            madeInFrom: undefined,
-        });
+        setPagination((p) => ({ ...p, current: 1 }));
     };
 
     /* =========================
@@ -315,21 +308,18 @@ const DeviceCategoryPage = () => {
         }
 
         try {
-            // 1. Chuẩn bị data
             const excelData = data.map((item) => ({
                 [t.columns.code]: item.code || '',
                 [t.columns.name]: item.name || '',
                 Năm: item.year || '',
                 Model: item.model || '',
-                [t.columns.origin]: getMadeInFromLabel(item.madeInFrom),
+                [t.columns.origin]: getMadeInFromLabel(item.madeInFrom, mifOptions),
                 [t.columns.description]: item.description || '',
             }));
 
-            // 2. Tạo sheet, chừa dòng 1 cho title
             const ws = XLSX.utils.json_to_sheet(excelData, { origin: 'A2' });
             const headers = Object.keys(excelData[0]);
 
-            // 3. Title dòng 1
             const title = t.exportTitle;
             ws['A1'] = { v: title, t: 's' };
             ws['!merges'] = [
@@ -345,7 +335,6 @@ const DeviceCategoryPage = () => {
             };
             ws['!rows'] = [{ hpt: 28 }, { hpt: 22 }];
 
-            // 4. Header row (row 2)
             headers.forEach((h, idx) => {
                 const ref = XLSX.utils.encode_cell({ r: 1, c: idx });
                 if (!ws[ref]) return;
@@ -362,7 +351,6 @@ const DeviceCategoryPage = () => {
                 };
             });
 
-            // 5. Style data
             const range = XLSX.utils.decode_range(ws['!ref']);
             for (let R = range.s.r; R <= range.e.r; R++) {
                 for (let C = range.s.c; C <= range.e.c; C++) {
@@ -379,7 +367,6 @@ const DeviceCategoryPage = () => {
                         right: { style: 'thin', color: { rgb: '000000' } },
                     };
 
-                    // zebra stripe cho row > header
                     if (R > 1 && R % 2 === 0) {
                         cell.s.fill = cell.s.fill || {};
                         cell.s.fill.fgColor = cell.s.fill.fgColor || { rgb: 'F9F9F9' };
@@ -387,13 +374,11 @@ const DeviceCategoryPage = () => {
                 }
             }
 
-            // 6. Auto width
             ws['!cols'] = headers.map((key) => {
                 const maxLen = Math.max(key.length, ...excelData.map((row) => String(row[key] || '').length));
                 return { wch: maxLen + 4 };
             });
 
-            // 7. Auto filter (header row 2)
             ws['!autofilter'] = {
                 ref: XLSX.utils.encode_range({
                     s: { r: 1, c: 0 },
@@ -401,7 +386,6 @@ const DeviceCategoryPage = () => {
                 }),
             };
 
-            // 8. Workbook + save
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, 'DeviceCategories');
 
@@ -420,7 +404,7 @@ const DeviceCategoryPage = () => {
     };
 
     /* =========================
-        COLUMNS + SORTER
+        COLUMNS
     ========================= */
     const columns = [
         {
@@ -452,10 +436,12 @@ const DeviceCategoryPage = () => {
             title: t.columns.origin,
             dataIndex: 'madeInFrom',
             key: 'madeInFrom',
-            sorter: (a, b) => getMadeInFromLabel(a.madeInFrom).localeCompare(getMadeInFromLabel(b.madeInFrom)),
-            render: (value) => getMadeInFromLabel(value) || '-',
+            sorter: (a, b) =>
+                getMadeInFromLabel(a.madeInFrom, mifOptions).localeCompare(
+                    getMadeInFromLabel(b.madeInFrom, mifOptions),
+                ),
+            render: (value) => getMadeInFromLabel(value, mifOptions) || '-',
         },
-
         {
             title: t.columns.description,
             dataIndex: 'description',
@@ -491,20 +477,23 @@ const DeviceCategoryPage = () => {
         },
     ];
 
-    // Nếu là customer -> chặn hẳn trang
+    // customer -> chặn luôn trang
     if (isCustomer) {
         return (
             <div className="dc-page">
                 <Card className="dc-card" title={t.title}>
-                    <p
-                        style={{
-                            color: '#ef4444',
-                            fontWeight: 500,
-                            margin: 0,
-                        }}
-                    >
-                        {t.noPermissionPage}
-                    </p>
+                    <p style={{ color: '#ef4444', fontWeight: 500, margin: 0 }}>{t.noPermissionPage}</p>
+                </Card>
+            </div>
+        );
+    }
+
+    // nếu không có quyền view thì chặn
+    if (!canView) {
+        return (
+            <div className="dc-page">
+                <Card className="dc-card" title={t.title}>
+                    <p style={{ color: '#ef4444', fontWeight: 500, margin: 0 }}>{t.noPermissionPage}</p>
                 </Card>
             </div>
         );
@@ -517,16 +506,13 @@ const DeviceCategoryPage = () => {
                 title={t.title}
                 extra={
                     <Space className="dc-card__actions">
-                        <Button
-                            icon={<ReloadOutlined />}
-                            onClick={() => fetchList(pagination.current, pagination.pageSize)}
-                        >
+                        <Button icon={<ReloadOutlined />} onClick={() => mutateList()}>
                             {t.refresh}
                         </Button>
-                        <Button icon={<DownloadOutlined />} onClick={exportExcel}>
+                        <Button icon={<DownloadOutlined />} onClick={exportExcel} disabled={!data.length}>
                             {t.exportExcel}
                         </Button>
-                        {isAdmin && (
+                        {canCreate && (
                             <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
                                 {t.addNew}
                             </Button>
@@ -541,61 +527,36 @@ const DeviceCategoryPage = () => {
                         prefix={<SearchOutlined />}
                         placeholder={t.filters.name}
                         value={filters.name}
-                        onChange={(e) =>
-                            setFilters((prev) => ({
-                                ...prev,
-                                name: e.target.value,
-                            }))
-                        }
+                        onChange={(e) => setFilters((prev) => ({ ...prev, name: e.target.value }))}
                     />
                     <Input
                         allowClear
                         placeholder={t.filters.code}
                         value={filters.code}
-                        onChange={(e) =>
-                            setFilters((prev) => ({
-                                ...prev,
-                                code: e.target.value,
-                            }))
-                        }
+                        onChange={(e) => setFilters((prev) => ({ ...prev, code: e.target.value }))}
                     />
                     <Input
                         allowClear
                         placeholder={t.filters.year}
                         value={filters.year}
-                        onChange={(e) =>
-                            setFilters((prev) => ({
-                                ...prev,
-                                year: e.target.value,
-                            }))
-                        }
+                        onChange={(e) => setFilters((prev) => ({ ...prev, year: e.target.value }))}
                     />
                     <Input
                         allowClear
                         placeholder={t.filters.model}
                         value={filters.model}
-                        onChange={(e) =>
-                            setFilters((prev) => ({
-                                ...prev,
-                                model: e.target.value,
-                            }))
-                        }
+                        onChange={(e) => setFilters((prev) => ({ ...prev, model: e.target.value }))}
                     />
                     <Select
                         allowClear
                         placeholder={t.filters.origin}
                         value={filters.madeInFrom || undefined}
-                        onChange={(value) =>
-                            setFilters((prev) => ({
-                                ...prev,
-                                madeInFrom: value || '',
-                            }))
-                        }
+                        onChange={(value) => setFilters((prev) => ({ ...prev, madeInFrom: value || '' }))}
                         style={{ minWidth: 180 }}
                     >
                         {mifOptions.map((opt) => (
                             <Option key={opt.value} value={opt.value}>
-                                {getMadeInFromLabel(opt.value)}
+                                {getMadeInFromLabel(opt.value, mifOptions)}
                             </Option>
                         ))}
                     </Select>
@@ -611,10 +572,15 @@ const DeviceCategoryPage = () => {
                 {/* Bảng */}
                 <Table
                     rowKey="_id"
-                    loading={loading}
+                    loading={listLoading || listValidating}
                     columns={columns}
                     dataSource={data}
-                    pagination={pagination}
+                    pagination={{
+                        current: pagination.current,
+                        pageSize: pagination.pageSize,
+                        total: apiTotal,
+                        showSizeChanger: true,
+                    }}
                     onChange={handleTableChange}
                     className="dc-table"
                     scroll={{ x: 800 }}
@@ -648,12 +614,7 @@ const DeviceCategoryPage = () => {
                     <Form.Item
                         label={t.form.nameLabel}
                         name="name"
-                        rules={[
-                            {
-                                required: true,
-                                message: t.form.nameRequired,
-                            },
-                        ]}
+                        rules={[{ required: true, message: t.form.nameRequired }]}
                     >
                         <Input />
                     </Form.Item>
@@ -661,12 +622,7 @@ const DeviceCategoryPage = () => {
                     <Form.Item
                         label={t.form.yearLabel}
                         name="year"
-                        rules={[
-                            {
-                                required: true,
-                                message: t.form.yearRequired,
-                            },
-                        ]}
+                        rules={[{ required: true, message: t.form.yearRequired }]}
                     >
                         <Input />
                     </Form.Item>
@@ -687,7 +643,7 @@ const DeviceCategoryPage = () => {
                         <Select placeholder={t.form.originPlaceholder}>
                             {mifOptions.map((opt) => (
                                 <Option key={opt.value} value={opt.value}>
-                                    {getMadeInFromLabel(opt.value)}
+                                    {getMadeInFromLabel(opt.value, mifOptions)}
                                 </Option>
                             ))}
                         </Select>

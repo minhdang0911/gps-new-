@@ -4,7 +4,15 @@ import React, { useMemo, useState } from 'react';
 import { Modal, Input, Divider, Checkbox, Button } from 'antd';
 import { HolderOutlined, CloseOutlined } from '@ant-design/icons';
 
-import { DndContext, PointerSensor, useSensor, useSensors, closestCenter } from '@dnd-kit/core';
+import {
+    DndContext,
+    PointerSensor,
+    TouchSensor,
+    MouseSensor,
+    useSensor,
+    useSensors,
+    closestCenter,
+} from '@dnd-kit/core';
 import { SortableContext, useSortable, arrayMove, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
@@ -25,6 +33,7 @@ function SortableRow({ id, label, onRemove, disabled }) {
         marginBottom: 8,
         cursor: disabled ? 'not-allowed' : 'grab',
         userSelect: 'none',
+        touchAction: 'none', // ⭐ quan trọng cho mobile
     };
 
     return (
@@ -40,6 +49,7 @@ function SortableRow({ id, label, onRemove, disabled }) {
                 <span
                     onPointerDown={(e) => e.stopPropagation()}
                     onMouseDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
                     onClick={(e) => {
                         e.stopPropagation();
                         onRemove();
@@ -76,7 +86,14 @@ export default function ColumnManagerModal({
 }) {
     const [q, setQ] = useState('');
 
-    const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+    const sensors = useSensors(
+        useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+        useSensor(TouchSensor, {
+            activationConstraint: { delay: 150, tolerance: 5 },
+        }),
+        useSensor(PointerSensor),
+    );
+
     const visibleSet = useMemo(() => new Set(visibleOrder), [visibleOrder]);
 
     const filteredAll = useMemo(() => {

@@ -1,0 +1,348 @@
+/* ===== LAYOUT CHUNG ===== */
+
+.supportPage {
+    position: relative;
+    min-height: 100vh;
+    padding: 32px 0 48px;
+    background: radial-gradient(circle at top left, #e6f4ff 0, transparent 55%),
+        radial-gradient(circle at bottom right, #f6ffed 0, transparent 55%), #f5f5f5;
+}
+
+.supportPageGradient {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(circle at 10% 0, rgba(24, 144, 255, 0.12), transparent 60%),
+        radial-gradient(circle at 90% 100%, rgba(82, 196, 26, 0.12), transparent 60%);
+    opacity: 0.9;
+    z-index: -1;
+}
+
+.supportPageInner {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 16px;
+}
+
+/* ===== HERO ===== */
+
+.header {
+    margin-bottom: 24px;
+    animation: supportFadeUp 0.6s ease-out;
+}
+
+.heroBadge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(24, 144, 255, 0.06);
+    color: #1890ff;
+    font-size: 12px;
+    margin-bottom: 10px;
+}
+
+.heroDot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #52c41a;
+    box-shadow: 0 0 0 4px rgba(82, 196, 26, 0.25);
+}
+
+.headerMain {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    flex-wrap: wrap;
+}
+
+.headerText {
+    flex: 1;
+    min-width: 260px;
+}
+
+.pageTitle {
+    margin-bottom: 4px !important;
+}
+
+.subtitle {
+    font-size: 14px;
+}
+
+.headerMeta {
+    margin-top: 12px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.heroActions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 240px;
+}
+
+.heroChip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: #fff;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
+    font-size: 13px;
+}
+
+.heroChipPrimary {
+    background: linear-gradient(120deg, #1890ff, #722ed1);
+    color: #fff;
+    box-shadow: 0 8px 20px rgba(24, 144, 255, 0.35);
+}
+
+/* ===== KPI ===== */
+
+.kpiRow {
+    margin-bottom: 24px;
+}
+
+.kpiCard {
+    border-radius: 12px !important;
+    background: rgba(255, 255, 255, 0.9) !important;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+    transition: all 0.2s ease;
+}
+
+.kpiCard:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+}
+
+.kpiIcon {
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(24, 144, 255, 0.06);
+    color: #1890ff;
+    font-size: 18px;
+}
+
+.kpiLabel {
+    font-size: 12px;
+}
+
+.kpiValue {
+    font-weight: 600;
+    font-size: 14px;
+}
+
+/* ===== CARD CHUNG ===== */
+
+.supportCard {
+    border-radius: 16px !important;
+    background: rgba(255, 255, 255, 0.96) !important;
+    border: 1px solid rgba(240, 240, 240, 0.9) !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
+    backdrop-filter: blur(4px);
+    transition: all 0.2s ease;
+}
+
+.supportCard:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.08);
+}
+
+.supportCardElevated {
+    box-shadow: 0 14px 40px rgba(24, 144, 255, 0.15);
+}
+
+.cardTitle {
+    margin-bottom: 8px !important;
+}
+
+.paragraph {
+    font-size: 13px;
+}
+
+/* ===== LIST ===== */
+
+.supportList {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 13px;
+}
+
+.supportListCompact {
+    font-size: 12px;
+}
+
+/* ===== CONTACT ===== */
+
+.infoBlock {
+    font-size: 13px;
+}
+
+.icon {
+    color: #1890ff;
+    margin-top: 2px;
+}
+
+.phoneBlock {
+    margin-top: 6px;
+}
+
+/* ===== FORM ===== */
+
+.formActions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* ===== SUPPORT CHANNELS ===== */
+
+.channelRow {
+    margin-bottom: 24px;
+}
+
+.channelsCard :global(.ant-card-head) {
+    border-bottom: none;
+}
+
+.channelCard {
+    border-radius: 14px;
+    padding: 12px 14px;
+    background: #fafafa;
+    border: 1px solid #f0f0f0;
+    height: 100%;
+    transition: all 0.2s ease;
+}
+
+.channelCard:hover {
+    background: #fff;
+    border-color: #bae7ff;
+    transform: translateY(-4px);
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.08);
+}
+
+.channelDesc {
+    font-size: 12px;
+    margin-top: 4px;
+    margin-bottom: 10px;
+}
+
+/* ===== FAQ ===== */
+
+.faqRow {
+    margin-bottom: 24px;
+}
+
+.faqCard :global(.ant-card-head) {
+    border-bottom: none;
+}
+
+.faqCollapse {
+    background: transparent !important;
+}
+
+.faqCollapse :global(.ant-collapse-item) {
+    border-radius: 12px;
+    margin-bottom: 8px;
+    border: 1px solid #f0f0f0;
+    background: #fafafa;
+}
+
+.faqHeader {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.faqIndex {
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(24, 144, 255, 0.08);
+    color: #1890ff;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.faqAnswer {
+    font-size: 13px;
+}
+
+/* ===== MAP ===== */
+
+.mapCard :global(.ant-card-head) {
+    border-bottom: none;
+}
+
+.mapSwitch {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 10px;
+}
+
+.mapShell {
+    position: relative;
+    height: 360px;
+    border-radius: 18px;
+    overflow: hidden;
+    background: #f0f5ff;
+}
+
+.mapFrame {
+    width: 100%;
+    height: 100%;
+}
+
+.mapLoading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(240, 245, 255, 0.9);
+    z-index: 1;
+}
+
+/* ===== ANIMATION ===== */
+
+@keyframes supportFadeUp {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ===== RESPONSIVE ===== */
+
+@media (max-width: 768px) {
+    .supportPage {
+        padding-top: 20px;
+    }
+
+    .headerMain {
+        flex-direction: column;
+    }
+
+    .heroActions {
+        width: 100%;
+    }
+
+    .mapShell {
+        height: 300px;
+    }
+}
