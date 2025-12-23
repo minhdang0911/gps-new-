@@ -1,6 +1,6 @@
 // features/chargingSessionReport/hooks/useChargingSessionData.js
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import useSWR from 'swr';
+import useSWR, { useSWRConfig } from 'swr';
 import { message } from 'antd';
 import { API_SAFE_LIMIT } from '../constants';
 import { buildPayload } from '../utils';
@@ -15,8 +15,14 @@ function stableStringify(obj) {
     allKeys.sort();
     return JSON.stringify(obj, allKeys);
 }
+
 function makeKey(prefix, payload) {
     return payload ? [prefix, stableStringify(payload)] : null;
+}
+
+function pickList(res) {
+    // backend của bạn trả { devices: [...] }
+    return res?.devices || res?.data || res?.items || [];
 }
 
 export function useChargingSessionData({
@@ -29,11 +35,12 @@ export function useChargingSessionData({
     loadingDeviceMap,
     attachLicensePlate,
 }) {
+    const { mutate: globalMutate } = useSWRConfig();
+
     const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 });
     const [sortMode, setSortMode] = useState('none'); // none | newest | oldest
     const needFullData = useMemo(() => sortMode !== 'none', [sortMode]);
 
-    // payload state quyết định SWR fetch
     const [pagedPayload, setPagedPayload] = useState(null);
     const [allPayload, setAllPayload] = useState(null);
 
@@ -45,21 +52,24 @@ export function useChargingSessionData({
         [getChargingSessions],
     );
 
-    // cache-first: không auto revalidate khi quay lại tab/route
     const swrOpt = useMemo(
         () => ({
+            // ✅ cache-first + không tự refetch khi quay lại tab/route
             revalidateOnFocus: false,
             revalidateOnReconnect: false,
-            // ✅ để TRUE/undefined để lần đầu có key thì fetch (đừng set false)
-            // revalidateOnMount: false,
             revalidateIfStale: false,
+
             keepPreviousData: true,
             dedupingInterval: 5 * 60 * 1000,
             shouldRetryOnError: false,
+
+            // ✅ QUAN TRỌNG: KHÔNG set revalidateOnMount:false
+            // vì nó sẽ chặn luôn fetch lần đầu khi cache miss.
         }),
         [],
     );
 
+    // ====== SWR keys ======
     const pagedKey = useMemo(() => {
         if (loadingDeviceMap) return null;
         if (needFullData) return null;
@@ -81,96 +91,108 @@ export function useChargingSessionData({
         ? swrAll.isLoading || swrAll.isValidating
         : swrPaged.isLoading || swrPaged.isValidating;
 
-    // raw list từ API
-    const rawServer = useMemo(() => (swrPaged.data?.data ? swrPaged.data.data : []), [swrPaged.data]);
-    const rawFull = useMemo(() => (swrAll.data?.data ? swrAll.data.data : []), [swrAll.data]);
+    // ====== parse list ======
+    const rawServer = useMemo(() => pickList(swrPaged.data), [swrPaged.data]);
+    const rawFull = useMemo(() => pickList(swrAll.data), [swrAll.data]);
 
-    // enrich theo imeiToPlate (map đổi => chỉ recompute, không gọi API)
-    const attachPlate = useCallback((list) => attachLicensePlate(list, imeiToPlate), [attachLicensePlate, imeiToPlate]);
+    // enrich plate
+    const attachPlate = useCallback(
+        (list) => {
+            try {
+                return attachLicensePlate ? attachLicensePlate(list, imeiToPlate) : list;
+            } catch (e) {
+                console.error(e);
+                return list;
+            }
+        },
+        [attachLicensePlate, imeiToPlate],
+    );
 
     const serverData = useMemo(() => attachPlate(rawServer), [rawServer, attachPlate]);
     const fullData = useMemo(() => attachPlate(rawFull), [rawFull, attachPlate]);
 
-    // actions giữ nguyên interface
+    const toastLoadError = useCallback(() => {
+        // message.error(
+        //     t?.messages?.loadError ||
+        //         (isEn ? 'Failed to load charging sessions' : 'Không tải được danh sách phiên sạc'),
+        // );
+    }, [isEn, t]);
+
+    // ✅ Force fetch khi user bấm Search/Reset (kể cả payload y hệt)
+    const forceFetch = useCallback(
+        async (prefix, payload) => {
+            const key = makeKey(prefix, payload);
+            await globalMutate(key, fetcher, { revalidate: true });
+        },
+        [globalMutate, fetcher],
+    );
+
+    // ====== INITIAL PAYLOAD (cache-first) ======
+    // - Có cache: show cache, KHÔNG gọi lại vì revalidateOnFocus/reconnect/stale đều false
+    // - Cache miss (F5/lần đầu): SWR sẽ fetch 1 lần (default behavior)
+    useEffect(() => {
+        if (loadingDeviceMap) return;
+
+        const values = form.getFieldsValue();
+
+        if (needFullData) {
+            const payload = buildPayload({ values, page: 1, limit: 100000, plateToImeis });
+            setAllPayload(payload);
+        } else {
+            const payload = buildPayload({ values, page: 1, limit: API_SAFE_LIMIT, plateToImeis });
+            setPagedPayload(payload);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loadingDeviceMap, needFullData]);
+
+    // ====== actions ======
     const fetchPaged = useCallback(
-        (page = 1, pageSize = pagination.pageSize || 10) => {
+        async (page = 1, pageSize = pagination.pageSize || 10, { force = false } = {}) => {
             try {
                 const values = form.getFieldsValue();
                 const payload = buildPayload({
                     values,
-                    page: 1, // giữ đúng logic cũ: server luôn lấy 1 lần limit lớn
+                    page: 1,
                     limit: API_SAFE_LIMIT,
                     plateToImeis,
                 });
 
                 setPagination((p) => ({ ...p, current: page, pageSize }));
-                setPagedPayload(payload); // key đổi => SWR fetch 1 lần
+                setPagedPayload(payload);
+
+                if (force) await forceFetch('chargingSessions:paged', payload);
             } catch (err) {
                 console.error('Lỗi lấy charging session: ', err);
-                message.error(
-                    t?.messages?.loadError ||
-                        (isEn ? 'Failed to load charging sessions' : 'Không tải được danh sách phiên sạc'),
-                );
+                toastLoadError();
             }
         },
-        [form, pagination.pageSize, isEn, t, plateToImeis],
+        [form, pagination.pageSize, plateToImeis, forceFetch, toastLoadError],
     );
 
-    const fetchAll = useCallback(() => {
-        try {
-            const values = form.getFieldsValue();
-            const payload = buildPayload({
-                values,
-                page: 1,
-                limit: 100000,
-                plateToImeis,
-            });
+    const fetchAll = useCallback(
+        async ({ force = false } = {}) => {
+            try {
+                const values = form.getFieldsValue();
+                const payload = buildPayload({
+                    values,
+                    page: 1,
+                    limit: 100000,
+                    plateToImeis,
+                });
 
-            setPagination((p) => ({ ...p, current: 1 }));
-            setAllPayload(payload);
-        } catch (err) {
-            console.error('Lỗi lấy charging session (full): ', err);
-            message.error(
-                t?.messages?.loadError ||
-                    (isEn ? 'Failed to load charging sessions' : 'Không tải được danh sách phiên sạc'),
-            );
-        }
-    }, [form, isEn, t, plateToImeis]);
+                setPagination((p) => ({ ...p, current: 1 }));
+                setAllPayload(payload);
 
-    // initial fetch once maps ready (giống logic cũ)
-    useEffect(() => {
-        if (loadingDeviceMap) return;
+                if (force) await forceFetch('chargingSessions:all', payload);
+            } catch (err) {
+                console.error('Lỗi lấy charging session (full): ', err);
+                toastLoadError();
+            }
+        },
+        [form, plateToImeis, forceFetch, toastLoadError],
+    );
 
-        // set payload lần đầu để SWR tự fetch
-        const values = form.getFieldsValue();
-        if (needFullData) {
-            const payload = buildPayload({ values, page: 1, limit: 100000, plateToImeis });
-            setAllPayload(payload);
-        } else {
-            const payload = buildPayload({ values, page: 1, limit: API_SAFE_LIMIT, plateToImeis });
-            setPagedPayload(payload);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [loadingDeviceMap]);
-
-    // khi sortMode toggles -> switch mode (giống logic cũ, nhưng chỉ set payload)
-    useEffect(() => {
-        if (loadingDeviceMap) return;
-
-        setPagination((p) => ({ ...p, current: 1 }));
-
-        const values = form.getFieldsValue();
-        if (needFullData) {
-            const payload = buildPayload({ values, page: 1, limit: 100000, plateToImeis });
-            setAllPayload(payload);
-        } else {
-            const payload = buildPayload({ values, page: 1, limit: API_SAFE_LIMIT, plateToImeis });
-            setPagedPayload(payload);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [needFullData]);
-
-    // update total + warning truncation
+    // total + warning truncation
     useEffect(() => {
         if (loadingDeviceMap) return;
 
@@ -191,17 +213,13 @@ export function useChargingSessionData({
         setPagination((p) => ({ ...p, total: fullData.length }));
     }, [loadingDeviceMap, needFullData, serverData, fullData, swrPaged.data, isEn]);
 
-    // handle error
+    // error
     useEffect(() => {
         const err = needFullData ? swrAll.error : swrPaged.error;
         if (!err) return;
-
         console.error(err);
-        message.error(
-            t?.messages?.loadError ||
-                (isEn ? 'Failed to load charging sessions' : 'Không tải được danh sách phiên sạc'),
-        );
-    }, [needFullData, swrAll.error, swrPaged.error, isEn, t]);
+        toastLoadError();
+    }, [needFullData, swrAll.error, swrPaged.error, toastLoadError]);
 
     const mutate = useCallback(() => {
         if (needFullData) return swrAll.mutate();
@@ -218,12 +236,10 @@ export function useChargingSessionData({
 
         sortMode,
         setSortMode,
-
         needFullData,
 
         fetchPaged,
         fetchAll,
-
         mutate,
     };
 }

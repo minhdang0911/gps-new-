@@ -1,26 +1,19 @@
 // features/tripReport/hooks/useTripReportData.js
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import useSWR from 'swr';
+import useSWR, { useSWRConfig } from 'swr';
 import { message } from 'antd';
 import { applyFilterSortTripReport } from '../utils';
 
 /**
- * Nếu BE có hỗ trợ filter/sort qua query params
- * thì build ở đây rồi truyền vào getTripReport(...)
- * (tuỳ dự án, bạn map key cho đúng)
+ * build params để:
+ * - BE có dùng thì map thật vào đây
+ * - BE chưa dùng thì vẫn nhét vào để SWR key thay đổi theo filter/sort
  */
 function buildTripReportParams(filterValues, sortMode) {
-    const params = {};
-
-    // Ví dụ (tuỳ bạn thay key):
-    // if (filterValues?.imei) params.imei = filterValues.imei;
-    // if (filterValues?.dateFrom) params.dateFrom = filterValues.dateFrom;
-    // if (filterValues?.dateTo) params.dateTo = filterValues.dateTo;
-
-    // sortMode ví dụ: 'none' | 'date_desc' | 'date_asc'...
-    // if (sortMode && sortMode !== 'none') params.sort = sortMode;
-
-    return params;
+    return {
+        __filters: filterValues || {},
+        __sortMode: sortMode || 'none',
+    };
 }
 
 function stableStringify(obj) {
@@ -48,6 +41,8 @@ export function useTripReportData({
     loadingDeviceMap,
     attachLicensePlate,
 }) {
+    const { mutate: globalMutate } = useSWRConfig();
+
     // UI state
     const [filterValues, setFilterValues] = useState({});
     const [sortMode, setSortMode] = useState('none');
@@ -69,145 +64,153 @@ export function useTripReportData({
         [getTripReport],
     );
 
-    // ✅ cache-first (không tự gọi lại khi focus/reconnect)
-    // ⚠️ không set revalidateOnMount:false để tránh “0 request / bảng trống”
-    const swr = useSWR(loadingDeviceMap ? null : makeKey(queryParams), fetcher, {
+    const swrKey = useMemo(() => {
+        if (loadingDeviceMap) return null;
+        return makeKey(queryParams);
+    }, [loadingDeviceMap, queryParams]);
+
+    // ✅ cache-first
+    const swr = useSWR(swrKey, fetcher, {
         revalidateOnFocus: false,
         revalidateOnReconnect: false,
         revalidateIfStale: false,
         keepPreviousData: true,
         dedupingInterval: 5 * 60 * 1000,
         shouldRetryOnError: false,
+        // ❌ đừng set revalidateOnMount:false
     });
 
     const loading = loadingDeviceMap || swr.isLoading || swr.isValidating;
 
-    // raw list từ BE
-    const rawData = useMemo(() => {
+    // ===== raw list =====
+    const rawList = useMemo(() => {
         const res = swr.data;
-        const list = res?.data || res?.items || [];
-        // enrich biển số (map đổi => chỉ recompute)
+        const list = res?.data || res?.items || res?.devices || [];
         try {
             return attachLicensePlate ? attachLicensePlate(list, imeiToPlate) : list;
-        } catch {
+        } catch (e) {
+            console.error(e);
             return list;
         }
     }, [swr.data, attachLicensePlate, imeiToPlate]);
 
-    // total từ BE
     const totalFromBE = useMemo(() => {
-        const total = swr.data?.total;
-        const n = Number(total);
+        const n = Number(swr.data?.total);
         return Number.isFinite(n) ? n : 0;
     }, [swr.data]);
 
-    /**
-     * Nếu BE đã filter/sort đầy đủ -> processedData = rawData
-     * Nếu BE chưa hỗ trợ, có thể apply trong 1 trang (tạm)
-     */
+    // FE filter/sort (nếu bạn vẫn muốn)
     const processedData = useMemo(() => {
-        // Option A: return rawData;
-        return applyFilterSortTripReport({ rawData, filterValues, sortMode });
-    }, [rawData, filterValues, sortMode]);
+        return applyFilterSortTripReport({ rawData: rawList, filterValues, sortMode });
+    }, [rawList, filterValues, sortMode]);
 
-    // tableData + rowNo
+    // tableData phân trang FE (bạn đang làm kiểu này)
     const tableData = useMemo(() => {
-        return (processedData || []).map((row, idx) => ({
+        const start = (pagination.current - 1) * pagination.pageSize;
+        const end = start + pagination.pageSize;
+
+        return (processedData || []).slice(start, end).map((row, idx) => ({
             ...row,
-            __rowNo: (pagination.current - 1) * pagination.pageSize + idx + 1,
+            __rowNo: start + idx + 1,
         }));
     }, [processedData, pagination.current, pagination.pageSize]);
 
     const totalRecords = pagination.total;
 
-    // ✅ 1 hàm build params chuẩn (dùng chung)
+    // ===== buildParams =====
     const buildParams = useCallback(
         (opts = {}) => {
             const page = opts.page ?? pagination.current;
             const limit = opts.limit ?? pagination.pageSize;
 
-            // nếu bạn muốn lấy filterValues từ Form thay vì state:
-            // const values = form.getFieldsValue();
-            // còn hiện tại filterValues đang là state => giữ nguyên
+            const filters = opts.filters !== undefined ? opts.filters : filterValues;
+            const mode = opts.sortMode !== undefined ? opts.sortMode : sortMode;
 
-            const extraParams = buildTripReportParams(filterValues, sortMode);
+            const extra = buildTripReportParams(filters, mode);
 
-            return {
-                page,
-                limit,
-                ...extraParams,
-            };
+            // Nếu BE có param thật, map ở đây:
+            // ví dụ:
+            // return { page, limit, ...mapFilters(filters), sort: mode }
+
+            return { page, limit, ...extra };
         },
-        [filterValues, sortMode, pagination.current, pagination.pageSize],
+        [pagination.current, pagination.pageSize, filterValues, sortMode],
+    );
+
+    // ✅ force fetch helper (chỉ gọi khi user bấm)
+    const forceFetch = useCallback(
+        async (params) => {
+            const key = makeKey(params);
+            await globalMutate(key, fetcher, { revalidate: true });
+        },
+        [globalMutate, fetcher],
     );
 
     /**
-     * ✅ fetchData bây giờ KHÔNG gọi API trực tiếp
-     * nó chỉ set queryParams => SWR fetch/cached theo key
+     * ✅ fetchData:
+     * - default: chỉ setQueryParams (đọc cache nếu có, cache miss thì SWR tự fetch)
+     * - force=true: ép gọi API (Search/Reset/Sort)
      */
     const fetchData = useCallback(
-        (opts = {}) => {
+        async (opts = {}, { force = false } = {}) => {
             try {
                 const params = buildParams(opts);
 
-                // nếu reset page
-                if (opts.page === 1) {
+                // sync pagination UI
+                if (opts.page !== undefined || opts.limit !== undefined) {
+                    setPagination((p) => ({
+                        ...p,
+                        current: opts.page ?? p.current,
+                        pageSize: opts.limit ?? p.pageSize,
+                    }));
+                } else if (opts.page === 1) {
                     setPagination((p) => ({ ...p, current: 1 }));
                 }
 
                 setQueryParams(params);
+
+                if (force) {
+                    await forceFetch(params);
+                }
             } catch (err) {
-                console.error('Lỗi chuẩn bị params trip report: ', err);
-                message.error(isEn ? 'Failed to load trip report' : 'Không tải được trip report');
+                console.error('TripReport fetchData error:', err);
             }
         },
-        [buildParams, isEn],
+        [buildParams, forceFetch],
     );
 
-    // Load lần đầu (khi map device sẵn sàng)
+    // ✅ initial load: chỉ set params để "đọc cache"
     useEffect(() => {
         if (loadingDeviceMap) return;
-        fetchData({ page: 1 });
+
+        const values = form.getFieldsValue();
+        setFilterValues(values || {});
+        const params = buildParams({ page: 1, filters: values || {}, sortMode });
+        setQueryParams(params);
+
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loadingDeviceMap]);
 
-    // Khi filter/sort đổi -> reset page 1 và refetch (đúng logic cũ)
+    // total sync (ưu tiên total BE, fallback length)
     useEffect(() => {
         if (loadingDeviceMap) return;
-        setPagination((p) => ({ ...p, current: 1 }));
-        fetchData({ page: 1 });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [filterValues, sortMode]);
-
-    // Sync pagination.total từ BE (và fallback length)
-    useEffect(() => {
-        if (loadingDeviceMap) return;
-        const safeTotal = Math.max(totalFromBE || 0, rawData.length);
+        const safeTotal = Math.max(totalFromBE || 0, processedData.length);
         setPagination((p) => ({ ...p, total: safeTotal }));
-    }, [loadingDeviceMap, totalFromBE, rawData.length]);
+    }, [loadingDeviceMap, totalFromBE, processedData.length]);
 
-    // error toast
+    // error
     useEffect(() => {
         if (!swr.error) return;
         console.error('Lỗi lấy trip report: ', swr.error);
-        message.error(isEn ? 'Failed to load trip report' : 'Không tải được trip report');
-    }, [swr.error, isEn]);
-
-    // onChange cho antd Table
-    const onTableChange = useCallback(
-        (p) => {
-            setPagination((prev) => ({ ...prev, current: p.current, pageSize: p.pageSize }));
-            fetchData({ page: p.current, limit: p.pageSize });
-        },
-        [fetchData],
-    );
+        // message.error(t?.messages?.loadError || (isEn ? 'Failed to load trip report' : 'Không tải được trip report'));
+    }, [swr.error, isEn, t]);
 
     const mutate = useCallback(() => swr.mutate(), [swr]);
 
     return {
         loading,
 
-        rawData,
+        rawData: rawList,
 
         filterValues,
         setFilterValues,
@@ -223,8 +226,6 @@ export function useTripReportData({
         tableData,
 
         fetchData,
-        onTableChange,
-
-        mutate, // ✅ reload
+        mutate,
     };
 }

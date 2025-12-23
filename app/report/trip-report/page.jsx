@@ -111,6 +111,8 @@ const TripReportPage = () => {
         totalRecords,
         tableData,
         processedData,
+        fetchData,
+        mutate,
     } = useTripReportData({
         form,
         getTripReport,
@@ -139,14 +141,21 @@ const TripReportPage = () => {
     const onFinish = () => {
         const values = form.getFieldsValue();
         setFilterValues(values);
+        setPagination((p) => ({ ...p, current: 1 }));
+
+        fetchData({ page: 1, filters: values, sortMode }, { force: true });
     };
 
     const onReset = () => {
         form.resetFields();
-        setFilterValues({});
         setSortMode('none');
         setPagination((p) => ({ ...p, current: 1 }));
         clearSelection();
+
+        const values = {}; // reset filters
+        setFilterValues(values);
+
+        fetchData({ page: 1, filters: values, sortMode: 'none' }, { force: true });
     };
 
     const handleTableChange = (pager) => {
@@ -291,6 +300,9 @@ const TripReportPage = () => {
                                     onChange={(v) => {
                                         setSortMode(v);
                                         clearSelection();
+                                        setPagination((p) => ({ ...p, current: 1 }));
+
+                                        fetchData({ page: 1, filters: filterValues, sortMode: v }, { force: true });
                                     }}
                                     disabled={viewMode !== 'table'}
                                     options={[

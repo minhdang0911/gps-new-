@@ -210,8 +210,6 @@ const BatterySummaryReportPage = () => {
                             form={form}
                             layout="vertical"
                             onFinish={() => {
-                                const values = form.getFieldsValue();
-                                setFilterValues(values);
                                 onSearch();
                                 clearSelection();
                             }}
@@ -292,6 +290,7 @@ const BatterySummaryReportPage = () => {
                                     onChange={(v) => {
                                         setSortMode(v);
                                         clearSelection();
+                                        onSearch();
                                     }}
                                     disabled={viewMode !== 'table'}
                                 />

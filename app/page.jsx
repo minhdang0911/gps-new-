@@ -737,9 +737,8 @@ const MonitorPage = () => {
         const info = deviceInfo || selectedDevice;
         const src = liveTelemetry || lastCruise || {};
         const mqttSrc = liveTelemetry || {};
-        const odo = mqttSrc.mil ?? src.mil; // mil = ODO
+        const odo = mqttSrc.mil ?? src.mil; // ODO
 
-        const speed = mqttSrc.spd;
         const distance = mqttSrc.dst;
 
         const timeStr = src.tim ? parseTimToDate(src.tim)?.toLocaleString() : NA_TEXT;
@@ -748,37 +747,33 @@ const MonitorPage = () => {
         const latVal = src.lat;
         const lonVal = src.lon;
 
-        const accValNum = toNumberOrNull(
-            mqttSrc.acc != null ? mqttSrc.acc : src.acc != null ? src.acc : batteryStatus?.acc,
-        );
+        // ===== ACC =====
+        const accValNum = toNumberOrNull(mqttSrc.acc ?? src.acc ?? batteryStatus?.acc);
 
-        console.log('accValNum', accValNum);
+        // ===== SPEED (GIỮ ĐƯỢC 0) =====
+        const spdNum = toNumberOrNull(mqttSrc.spd ?? batteryStatus?.spd); // ✅ dùng ??, không dùng ||
+        const vgpNum = toNumberOrNull(mqttSrc.vgp ?? src.vgp);
+        const usedSpeed = spdNum ?? vgpNum;
 
-        const spdNum = toNumberOrNull(mqttSrc.spd || batteryStatus?.spd);
-        const vgpNum = toNumberOrNull(mqttSrc.vgp);
+        // ===== GPS FLAG =====
+        const gpsValNum = toNumberOrNull(mqttSrc.gps ?? src.gps);
 
-        const gpsValNum = toNumberOrNull(mqttSrc.gps != null ? mqttSrc.gps : src.gps);
-        const isAccOn = accValNum === 1;
+        // ===== ENGINE STATUS (DEFAULT = ON, chỉ acc=1 mới OFF) =====
+        const isEngineOff = accValNum === 1; // ✅ chỉ 1 là tắt máy
+        const machineStatus = isEngineOff ? t.statusInfo.engineOff : t.statusInfo.engineOn;
 
-        console.log('gpsValNum', gpsValNum);
-        let machineStatus = t.statusInfo.engineOn;
-        if (accValNum === 1) {
-            machineStatus = t.statusInfo.engineOff;
-        } else if (accValNum === 0) {
-            machineStatus = t.statusInfo.engineOn;
-        }
-
+        // ===== VEHICLE STATUS =====
         let vehicleStatus = t.statusInfo.vehicleStopped;
 
-        let usedSpeed = spdNum ?? vgpNum;
-
-        if (!isAccOn) {
+        if (isEngineOff) {
+            // 🔴 TẮT MÁY => ĐỖ
             vehicleStatus = t.statusInfo.vehicleParking;
         } else {
-            if (usedSpeed == null || usedSpeed < 5) {
-                vehicleStatus = t.statusInfo.vehicleStopped;
-            } else {
+            // 🟢 MỞ MÁY (bao gồm acc=0/null/undefined) => CHẠY / DỪNG
+            if (usedSpeed != null && usedSpeed > 0) {
                 vehicleStatus = t.statusInfo.vehicleRunning.replace('{speed}', String(usedSpeed));
+            } else {
+                vehicleStatus = t.statusInfo.vehicleStopped;
             }
         }
 
@@ -789,15 +784,19 @@ const MonitorPage = () => {
                 <div>
                     {t.statusInfo.plate} {info.license_plate || unknownPlateText}
                 </div>
+
                 <div>
                     {t.statusInfo.version} {fwr || NA_TEXT}
                 </div>
+
                 <div>
                     {t.statusInfo.vehicleType} {info.vehicle_category_id?.name || NA_TEXT}
                 </div>
+
                 <div>
                     {t.statusInfo.deviceType} {info.device_category_id?.name || NA_TEXT}
                 </div>
+
                 <div>
                     {t.statusInfo.atTime} {timeStr}
                 </div>
@@ -805,20 +804,24 @@ const MonitorPage = () => {
                 <div>
                     {t.statusInfo.engineStatus} {machineStatus}
                 </div>
+
                 <div>
                     {t.statusInfo.vehicleStatus} {vehicleStatus}
                 </div>
 
-                {speed != null && speed > 5 && (
+                {/* SPEED: >0 là hiện */}
+                {usedSpeed != null && usedSpeed > 0 && (
                     <div>
-                        {t.statusInfo.speed} {speed} km/h
+                        {t.statusInfo.speed} {usedSpeed} km/h
                     </div>
                 )}
+
                 {distance != null && (
                     <div>
                         {t.statusInfo.distance} {distance} km
                     </div>
                 )}
+
                 {odo != null && <div>ODO {odo} km</div>}
 
                 <div className="iky-monitor__location-row">
@@ -833,6 +836,7 @@ const MonitorPage = () => {
                             : address || (isEn ? 'No location data' : 'Chưa có dữ liệu vị trí')}
                     </span>
                 </div>
+
                 {deprecatedAddress && (
                     <div className="iky-monitor__location-row">
                         <span className="iky-monitor__location-label">

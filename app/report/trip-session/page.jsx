@@ -93,14 +93,14 @@ const TripSessionReportPage = () => {
 
     const onFinish = () => {
         setPagination((p) => ({ ...p, current: 1 }));
-        fetchBase({ resetPage: true });
+        fetchBase({ resetPage: true }, { force: true });
     };
 
     const onReset = () => {
         form.resetFields();
         setSortMode('none');
         setPagination((p) => ({ ...p, current: 1 }));
-        fetchBase({ resetPage: true });
+        fetchBase({ resetPage: true }, { force: true });
     };
 
     const handleTableChange = (pager) => {

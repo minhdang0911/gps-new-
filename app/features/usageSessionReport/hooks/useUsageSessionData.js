@@ -1,15 +1,10 @@
 // features/usageSessionReport/hooks/useUsageSessionData.js
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import useSWR from 'swr';
+import useSWR, { useSWRConfig } from 'swr';
 import { message } from 'antd';
 import { API_SAFE_LIMIT } from '../constants';
 import { buildParams } from '../utils';
 
-/**
- * stable stringify để key không đổi lung tung
- * - sort keys để JSON.stringify ổn định
- * - NOTE: buildParams nên trả về primitive (string/number), tránh dayjs/moment object.
- */
 function stableStringify(obj) {
     if (!obj) return '';
     const allKeys = [];
@@ -26,6 +21,8 @@ function makeKey(prefix, params) {
 }
 
 export function useUsageSessionData({ form, getUsageSessions, isEn, t }) {
+    const { mutate: globalMutate } = useSWRConfig();
+
     const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 });
 
     const [sortMode, setSortMode] = useState('none');
@@ -49,34 +46,29 @@ export function useUsageSessionData({ form, getUsageSessions, isEn, t }) {
         [getUsageSessions],
     );
 
-    // ✅ cấu hình "cache-first": không tự gọi lại khi mount/focus/reconnect
     const swrOpt = useMemo(
         () => ({
             revalidateOnFocus: false,
             revalidateOnReconnect: false,
-
-            revalidateIfStale: false, // ✅ stale cũng không auto gọi
+            revalidateIfStale: false,
             keepPreviousData: true,
-            dedupingInterval: 5 * 60 * 1000, // ✅ 5 phút cùng key sẽ dedupe (optional)
+            dedupingInterval: 5 * 60 * 1000,
             shouldRetryOnError: false,
         }),
         [],
     );
 
-    // --- SWR paged ---
     const pagedKey = useMemo(() => {
         if (needFullData) return null;
         return makeKey('usageSessions:paged', pagedParams);
     }, [needFullData, pagedParams]);
 
-    const swrPaged = useSWR(pagedKey, fetcher, swrOpt);
-
-    // --- SWR full ---
     const allKey = useMemo(() => {
         if (!needFullData) return null;
         return makeKey('usageSessions:all', allParams);
     }, [needFullData, allParams]);
 
+    const swrPaged = useSWR(pagedKey, fetcher, swrOpt);
     const swrAll = useSWR(allKey, fetcher, swrOpt);
 
     const loading = needFullData
@@ -86,52 +78,67 @@ export function useUsageSessionData({ form, getUsageSessions, isEn, t }) {
     const serverData = useMemo(() => (swrPaged.data?.data ? swrPaged.data.data : []), [swrPaged.data]);
     const fullData = useMemo(() => (swrAll.data?.data ? swrAll.data.data : []), [swrAll.data]);
 
-    // ✅ giữ API cũ cho page gọi
-    // IMPORTANT: KHÔNG mutate sau khi setParams (tránh gọi 2 lần)
+    const toastLoadError = useCallback(() => {
+        // message.error(
+        //     t.messages?.loadError ||
+        //         (!isEn ? 'Không tải được danh sách phiên sử dụng' : 'Failed to load usage sessions'),
+        // );
+    }, [isEn, t]);
+
+    const forceFetch = useCallback(
+        async (prefix, params) => {
+            const key = makeKey(prefix, params);
+            await globalMutate(key, fetcher, { revalidate: true });
+        },
+        [globalMutate, fetcher],
+    );
+
+    // ✅ giữ API cũ cho page gọi, nhưng đảm bảo gọi API chắc chắn
     const fetchPaged = useCallback(
-        (page = 1, pageSize = pagination.pageSize || 20) => {
+        async (page = 1, pageSize = pagination.pageSize || 20) => {
             try {
                 const values = form.getFieldsValue();
                 const params = buildParams(values, page, pageSize);
 
                 setPagination((p) => ({ ...p, current: page, pageSize }));
-                setPagedParams(params); // key đổi => SWR tự fetch (1 lần)
+                setPagedParams(params);
+
+                // ✅ Force call even if params identical
+                await forceFetch('usageSessions:paged', params);
             } catch (err) {
                 console.error(err);
-                message.error(
-                    t.messages?.loadError ||
-                        (!isEn ? 'Không tải được danh sách phiên sử dụng' : 'Failed to load usage sessions'),
-                );
+                toastLoadError();
             }
         },
-        [form, pagination.pageSize, isEn, t],
+        [form, pagination.pageSize, buildParams, forceFetch, toastLoadError],
     );
 
-    const fetchAll = useCallback(() => {
+    const fetchAll = useCallback(async () => {
         try {
             const values = form.getFieldsValue();
             const params = buildParams(values, 1, API_SAFE_LIMIT);
 
             setPagination((p) => ({ ...p, current: 1 }));
-            setAllParams(params); // key đổi => SWR tự fetch (1 lần)
+            setAllParams(params);
+
+            // ✅ Force call even if params identical
+            await forceFetch('usageSessions:all', params);
         } catch (err) {
             console.error(err);
-            message.error(
-                t.messages?.loadError ||
-                    (!isEn ? 'Không tải được danh sách phiên sử dụng' : 'Failed to load usage sessions'),
-            );
+            toastLoadError();
         }
-    }, [form, isEn, t]);
+    }, [form, buildParams, forceFetch, toastLoadError]);
 
-    // initial load (paged)
+    // initial load (paged) — set params + force fetch
     useEffect(() => {
         const values = form.getFieldsValue();
         const params = buildParams(values, 1, pagination.pageSize);
-        setPagedParams(params); // key xuất hiện lần đầu => SWR fetch 1 lần
+        setPagedParams(params);
+        forceFetch('usageSessions:paged', params);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // khi needFullData bật -> chuẩn bị allParams
+    // khi needFullData bật -> chuẩn bị allParams + force fetch
     useEffect(() => {
         if (!needFullData) return;
 
@@ -140,6 +147,7 @@ export function useUsageSessionData({ form, getUsageSessions, isEn, t }) {
 
         setPagination((p) => ({ ...p, current: 1 }));
         setAllParams(params);
+        forceFetch('usageSessions:all', params);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [needFullData]);
 
@@ -157,11 +165,11 @@ export function useUsageSessionData({ form, getUsageSessions, isEn, t }) {
         setPagination((p) => ({ ...p, total: safeTotal }));
 
         if (list.length >= API_SAFE_LIMIT) {
-            message.warning(
-                isEn
-                    ? `Data may be truncated (limit=${API_SAFE_LIMIT}).`
-                    : `Dữ liệu có thể bị cắt (limit=${API_SAFE_LIMIT}).`,
-            );
+            // message.warning(
+            //     isEn
+            //         ? `Data may be truncated (limit=${API_SAFE_LIMIT}).`
+            //         : `Dữ liệu có thể bị cắt (limit=${API_SAFE_LIMIT}).`,
+            // );
         }
     }, [needFullData, serverData, fullData, swrPaged.data, swrAll.data, isEn]);
 
@@ -171,13 +179,9 @@ export function useUsageSessionData({ form, getUsageSessions, isEn, t }) {
         if (!err) return;
 
         console.error(err);
-        message.error(
-            t.messages?.loadError ||
-                (!isEn ? 'Không tải được danh sách phiên sử dụng' : 'Failed to load usage sessions'),
-        );
-    }, [needFullData, swrAll.error, swrPaged.error, isEn, t]);
+        toastLoadError();
+    }, [needFullData, swrAll.error, swrPaged.error, toastLoadError]);
 
-    // expose mutate để bạn có nút "Reload"
     const mutate = useCallback(() => {
         if (needFullData) return swrAll.mutate();
         return swrPaged.mutate();

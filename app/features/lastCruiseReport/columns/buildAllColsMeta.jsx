@@ -224,5 +224,16 @@ export function buildAllColsMeta({ t, isEn, isMobile }) {
                 render: (v) => formatDateTime(v),
             },
         },
+
+        {
+            key: 'updatedAt',
+            label: t.table.updatedAt,
+            column: {
+                title: <ColTitle label={t.table.updatedAt} tip={colHelp.updatedAt} />,
+                dataIndex: 'updatedAt',
+                width: 180,
+                render: (v) => formatDateTime(v),
+            },
+        },
     ];
 }

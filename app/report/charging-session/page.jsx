@@ -113,15 +113,15 @@ const ChargingSessionReportPage = () => {
 
     const onFinish = () => {
         setPagination((p) => ({ ...p, current: 1 }));
-        if (needFullData) fetchAll();
-        else fetchPaged(1, pagination.pageSize);
+        if (needFullData) fetchAll({ force: true });
+        else fetchPaged(1, pagination.pageSize, { force: true });
     };
 
     const onReset = () => {
         form.resetFields();
         setSortMode('none');
         setPagination((p) => ({ ...p, current: 1 }));
-        fetchPaged(1, pagination.pageSize);
+        fetchPaged(1, pagination.pageSize, { force: true });
     };
 
     const handleTableChange = (pager) => {

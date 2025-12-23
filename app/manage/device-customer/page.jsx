@@ -126,7 +126,7 @@ export default function DeviceCustomerPage() {
             dedupingInterval: 10_000,
             onError: (err) => {
                 console.error('Load device of customer error:', err);
-                message.error(t.loadDevicesError);
+                // message.error(t.loadDevicesError);
             },
         },
     );

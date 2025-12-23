@@ -641,7 +641,7 @@
             "sohPlaceholder": "VD: 80",
             "timeRange": "Khoảng thời gian",
             "search": "Tìm kiếm",
-            "reset": "Xoá lọc"
+            "reset": "Làm mới"
         },
         "table": {
             "title": "Danh sách Usage Session",
@@ -692,7 +692,7 @@
             "sohPlaceholder": "VD: 80",
             "timeRange": "Khoảng thời gian",
             "search": "Tìm kiếm",
-            "reset": "Xoá lọc"
+            "reset": "Làm mới"
         },
         "table": {
             "title": "Danh sách Charging Session",
@@ -741,7 +741,7 @@
             "sohPlaceholder": "VD: 80",
             "timeRange": "Khoảng thời gian",
             "search": "Tìm kiếm",
-            "reset": "Xoá lọc"
+            "reset": "Làm mới"
         },
         "table": {
             "title": "Danh sách Trip Session",
