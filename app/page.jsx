@@ -50,6 +50,11 @@ const MonitorPage = () => {
         return lastCruise?.[field] ?? batteryStatus?.[field];
     };
 
+    const pickAcc = ({ liveTelemetry, lastCruise }, lastMqttAtRef) => {
+        if (isMqttAlive(lastMqttAtRef)) return liveTelemetry?.acc;
+        return lastCruise?.acc;
+    };
+
     useEffect(() => {
         if (typeof window === 'undefined') return;
         const r = localStorage.getItem('role') || '';
@@ -787,7 +792,7 @@ const MonitorPage = () => {
         const lonVal = pickField('lon', ctx, lastMqttAtRef);
 
         // ===== ACC =====
-        const accValNum = toNumberOrNull(pickField('acc', ctx, lastMqttAtRef));
+        const accValNum = toNumberOrNull(pickAcc(ctx, lastMqttAtRef));
 
         // ===== SPEED (GIỮ ĐƯỢC 0) =====
         const spdNum = toNumberOrNull(pickField('spd', ctx, lastMqttAtRef));
