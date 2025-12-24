@@ -94,6 +94,7 @@ export function useBatteryReportData({ form, getBatteryReport, getUserList, imei
 
     const rawData = useMemo(() => {
         try {
+            if (!imeiToPlate || !(imeiToPlate instanceof Map) || imeiToPlate.size === 0) return apiList;
             return attachLicensePlate(apiList, imeiToPlate);
         } catch (e) {
             console.error(e);

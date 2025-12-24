@@ -1,36 +1,65 @@
-import { useEffect, useState } from 'react';
+// features/tripSessionReport/hooks/useTripDeviceMap.js
+import useSWR from 'swr';
+import { useMemo } from 'react';
 import { getAuthToken } from '../utils';
 
+const MAP_CACHE_KEY = 'tripDeviceMap:v1';
+
+function reviveMaps(obj) {
+    return {
+        imeiToPlate: new Map(obj?.imeiToPlate || []),
+        plateToImeis: new Map(obj?.plateToImeis || []),
+    };
+}
+
+function serializeMaps({ imeiToPlate, plateToImeis }) {
+    return {
+        imeiToPlate: Array.from(imeiToPlate.entries()),
+        plateToImeis: Array.from(plateToImeis.entries()),
+    };
+}
+
 export function useTripDeviceMap({ buildImeiToLicensePlateMap }) {
-    const [imeiToPlate, setImeiToPlate] = useState(new Map());
-    const [plateToImeis, setPlateToImeis] = useState(new Map());
-    const [loadingDeviceMap, setLoadingDeviceMap] = useState(false);
-
-    useEffect(() => {
-        const loadMaps = async () => {
-            try {
-                setLoadingDeviceMap(true);
-                const token = getAuthToken();
-                if (!token) {
-                    setImeiToPlate(new Map());
-                    setPlateToImeis(new Map());
-                    return;
-                }
-                const { imeiToPlate, plateToImeis } = await buildImeiToLicensePlateMap(token);
-                setImeiToPlate(imeiToPlate);
-                setPlateToImeis(plateToImeis);
-            } catch (e) {
-                console.error('Load device map failed:', e);
-                setImeiToPlate(new Map());
-                setPlateToImeis(new Map());
-            } finally {
-                setLoadingDeviceMap(false);
-            }
-        };
-
-        loadMaps();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+    // đọc cache localStorage ngay lập tức
+    const fallback = useMemo(() => {
+        if (typeof window === 'undefined') return undefined;
+        try {
+            const raw = localStorage.getItem(MAP_CACHE_KEY);
+            if (!raw) return undefined;
+            return reviveMaps(JSON.parse(raw));
+        } catch {
+            return undefined;
+        }
     }, []);
 
-    return { imeiToPlate, plateToImeis, loadingDeviceMap };
+    const fetcher = async () => {
+        const token = getAuthToken();
+        if (!token) return { imeiToPlate: new Map(), plateToImeis: new Map() };
+
+        const res = await buildImeiToLicensePlateMap(token);
+        const imeiToPlate = res?.imeiToPlate || new Map();
+        const plateToImeis = res?.plateToImeis || new Map();
+
+        // persist cache
+        if (typeof window !== 'undefined') {
+            localStorage.setItem(MAP_CACHE_KEY, JSON.stringify(serializeMaps({ imeiToPlate, plateToImeis })));
+        }
+
+        return { imeiToPlate, plateToImeis };
+    };
+
+    const { data, isLoading } = useSWR('tripDeviceMap', fetcher, {
+        fallbackData: fallback, // ✅ có map ngay nếu cache có
+        revalidateOnFocus: false,
+        revalidateOnReconnect: false,
+        dedupingInterval: 60 * 60 * 1000, // 1h
+        shouldRetryOnError: false,
+    });
+
+    return {
+        imeiToPlate: data?.imeiToPlate || new Map(),
+        plateToImeis: data?.plateToImeis || new Map(),
+        // nếu có fallback thì coi như không loading
+        loadingDeviceMap: isLoading && !fallback,
+    };
 }

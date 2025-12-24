@@ -36,6 +36,20 @@ const MonitorPage = () => {
     const mqttSilenceTimerRef = useRef(null);
     const MQTT_SILENCE_MS = 60_000;
 
+    // ✅ FIX: MQTT liveness + pick field theo rule
+    const isMqttAlive = (lastMqttAtRef) => {
+        const last = lastMqttAtRef.current;
+        return !!last && Date.now() - last < MQTT_SILENCE_MS;
+    };
+
+    // Rule:
+    // - MQTT alive  -> chỉ đọc liveTelemetry
+    // - MQTT dead   -> fallback lastCruise -> batteryStatus
+    const pickField = (field, { liveTelemetry, lastCruise, batteryStatus }, lastMqttAtRef) => {
+        if (isMqttAlive(lastMqttAtRef)) return liveTelemetry?.[field];
+        return lastCruise?.[field] ?? batteryStatus?.[field];
+    };
+
     useEffect(() => {
         if (typeof window === 'undefined') return;
         const r = localStorage.getItem('role') || '';
@@ -603,6 +617,15 @@ const MonitorPage = () => {
 
             const isTelemetryPacket = 'ev' in data;
 
+            if (isTelemetryPacket) {
+                if (data.gps == null) delete updated.gps;
+                if (data.acc == null) delete updated.acc; // ✅ quan trọng nhất
+                if (data.spd == null) delete updated.spd;
+                if (data.vgp == null) delete updated.vgp;
+                // optional (nếu muốn): telemetry thiếu lat/lon thì cũng xóa
+                // if (data.lat == null) delete updated.lat;
+                // if (data.lon == null) delete updated.lon;
+            }
             // ⭐ ADD: nếu telemetry packet mà không có gps => xóa gps cũ (tránh giữ gps=1)
             if (isTelemetryPacket && data.gps == null) {
                 delete updated.gps;
@@ -734,33 +757,45 @@ const MonitorPage = () => {
         );
     };
 
+    useEffect(() => {
+        const src = liveTelemetry || lastCruise || {};
+        const mqttSrc = liveTelemetry || {};
+        const accValNum = toNumberOrNull(mqttSrc.acc ?? src.acc ?? batteryStatus?.acc);
+        console.log('[ACC] accValNum=', accValNum, { mqtt: mqttSrc.acc, src: src.acc, bs: batteryStatus?.acc });
+    }, [liveTelemetry, lastCruise, batteryStatus]);
+
     // RENDER STATUS
     const renderStatusInfo = () => {
         if (!selectedDevice) return <>{t.statusInfo.pleaseSelect}</>;
 
         const info = deviceInfo || selectedDevice;
-        const src = liveTelemetry || lastCruise || {};
-        const mqttSrc = liveTelemetry || {};
-        const odo = mqttSrc.mil ?? src.mil; // ODO
 
-        const distance = mqttSrc.dst;
+        // ✅ FIX: chỉ fallback khi MQTT chết
+        const ctx = { liveTelemetry, lastCruise, batteryStatus };
+        const mqttAlive = isMqttAlive(lastMqttAtRef);
 
-        const timeStr = src.tim ? parseTimToDate(src.tim)?.toLocaleString() : NA_TEXT;
-        const fwr = mqttSrc.fwr ?? src.fwr;
+        // ===== ODO / DISTANCE / TIME / FWR / COORD =====
+        const odo = pickField('mil', ctx, lastMqttAtRef);
+        const distance = pickField('dst', ctx, lastMqttAtRef);
 
-        const latVal = src.lat;
-        const lonVal = src.lon;
+        const timVal = pickField('tim', ctx, lastMqttAtRef);
+        const timeStr = timVal ? parseTimToDate(timVal)?.toLocaleString() : NA_TEXT;
+
+        const fwr = pickField('fwr', ctx, lastMqttAtRef);
+
+        const latVal = pickField('lat', ctx, lastMqttAtRef);
+        const lonVal = pickField('lon', ctx, lastMqttAtRef);
 
         // ===== ACC =====
-        const accValNum = toNumberOrNull(mqttSrc.acc ?? src.acc ?? batteryStatus?.acc);
+        const accValNum = toNumberOrNull(pickField('acc', ctx, lastMqttAtRef));
 
         // ===== SPEED (GIỮ ĐƯỢC 0) =====
-        const spdNum = toNumberOrNull(mqttSrc.spd ?? batteryStatus?.spd); // ✅ dùng ??, không dùng ||
-        const vgpNum = toNumberOrNull(mqttSrc.vgp ?? src.vgp);
+        const spdNum = toNumberOrNull(pickField('spd', ctx, lastMqttAtRef));
+        const vgpNum = toNumberOrNull(pickField('vgp', ctx, lastMqttAtRef));
         const usedSpeed = spdNum ?? vgpNum;
 
         // ===== GPS FLAG =====
-        const gpsValNum = toNumberOrNull(mqttSrc.gps ?? src.gps);
+        const gpsValNum = toNumberOrNull(pickField('gps', ctx, lastMqttAtRef));
 
         // ===== ENGINE STATUS (DEFAULT = ON, chỉ acc=1 mới OFF) =====
         const isEngineOff = accValNum === 1; // ✅ chỉ 1 là tắt máy
@@ -770,10 +805,8 @@ const MonitorPage = () => {
         let vehicleStatus = t.statusInfo.vehicleStopped;
 
         if (isEngineOff) {
-            // 🔴 TẮT MÁY => ĐỖ
             vehicleStatus = t.statusInfo.vehicleParking;
         } else {
-            // 🟢 MỞ MÁY (bao gồm acc=0/null/undefined) => CHẠY / DỪNG
             if (usedSpeed != null && usedSpeed > 0) {
                 vehicleStatus = t.statusInfo.vehicleRunning.replace('{speed}', String(usedSpeed));
             } else {
@@ -853,10 +886,12 @@ const MonitorPage = () => {
                 <div>
                     {t.statusInfo.coordinate}{' '}
                     {latVal != null && lonVal != null ? (
-                        <>
+                        <span>
                             {`${latVal}, ${lonVal}`}{' '}
                             {gpsValNum === 1 && <span style={{ color: 'red', fontWeight: 600 }}>(*)</span>}
-                        </>
+                            {/* optional debug nhỏ: */}
+                            {/* {mqttAlive ? <span style={{ marginLeft: 6 }}>(MQTT)</span> : <span style={{ marginLeft: 6 }}>(API)</span>} */}
+                        </span>
                     ) : (
                         NA_TEXT
                     )}

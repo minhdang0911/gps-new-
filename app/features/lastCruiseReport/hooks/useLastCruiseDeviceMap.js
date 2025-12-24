@@ -1,50 +1,62 @@
-import { useEffect, useMemo, useState } from 'react';
-import { getAuthToken } from '../utils'; // giữ đúng path như bạn
-// nếu file utils khác path thì giữ như cũ của bạn
+// features/lastCruise/hooks/useLastCruiseDeviceMap.js
+import useSWR from 'swr';
+import { useMemo } from 'react';
+import { getAuthToken } from '../utils'; // giữ đúng path bạn
+
+const MAP_CACHE_KEY = 'lastCruiseDeviceMap:v1';
 
 const normalizePlate = (s) =>
     (s || '').toString().trim().toUpperCase().replace(/\s+/g, '').replace(/[._]/g, '-').replace(/--+/g, '-');
 
+function reviveMap(obj) {
+    // lưu dạng entries => revive lại Map
+    return new Map(obj?.imeiToPlate || []);
+}
+
+function serializeMap(map) {
+    return { imeiToPlate: Array.from((map || new Map()).entries()) };
+}
+
 export function useLastCruiseDeviceMap({ buildImeiToLicensePlateMap }) {
-    const [imeiToPlate, setImeiToPlate] = useState(new Map());
-    const [loadingDeviceMap, setLoadingDeviceMap] = useState(false);
+    // đọc cache localStorage ngay lập tức
+    const fallbackMap = useMemo(() => {
+        if (typeof window === 'undefined') return undefined;
+        try {
+            const raw = localStorage.getItem(MAP_CACHE_KEY);
+            if (!raw) return undefined;
+            return reviveMap(JSON.parse(raw));
+        } catch {
+            return undefined;
+        }
+    }, []);
 
-    useEffect(() => {
-        const loadMaps = async () => {
-            try {
-                setLoadingDeviceMap(true);
+    const fetcher = async () => {
+        const token = getAuthToken();
+        if (!token) return new Map();
 
-                const token = getAuthToken();
-                if (!token) {
-                    setImeiToPlate(new Map());
-                    return;
-                }
+        const res = await buildImeiToLicensePlateMap(token);
+        const map = res?.imeiToPlate ?? res ?? new Map();
 
-                // ✅ quan trọng: build map cần token
-                const res = await buildImeiToLicensePlateMap(token);
+        if (typeof window !== 'undefined') {
+            localStorage.setItem(MAP_CACHE_KEY, JSON.stringify(serializeMap(map)));
+        }
+        return map;
+    };
 
-                // res có thể là { imeiToPlate } hoặc trực tiếp Map tuỳ helper
-                const map = res?.imeiToPlate ?? res;
-                setImeiToPlate(map || new Map());
-            } catch (e) {
-                console.error('Load device map failed:', e);
-                setImeiToPlate(new Map());
-            } finally {
-                setLoadingDeviceMap(false);
-            }
-        };
+    const { data, isLoading } = useSWR('lastCruiseDeviceMap', fetcher, {
+        fallbackData: fallbackMap,
+        revalidateOnFocus: false,
+        revalidateOnReconnect: false,
+        dedupingInterval: 60 * 60 * 1000,
+        shouldRetryOnError: false,
+    });
 
-        loadMaps();
-    }, [buildImeiToLicensePlateMap]);
+    const imeiToPlate = data || new Map();
 
-    // ✅ reverse: plate -> imeis (devs)
+    // reverse map: plate -> imeis
     const plateToImeis = useMemo(() => {
         const m = new Map();
-        const map = imeiToPlate || new Map();
-
-        // map phải là Map mới có entries()
-        const entries = map instanceof Map ? map.entries() : Object.entries(map || {});
-        for (const [imei, plate] of entries) {
+        for (const [imei, plate] of imeiToPlate instanceof Map ? imeiToPlate.entries() : []) {
             if (!plate) continue;
             const key = normalizePlate(plate);
             const arr = m.get(key) || [];
@@ -54,5 +66,10 @@ export function useLastCruiseDeviceMap({ buildImeiToLicensePlateMap }) {
         return m;
     }, [imeiToPlate]);
 
-    return { imeiToPlate, plateToImeis, loadingDeviceMap };
+    return {
+        imeiToPlate,
+        plateToImeis,
+        // nếu có fallback => coi như không loading
+        loadingDeviceMap: isLoading && !fallbackMap,
+    };
 }

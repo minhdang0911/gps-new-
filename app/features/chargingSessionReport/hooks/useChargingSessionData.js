@@ -54,16 +54,14 @@ export function useChargingSessionData({
     );
 
     const pagedKey = useMemo(() => {
-        if (loadingDeviceMap) return null;
         if (needFullData) return null;
         return makeUserKey(userId, 'chargingSessions:paged', pagedPayload);
-    }, [loadingDeviceMap, needFullData, pagedPayload, userId]);
+    }, [needFullData, pagedPayload, userId]);
 
     const allKey = useMemo(() => {
-        if (loadingDeviceMap) return null;
         if (!needFullData) return null;
         return makeUserKey(userId, 'chargingSessions:all', allPayload);
-    }, [loadingDeviceMap, needFullData, allPayload, userId]);
+    }, [needFullData, allPayload, userId]);
 
     const swrPaged = useSWR(pagedKey, fetcher, {
         revalidateOnFocus: false,
@@ -94,12 +92,8 @@ export function useChargingSessionData({
 
     const attachPlate = useCallback(
         (list) => {
-            try {
-                return attachLicensePlate ? attachLicensePlate(list, imeiToPlate) : list;
-            } catch (e) {
-                console.error(e);
-                return list;
-            }
+            if (!imeiToPlate || imeiToPlate.size === 0) return list; // ✅ map chưa sẵn thì khỏi attach
+            return attachLicensePlate ? attachLicensePlate(list, imeiToPlate) : list;
         },
         [attachLicensePlate, imeiToPlate],
     );

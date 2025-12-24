@@ -1,3 +1,4 @@
+// features/lastCruise/hooks/useLastCruiseData.js
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { API_SAFE_LIMIT } from '../constants';
@@ -16,7 +17,16 @@ function makeKey(userId, params) {
     return params ? ['lastCruiseList', userId || 'guest', stableStringify(params)] : null;
 }
 
-export function useLastCruiseData({ form, getLastCruiseList, imeiToPlate, plateToImeis, isEn, t, loadingDeviceMap }) {
+export function useLastCruiseData({
+    form,
+    getLastCruiseList,
+    imeiToPlate,
+    plateToImeis,
+    isEn,
+    t,
+    // loadingDeviceMap: giữ signature nếu nơi khác truyền vào, nhưng không dùng để block nữa
+    loadingDeviceMap,
+}) {
     const userId = useAuthStore((s) => s.user?._id) || 'guest';
 
     const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
@@ -34,7 +44,8 @@ export function useLastCruiseData({ form, getLastCruiseList, imeiToPlate, plateT
         [getLastCruiseList],
     );
 
-    const swr = useSWR(loadingDeviceMap ? null : makeKey(userId, queryParams), fetcher, {
+    // ✅ không block theo loadingDeviceMap nữa
+    const swr = useSWR(makeKey(userId, queryParams), fetcher, {
         revalidateOnFocus: false,
         revalidateOnReconnect: false,
         revalidateIfStale: false,
@@ -43,12 +54,15 @@ export function useLastCruiseData({ form, getLastCruiseList, imeiToPlate, plateT
         shouldRetryOnError: false,
     });
 
-    const loading = loadingDeviceMap || swr.isLoading || swr.isValidating;
+    // ✅ loading chỉ theo network data
+    const loading = swr.isLoading || swr.isValidating;
 
     const apiList = useMemo(() => swr.data?.data || swr.data || [], [swr.data]);
 
+    // ✅ attach plate lazy: map chưa sẵn thì trả list nguyên
     const rawData = useMemo(() => {
         try {
+            if (!imeiToPlate || !(imeiToPlate instanceof Map) || imeiToPlate.size === 0) return apiList;
             return attachPlateToLastCruise(apiList, imeiToPlate);
         } catch (e) {
             console.error(e);
@@ -73,24 +87,19 @@ export function useLastCruiseData({ form, getLastCruiseList, imeiToPlate, plateT
 
     // ✅ FE filter theo dev/plate + các field khác
     const processedData = useMemo(() => {
-        // base filter/sort (fwr, gpsStatus, sosStatus, timeRange...) theo util hiện có
         const base = applyClientFilterSort({ rawData, filterValues, sortMode }) || [];
 
         const devInput = normStr(filterValues?.dev || '');
         const plateInput = normalizePlate(filterValues?.license_plate || '');
 
-        // 1) dev input => partial
         if (devInput) return base.filter((row) => getRowDev(row).includes(devInput));
 
-        // 2) plate => map ra devs (exact)
         if (plateInput) {
             const mapped = plateToImeis?.get?.(plateInput) || [];
             if (mapped.length > 0) {
                 const set = new Set(mapped.map((x) => normStr(String(x))));
                 return base.filter((row) => set.has(getRowDev(row)));
             }
-
-            // 3) fallback: filter theo license_plate text đã attach
             return base.filter((row) => normalizePlate(row?.license_plate || '').includes(plateInput));
         }
 
@@ -112,7 +121,6 @@ export function useLastCruiseData({ form, getLastCruiseList, imeiToPlate, plateT
         }));
     }, [pagedData, pagination.current, pagination.pageSize]);
 
-    // ✅ onSearch: chỉ set filterValues từ form (không cần gọi API)
     const onSearch = useCallback(() => {
         const values = form.getFieldsValue();
         setFilterValues(values);
@@ -123,9 +131,10 @@ export function useLastCruiseData({ form, getLastCruiseList, imeiToPlate, plateT
         setFilterValues({});
         setSortMode('none');
         setPagination((p) => ({ ...p, current: 1 }));
-        // nếu muốn reload list:
-        // swr.mutate(undefined, { revalidate: true });
-    }, [form, setFilterValues, setSortMode]);
+
+        // ✅ gọi lại API
+        swr.mutate(undefined, { revalidate: true });
+    }, [form, setFilterValues, setSortMode, swr]);
 
     const handleTableChange = (pager) => {
         setPagination({ current: pager.current, pageSize: pager.pageSize });
@@ -143,7 +152,7 @@ export function useLastCruiseData({ form, getLastCruiseList, imeiToPlate, plateT
         processedData,
         totalRecords,
         tableData,
-        onSearch, // ✅ thêm
+        onSearch,
         onReset,
         handleTableChange,
         mutate: swr.mutate,

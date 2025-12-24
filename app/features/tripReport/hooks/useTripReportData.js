@@ -71,11 +71,9 @@ export function useTripReportData({
         },
         [getTripReport],
     );
-
     const swrKey = useMemo(() => {
-        if (loadingDeviceMap) return null;
         return makeKey(userId, queryParams);
-    }, [loadingDeviceMap, queryParams, userId]);
+    }, [queryParams, userId]);
 
     const swr = useSWR(swrKey, fetcher, {
         revalidateOnFocus: false,
@@ -86,14 +84,16 @@ export function useTripReportData({
         shouldRetryOnError: false,
     });
 
-    const loading = loadingDeviceMap || swr.isLoading || swr.isValidating;
+    const loading = swr.isLoading || swr.isValidating;
 
     // ===== raw data + attach plate =====
     const rawData = useMemo(() => {
         const res = swr.data;
         const list = res?.data || res?.items || [];
         try {
-            return attachLicensePlate ? attachLicensePlate(list, imeiToPlate) : list;
+            if (!attachLicensePlate) return list;
+            if (!imeiToPlate || imeiToPlate.size === 0) return list; // ✅ map chưa sẵn thì return luôn
+            return attachLicensePlate(list, imeiToPlate);
         } catch {
             return list;
         }
@@ -206,13 +206,11 @@ export function useTripReportData({
 
     // initial
     useEffect(() => {
-        if (loadingDeviceMap) return;
-        // lấy giá trị hiện tại trên form (nếu muốn)
         const values = form?.getFieldsValue?.() || {};
         setFilterValues(values);
         fetchData({ page: 1, filters: values }, { force: false });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [loadingDeviceMap, userId]);
+    }, [userId]);
 
     return {
         loading,

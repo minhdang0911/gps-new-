@@ -86,19 +86,20 @@ export function useTripSessionData({
     );
 
     const key = useMemo(() => {
-        if (loadingDeviceMap) return null;
         return makeKey('tripSessions:base', basePayload);
-    }, [loadingDeviceMap, basePayload]);
+    }, [basePayload]);
 
     const swr = useSWR(key, fetcher, swrOpt);
-    const loading = loadingDeviceMap ? true : swr.isLoading || swr.isValidating;
+    const loading = swr.isLoading || swr.isValidating;
 
     const apiList = useMemo(() => pickList(swr.data), [swr.data]);
 
     const serverData = useMemo(() => {
         const list = apiList || [];
         try {
-            return attachLicensePlate ? attachLicensePlate(list, imeiToPlate) : list;
+            if (!attachLicensePlate) return list;
+            if (!imeiToPlate || imeiToPlate.size === 0) return list;
+            return attachLicensePlate(list, imeiToPlate);
         } catch (e) {
             console.error(e);
             return list;
@@ -122,8 +123,6 @@ export function useTripSessionData({
 
     // ===== INITIAL PAYLOAD =====
     useEffect(() => {
-        if (loadingDeviceMap) return;
-
         const values = form.getFieldsValue();
         const payload = normalizeTripPayload({
             values,
@@ -131,10 +130,9 @@ export function useTripSessionData({
             page: 1,
             limit: API_SAFE_LIMIT,
         });
-
         setBasePayload(payload);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [loadingDeviceMap]);
+    }, []);
 
     // ===== actions =====
     const fetchBase = useCallback(
