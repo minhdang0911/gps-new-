@@ -39,10 +39,6 @@
     overflow: hidden;
 }
 
-.iky-cruise__table-body {
-    height: 100%;
-    overflow: auto;
-}
 .iky-cruise__left-header {
     padding: 10px 12px;
     border-bottom: 1px solid #e5e7eb;
@@ -74,7 +70,7 @@
 
 .iky-cruise__table-body {
     height: 350px; /* đúng bằng cái bạn đang set */
-    overflow: auto;
+    overflow: hidden;
 }
 
 /* Ant List item mặc định có padding, bạn muốn giống table row thì chỉnh: */

@@ -210,7 +210,7 @@ export function buildAllColsMeta({ t, isEn, isMobile }) {
                 title: <ColTitle label={isEn ? 'ODO' : 'ODO'} tip={colHelp.mil} />,
                 dataIndex: 'mil',
                 width: 120,
-                render: (v) => v ?? '--',
+                render: (v) => v ?? '0',
             },
         },
 

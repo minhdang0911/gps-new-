@@ -19,6 +19,7 @@
         "over50": "Over 50 km/h",
         "over80": "Over 80 km/h",
         "notify": "Notification",
+        "maintain": "Maintenance",
         "lastCruise": "Last cruise report",
         "lastCruiseShort": "Last cruise"
     },

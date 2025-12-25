@@ -34,7 +34,6 @@ const { TextArea } = Input;
 
 /* =======================
     LOCAL STORAGE (pending “cần xác nhận”)
-    (giữ nguyên vì bạn không sửa được API)
 ======================= */
 const PENDING_KEY = (imei) => `maint_pending_${imei}`;
 
@@ -120,8 +119,9 @@ export default function MaintenancePage() {
 
     const [loadingStart, setLoadingStart] = useState(false);
 
-    // distributors
-    const [loadingDistributors, setLoadingDistributors] = useState(false);
+    // ✅ users + distributors maps (chỉ gọi users 1 lần)
+    const [loadingUsers, setLoadingUsers] = useState(false);
+    const [userMap, setUserMap] = useState(() => new Map());
     const [distributorMap, setDistributorMap] = useState(() => new Map());
 
     // confirm modal
@@ -185,9 +185,16 @@ export default function MaintenancePage() {
             row?.device?.distributor_id?._id ||
             row?.device?.distributor_id;
 
-        if (loadingDistributors) return '...';
+        if (loadingUsers) return '...';
         if (!distributorId) return '-';
         return distributorMap.get(distributorId) || distributorId;
+    };
+
+    const renderConfirmedBy = (row) => {
+        const id = row?.confirmedBy || row?.confirmed_by;
+        if (!id) return '-';
+        if (loadingUsers) return '...';
+        return userMap.get(id) || id;
     };
 
     // UX: Tổng quan pending từ localStorage (trên trình duyệt này)
@@ -222,7 +229,7 @@ export default function MaintenancePage() {
     };
 
     /* =======================
-      LOAD DEVICES / DISTRIBUTORS
+      LOAD DEVICES / USERS (ONE CALL)
   ======================= */
     const loadDevices = async () => {
         try {
@@ -239,30 +246,43 @@ export default function MaintenancePage() {
         }
     };
 
-    const loadDistributors = async () => {
+    // ✅ Chỉ gọi users 1 lần: build cả userMap + distributorMap
+    const loadUsersOnce = async () => {
         try {
-            setLoadingDistributors(true);
-            const res = await getUserList({ position: 'distributor', page: 1, limit: 500 });
+            setLoadingUsers(true);
+
+            const res = await getUserList({ page: 1, limit: 2000 });
             const list = res?.items || [];
-            const m = new Map();
+
+            const uMap = new Map();
+            const dMap = new Map();
+
             list.forEach((u) => {
                 const label = u?.name || u?.username || u?.email || u?._id;
-                if (u?._id) m.set(u._id, label);
+                if (u?._id) uMap.set(u._id, label);
+
+                // distributor map: tùy schema position của bạn
+                // nếu u.position === 'distributor' hoặc roles includes distributor
+                const isDistributor =
+                    u?.position === 'distributor' ||
+                    u?.role === 'distributor' ||
+                    (Array.isArray(u?.roles) && u.roles.includes('distributor'));
+
+                if (isDistributor && u?._id) dMap.set(u._id, label);
             });
-            setDistributorMap(m);
+
+            setUserMap(uMap);
+            setDistributorMap(dMap);
         } catch (err) {
             console.error(err);
-            message.error('Không tải được danh sách đại lý');
+            message.error('Không tải được danh sách người dùng');
         } finally {
-            setLoadingDistributors(false);
+            setLoadingUsers(false);
         }
     };
 
     /* =======================
       LOAD DUE / HISTORY (ALL hoặc theo filter)
-      - ALL: không truyền imei
-      - Filter: truyền imei
-      - Nếu backend không support ALL -> supportsAll=false và fallback UI
   ======================= */
     const loadDue = async (imei) => {
         try {
@@ -304,12 +324,13 @@ export default function MaintenancePage() {
 
     /* =======================
       EFFECTS
+      ✅ mount: gọi đúng 1 lần
   ======================= */
     useEffect(() => {
         loadDevices();
-        loadDistributors();
+        loadUsersOnce();
 
-        // Mặc định: load tổng quan ALL
+        // Mặc định: load tổng quan ALL (chỉ 1 lần)
         loadDue('');
         loadHistory('');
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -326,14 +347,6 @@ export default function MaintenancePage() {
         setViewMode(p.length > 0 ? 'pending' : 'history');
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [filterImei]);
-
-    // Khi clear filter -> quay về tổng quan ALL
-    useEffect(() => {
-        if (filterImei) return;
-        loadDue('');
-        loadHistory('');
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [filterDeviceId]);
 
     /* =======================
       DATA FILTERING (client-side)
@@ -407,12 +420,6 @@ export default function MaintenancePage() {
         });
     };
 
-    const closeConfirm = () => {
-        setConfirmOpen(false);
-        setRowToConfirm(null);
-        confirmForm.resetFields();
-    };
-
     const handleConfirm = async () => {
         const imei = rowToConfirm?.imei || filterImei;
         if (!imei) return message.error('Không xác định được IMEI để xác nhận');
@@ -432,7 +439,9 @@ export default function MaintenancePage() {
             await confirmMaintenance(payload);
 
             message.success('Xác nhận bảo trì thành công.');
-            closeConfirm();
+            setConfirmOpen(false);
+            setRowToConfirm(null);
+            confirmForm.resetFields();
 
             await loadHistory(imei);
             loadPendingOverviewFromLocal(devices);
@@ -563,6 +572,10 @@ export default function MaintenancePage() {
         },
         { title: 'Thiết bị', key: 'device', width: 280, render: (_, row) => renderDeviceCellFromRow(row) },
         { title: 'Đại lý', key: 'distributor', width: 220, render: (_, row) => renderDistributor(row) },
+
+        // ✅ NEW: Confirmed By
+        { title: 'Xác nhận bởi', key: 'confirmedBy', width: 200, render: (_, row) => renderConfirmedBy(row) },
+
         {
             title: 'Km bảo trì',
             dataIndex: 'maintenanceKm',
@@ -605,8 +618,7 @@ export default function MaintenancePage() {
     }, [filterImei, pendingFiltered.length]);
 
     /* =======================
-      UI: Select options có "Tất cả thiết bị"
-      + Nút "Xem tất cả" rõ ràng (không phụ thuộc hover clear icon)
+      UI
   ======================= */
     const ALL_VALUE = '__ALL__';
     const selectValue = filterDeviceId ? filterDeviceId : ALL_VALUE;
@@ -656,7 +668,16 @@ export default function MaintenancePage() {
                         <Space wrap style={{ justifyContent: 'flex-end', width: '100%' }}>
                             {statusTag}
 
-                            <Button onClick={() => setFilterDeviceId('')} disabled={!filterDeviceId}>
+                            <Button
+                                onClick={() => {
+                                    setFilterDeviceId('');
+                                    setViewMode('history');
+                                    // optional: chủ động reload tổng quan ngay
+                                    loadDue('');
+                                    loadHistory('');
+                                }}
+                                disabled={!filterDeviceId}
+                            >
                                 Xem tất cả
                             </Button>
 
