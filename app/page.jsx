@@ -864,7 +864,7 @@ const MonitorPage = () => {
                     </div>
                 )}
 
-                {odo != null && <div>ODO {odo} km</div>}
+                {odo != null && <div>ODO: {odo} km</div>}
 
                 <div className="iky-monitor__location-row">
                     <span className="iky-monitor__location-label">{t.statusInfo.location}</span>

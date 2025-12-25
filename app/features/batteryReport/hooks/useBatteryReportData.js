@@ -4,14 +4,14 @@ import { message } from 'antd';
 import dayjs from 'dayjs';
 import { normalize } from '../utils';
 import { attachLicensePlate } from '../../../util/deviceMap';
-import { useAuthStore } from '../../../stores/authStore'; // chỉnh path
-import { makeUserKey } from '../../_shared/swrKey'; // chỉnh path
+import { useAuthStore } from '../../../stores/authStore';
+import { makeUserKey } from '../../_shared/swrKey';
 
 export function useBatteryReportData({ form, getBatteryReport, getUserList, imeiToPlate, isEn, t }) {
     const userId = useAuthStore((s) => s.user?._id) || 'guest';
 
     const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 });
-    const [tableScrollY, setTableScrollY] = useState(400);
+    const [tableScrollY, setTableScrollY] = useState(800);
 
     const [filterValues, _setFilterValues] = useState({});
     const [sortMode, _setSortMode] = useState('none');

@@ -33,7 +33,7 @@ const { Title, Text } = Typography;
 const { TextArea } = Input;
 
 /* =======================
-    LOCAL STORAGE (pending “cần xác nhận”)
+  LOCAL STORAGE (pending “cần xác nhận”)
 ======================= */
 const PENDING_KEY = (imei) => `maint_pending_${imei}`;
 
@@ -79,17 +79,37 @@ function getArrayFromResponse(res) {
     if (Array.isArray(res.items)) return res.items;
     if (Array.isArray(res.history)) return res.history;
     if (Array.isArray(res.data)) return res.data;
+    if (Array.isArray(res?.result?.items)) return res.result.items;
     return [];
+}
+
+/**
+ * Lấy items + total theo nhiều schema backend hay gặp:
+ * - { items: [], total }
+ * - { data: [], total }
+ * - { items: [], pagination: { total } }
+ * - fallback: total = items.length
+ */
+function extractItemsTotal(res) {
+    const items = getArrayFromResponse(res);
+    const total =
+        Number(res?.total) ||
+        Number(res?.pagination?.total) ||
+        Number(res?.meta?.total) ||
+        Number(res?.result?.total) ||
+        items.length;
+
+    return { items, total };
 }
 
 export default function MaintenancePage() {
     /* =======================
-      STATE
+    STATE
   ======================= */
     const [devices, setDevices] = useState([]);
     const [loadingDevices, setLoadingDevices] = useState(false);
 
-    // Filter device (optional) -> lọc bảng + dùng để tạo lịch
+    // Filter device
     const [filterDeviceId, setFilterDeviceId] = useState('');
     const selectedDevice = useMemo(() => devices.find((d) => d._id === filterDeviceId), [devices, filterDeviceId]);
     const filterImei = selectedDevice?.imei || '';
@@ -97,29 +117,31 @@ export default function MaintenancePage() {
     // viewMode: pending | due | history
     const [viewMode, setViewMode] = useState('history');
 
-    // pending local overview + filtered
+    // pending local
     const [pendingAll, setPendingAll] = useState([]);
     const pendingFiltered = useMemo(() => {
         if (!filterImei) return pendingAll;
         return pendingAll.filter((x) => x?.imei === filterImei);
     }, [pendingAll, filterImei]);
 
-    // due api
+    // due
     const [dueData, setDueData] = useState(null);
     const dueAll = useMemo(() => getArrayFromResponse(dueData), [dueData]);
     const [loadingDue, setLoadingDue] = useState(false);
 
-    // history api
-    const [historyData, setHistoryData] = useState(null);
-    const historyAll = useMemo(() => getArrayFromResponse(historyData), [historyData]);
+    // history (phân trang để xem được tất cả)
+    const [historyData, setHistoryData] = useState([]); // items of current page
+    const [historyTotal, setHistoryTotal] = useState(0);
     const [loadingHistory, setLoadingHistory] = useState(false);
+    const [historyPage, setHistoryPage] = useState(1);
+    const HISTORY_PAGE_SIZE = 10;
 
-    // Support flag: backend có cho phép gọi ALL hay không
+    // Backend có cho phép xem “tổng quan” hay không
     const [supportsAll, setSupportsAll] = useState(true);
 
     const [loadingStart, setLoadingStart] = useState(false);
 
-    // ✅ users + distributors maps (chỉ gọi users 1 lần)
+    // users + distributors map
     const [loadingUsers, setLoadingUsers] = useState(false);
     const [userMap, setUserMap] = useState(() => new Map());
     const [distributorMap, setDistributorMap] = useState(() => new Map());
@@ -130,8 +152,11 @@ export default function MaintenancePage() {
     const [confirmForm] = Form.useForm();
     const [rowToConfirm, setRowToConfirm] = useState(null);
 
+    // Select dropdown open
+    const [selectOpen, setSelectOpen] = useState(false);
+
     /* =======================
-      USER ID (confirmedBy)
+    USER ID (confirmedBy)
   ======================= */
     const confirmedBy = useMemo(() => {
         if (typeof window === 'undefined') return '';
@@ -149,7 +174,7 @@ export default function MaintenancePage() {
     }, []);
 
     /* =======================
-      HELPERS
+    HELPERS
   ======================= */
     const deviceByImei = useMemo(() => {
         const m = new Map();
@@ -197,7 +222,7 @@ export default function MaintenancePage() {
         return userMap.get(id) || id;
     };
 
-    // UX: Tổng quan pending từ localStorage (trên trình duyệt này)
+    // Pending overview from localStorage
     const loadPendingOverviewFromLocal = (deviceList) => {
         if (typeof window === 'undefined') return;
         const all = [];
@@ -229,7 +254,7 @@ export default function MaintenancePage() {
     };
 
     /* =======================
-      LOAD DEVICES / USERS (ONE CALL)
+    LOAD DEVICES / USERS
   ======================= */
     const loadDevices = async () => {
         try {
@@ -246,7 +271,6 @@ export default function MaintenancePage() {
         }
     };
 
-    // ✅ Chỉ gọi users 1 lần: build cả userMap + distributorMap
     const loadUsersOnce = async () => {
         try {
             setLoadingUsers(true);
@@ -261,8 +285,6 @@ export default function MaintenancePage() {
                 const label = u?.name || u?.username || u?.email || u?._id;
                 if (u?._id) uMap.set(u._id, label);
 
-                // distributor map: tùy schema position của bạn
-                // nếu u.position === 'distributor' hoặc roles includes distributor
                 const isDistributor =
                     u?.position === 'distributor' ||
                     u?.role === 'distributor' ||
@@ -275,14 +297,14 @@ export default function MaintenancePage() {
             setDistributorMap(dMap);
         } catch (err) {
             console.error(err);
-            message.error('Không tải được danh sách người dùng');
+            // message.error('Không tải được danh sách người dùng');
         } finally {
             setLoadingUsers(false);
         }
     };
 
     /* =======================
-      LOAD DUE / HISTORY (ALL hoặc theo filter)
+    LOAD DUE / HISTORY
   ======================= */
     const loadDue = async (imei) => {
         try {
@@ -299,20 +321,22 @@ export default function MaintenancePage() {
         }
     };
 
-    const loadHistory = async (imei) => {
+    // ✅ Lịch sử: có phân trang để người dùng xem được toàn bộ dữ liệu
+    const loadHistory = async ({ imei = '', page = 1, limit = HISTORY_PAGE_SIZE }) => {
         try {
             setLoadingHistory(true);
-            const res = imei
-                ? await getMaintenanceHistory({ imei, page: 1, limit: 50 })
-                : await getMaintenanceHistory({ page: 1, limit: 50 });
 
-            setHistoryData(res);
+            const res = imei
+                ? await getMaintenanceHistory({ imei, page, limit })
+                : await getMaintenanceHistory({ page, limit });
+
+            const { items, total } = extractItemsTotal(res);
+
+            setHistoryData(items);
+            setHistoryTotal(total);
             setSupportsAll(true);
 
-            if (imei) {
-                const histItems = getArrayFromResponse(res);
-                syncPendingWithHistory(imei, histItems);
-            }
+            if (imei) syncPendingWithHistory(imei, items);
         } catch (err) {
             console.error(err);
             if (!imei) setSupportsAll(false);
@@ -323,25 +347,26 @@ export default function MaintenancePage() {
     };
 
     /* =======================
-      EFFECTS
-      ✅ mount: gọi đúng 1 lần
+    EFFECTS
   ======================= */
     useEffect(() => {
         loadDevices();
         loadUsersOnce();
 
-        // Mặc định: load tổng quan ALL (chỉ 1 lần)
+        // Mặc định: tổng quan
         loadDue('');
-        loadHistory('');
+        setHistoryPage(1);
+        loadHistory({ imei: '', page: 1, limit: HISTORY_PAGE_SIZE });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Khi đổi filter thiết bị -> reload theo imei
+    // Khi chọn thiết bị -> load theo thiết bị + reset page
     useEffect(() => {
         if (!filterImei) return;
 
         loadDue(filterImei);
-        loadHistory(filterImei);
+        setHistoryPage(1);
+        loadHistory({ imei: filterImei, page: 1, limit: HISTORY_PAGE_SIZE });
 
         const p = readPending(filterImei);
         setViewMode(p.length > 0 ? 'pending' : 'history');
@@ -349,20 +374,17 @@ export default function MaintenancePage() {
     }, [filterImei]);
 
     /* =======================
-      DATA FILTERING (client-side)
+    DATA
   ======================= */
     const dueList = useMemo(() => {
         if (!filterImei) return dueAll;
         return dueAll.filter((x) => (x?.imei || x?.device_id?.imei || x?.device?.imei) === filterImei);
     }, [dueAll, filterImei]);
 
-    const historyList = useMemo(() => {
-        if (!filterImei) return historyAll;
-        return historyAll.filter((x) => (x?.imei || x?.device_id?.imei || x?.device?.imei) === filterImei);
-    }, [historyAll, filterImei]);
+    const historyList = useMemo(() => historyData || [], [historyData]);
 
     /* =======================
-      ACTIONS
+    ACTIONS
   ======================= */
     const handleCreateSchedule = async () => {
         if (!filterDeviceId) return message.warning('Hãy chọn thiết bị trước khi tạo lịch');
@@ -438,30 +460,35 @@ export default function MaintenancePage() {
 
             await confirmMaintenance(payload);
 
+            // ✅ 1) Xóa pending local ngay lập tức để tab "Cần xác nhận" biến mất
+            clearPending(imei);
+
             message.success('Xác nhận bảo trì thành công.');
             setConfirmOpen(false);
             setRowToConfirm(null);
             confirmForm.resetFields();
 
-            await loadHistory(imei);
+            // ✅ 2) Reload lịch sử thiết bị đó (và pending overview)
             loadPendingOverviewFromLocal(devices);
 
-            if (filterImei === imei) {
-                const p = readPending(imei);
-                setViewMode(p.length > 0 ? 'pending' : 'history');
-            }
+            // ✅ 3) Chuyển sang tab lịch sử (đúng UX)
+            setViewMode('history');
+
+            // ✅ 4) Reload history trang 1
+            setHistoryPage(1);
+            await loadHistory({ imei: imei, page: 1, limit: HISTORY_PAGE_SIZE });
         } catch (err) {
             console.error(err);
 
             const backendMsg = err?.response?.data?.message || '';
             if (backendMsg.includes('E11000') && backendMsg.includes('imei')) {
-                message.info('Lịch bảo trì của thiết bị này đã được xác nhận trước đó. Vui lòng kiểm tra lại lịch sử.');
-                await loadHistory(imei);
+                // Trường hợp server báo đã confirm rồi
+                clearPending(imei);
                 loadPendingOverviewFromLocal(devices);
-                if (filterImei === imei) {
-                    const p = readPending(imei);
-                    setViewMode(p.length > 0 ? 'pending' : 'history');
-                }
+                setViewMode('history');
+                setHistoryPage(1);
+                await loadHistory({ imei: imei, page: 1, limit: HISTORY_PAGE_SIZE });
+                message.info('Lịch bảo trì của thiết bị này đã được xác nhận trước đó. Vui lòng kiểm tra lại lịch sử.');
                 return;
             }
 
@@ -476,28 +503,34 @@ export default function MaintenancePage() {
 
         if (filterImei) {
             await loadDue(filterImei);
-            await loadHistory(filterImei);
-            const p = readPending(filterImei);
-            if (p.length > 0) setViewMode('pending');
+            await loadHistory({ imei: filterImei, page: historyPage, limit: HISTORY_PAGE_SIZE });
         } else {
             await loadDue('');
-            await loadHistory('');
+            await loadHistory({ imei: '', page: historyPage, limit: HISTORY_PAGE_SIZE });
         }
     };
 
+    const handleViewAll = async () => {
+        setFilterDeviceId('');
+        setViewMode('history');
+
+        await loadDue('');
+        setHistoryPage(1);
+        await loadHistory({ imei: '', page: 1, limit: HISTORY_PAGE_SIZE });
+    };
+
     /* =======================
-      TABS
+    TABS
   ======================= */
-    const showPendingTab = pendingFiltered.length > 0 || pendingAll.length > 0;
+    const showPendingTab = filterImei ? pendingFiltered.length > 0 : pendingAll.length > 0;
 
     const segmentedOptions = useMemo(() => {
         const ops = [];
         const pendingCount = filterImei ? pendingFiltered.length : pendingAll.length;
         const dueCount = filterImei ? dueList.length : dueAll.length;
-        const historyCount = filterImei ? historyList.length : historyAll.length;
 
         if (showPendingTab) ops.push({ label: `Cần xác nhận (${pendingCount})`, value: 'pending' });
-        ops.push({ label: `Lịch sử (${historyCount})`, value: 'history' });
+        ops.push({ label: `Lịch sử (${historyTotal})`, value: 'history' });
         ops.push({ label: `Sắp đến hạn (${dueCount})`, value: 'due' });
         return ops;
     }, [
@@ -507,8 +540,7 @@ export default function MaintenancePage() {
         pendingAll.length,
         dueList.length,
         dueAll.length,
-        historyList.length,
-        historyAll.length,
+        historyTotal,
     ]);
 
     useEffect(() => {
@@ -516,10 +548,8 @@ export default function MaintenancePage() {
     }, [showPendingTab, viewMode]);
 
     /* =======================
-      TABLE
+    TABLE
   ======================= */
-    const getRowId = (row) => row?._id || row?._localId || `${row?.createdAt || ''}-${Math.random()}`;
-
     const pendingColumns = [
         {
             title: 'Thời gian tạo',
@@ -572,10 +602,7 @@ export default function MaintenancePage() {
         },
         { title: 'Thiết bị', key: 'device', width: 280, render: (_, row) => renderDeviceCellFromRow(row) },
         { title: 'Đại lý', key: 'distributor', width: 220, render: (_, row) => renderDistributor(row) },
-
-        // ✅ NEW: Confirmed By
         { title: 'Xác nhận bởi', key: 'confirmedBy', width: 200, render: (_, row) => renderConfirmedBy(row) },
-
         {
             title: 'Km bảo trì',
             dataIndex: 'maintenanceKm',
@@ -609,19 +636,21 @@ export default function MaintenancePage() {
     const statusTag = useMemo(() => {
         if (filterImei) {
             return pendingFiltered.length > 0 ? (
-                <Tag color="orange">Đang xem theo thiết bị (chờ xác nhận)</Tag>
+                <Tag color="orange">Đang lọc theo thiết bị (cần xác nhận)</Tag>
             ) : (
-                <Tag color="green">Đang xem theo thiết bị</Tag>
+                <Tag color="green">Đang lọc theo thiết bị</Tag>
             );
         }
-        return <Tag color="blue">Tổng quan (tất cả thiết bị)</Tag>;
+        return <Tag color="blue">Đang xem tất cả thiết bị</Tag>;
     }, [filterImei, pendingFiltered.length]);
 
     /* =======================
-      UI
+    SELECT: Sticky OPTION "Tất cả thiết bị"
   ======================= */
-    const ALL_VALUE = '__ALL__';
-    const selectValue = filterDeviceId ? filterDeviceId : ALL_VALUE;
+    const handleChooseAllInDropdown = async () => {
+        setSelectOpen(false);
+        await handleViewAll();
+    };
 
     return (
         <div className={styles.page}>
@@ -630,8 +659,8 @@ export default function MaintenancePage() {
                     Bảo trì thiết bị
                 </Title>
                 <Text type="secondary">
-                    Mặc định hiển thị <b>tổng quan</b> (tất cả thiết bị). Bạn có thể lọc theo thiết bị để thao tác tạo
-                    lịch/xác nhận.
+                    Bạn có thể chọn thiết bị để xem riêng từng thiết bị, hoặc chọn <b>Tất cả thiết bị</b> để xem tổng
+                    quan.
                 </Text>
             </div>
 
@@ -640,27 +669,58 @@ export default function MaintenancePage() {
                 <Row gutter={[12, 12]} align="middle">
                     <Col xs={24} lg={10}>
                         <Space orientation="vertical" style={{ width: '100%' }} size={6}>
-                            <Text strong>Lọc theo thiết bị</Text>
+                            <Text strong>Chọn thiết bị</Text>
 
                             <Select
                                 className={`${styles.select} ${styles.alwaysClear || ''}`}
                                 loading={loadingDevices}
-                                value={selectValue}
-                                onChange={(v) => setFilterDeviceId(v === ALL_VALUE ? '' : v)}
-                                showSearch={{ optionFilterProp: 'label' }}
-                                placeholder="Chọn thiết bị / Tất cả thiết bị"
-                                options={[
-                                    { value: ALL_VALUE, label: 'Tất cả thiết bị (Tổng quan)' },
-                                    ...devices.map((d) => ({
-                                        value: d._id,
-                                        label: `${d.license_plate || d.imei} (IMEI: ${d.imei})`,
-                                    })),
-                                ]}
+                                value={filterDeviceId || undefined}
+                                open={selectOpen}
+                                onDropdownVisibleChange={setSelectOpen}
+                                onChange={(v) => setFilterDeviceId(v)}
+                                showSearch
+                                optionFilterProp="label"
+                                placeholder="Tất cả thiết bị (Tổng quan)"
+                                dropdownRender={(menu) => (
+                                    <div>
+                                        {/* Sticky "option" */}
+                                        <div
+                                            style={{
+                                                position: 'sticky',
+                                                top: 0,
+                                                zIndex: 2,
+                                                background: '#fff',
+                                                borderBottom: '1px solid rgba(5,5,5,0.06)',
+                                            }}
+                                        >
+                                            <div
+                                                className="ant-select-item ant-select-item-option"
+                                                style={{
+                                                    padding: '8px 12px',
+                                                    cursor: 'pointer',
+                                                    fontWeight: 600,
+                                                    background: !filterDeviceId ? '#e6f4ff' : 'transparent',
+                                                }}
+                                                onMouseDown={(e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    handleChooseAllInDropdown();
+                                                }}
+                                            >
+                                                Tất cả thiết bị (Tổng quan)
+                                            </div>
+                                        </div>
+
+                                        <div style={{ maxHeight: 320, overflow: 'auto' }}>{menu}</div>
+                                    </div>
+                                )}
+                                options={devices.map((d) => ({
+                                    value: d._id,
+                                    label: `${d.license_plate || d.imei} (IMEI: ${d.imei})`,
+                                }))}
                             />
 
-                            <Text type="secondary">
-                                Tip: Chọn thiết bị để lọc. Nhấn <b>Xem tất cả</b> để quay về tổng quan.
-                            </Text>
+                            <Text type="secondary">Gợi ý: Bạn có thể gõ để tìm nhanh theo biển số/IMEI.</Text>
                         </Space>
                     </Col>
 
@@ -668,16 +728,7 @@ export default function MaintenancePage() {
                         <Space wrap style={{ justifyContent: 'flex-end', width: '100%' }}>
                             {statusTag}
 
-                            <Button
-                                onClick={() => {
-                                    setFilterDeviceId('');
-                                    setViewMode('history');
-                                    // optional: chủ động reload tổng quan ngay
-                                    loadDue('');
-                                    loadHistory('');
-                                }}
-                                disabled={!filterDeviceId}
-                            >
+                            <Button onClick={handleViewAll} disabled={!filterDeviceId}>
                                 Xem tất cả
                             </Button>
 
@@ -701,8 +752,8 @@ export default function MaintenancePage() {
                         style={{ marginTop: 12 }}
                         type="warning"
                         showIcon
-                        message="Backend hiện chưa hỗ trợ tải 'tổng quan' khi không truyền IMEI."
-                        description="Bạn vẫn có thể lọc theo thiết bị để xem dữ liệu. (Trang vẫn hoạt động bình thường theo từng thiết bị.)"
+                        message="Hiện tại không thể xem tổng quan cho tất cả thiết bị."
+                        description="Bạn vẫn có thể chọn từng thiết bị để xem và thao tác bình thường."
                     />
                 )}
             </Card>
@@ -735,11 +786,30 @@ export default function MaintenancePage() {
                             />
                         ) : (
                             <Table
-                                rowKey={getRowId}
+                                rowKey={(row) =>
+                                    row?._id || row?._localId || `${row?.createdAt || ''}-${Math.random()}`
+                                }
                                 columns={columns}
                                 dataSource={dataSource}
-                                pagination={{ pageSize: 10, showSizeChanger: false }}
                                 scroll={{ x: 980 }}
+                                pagination={
+                                    viewMode === 'history'
+                                        ? {
+                                              current: historyPage,
+                                              pageSize: HISTORY_PAGE_SIZE,
+                                              total: historyTotal,
+                                              showSizeChanger: false,
+                                              onChange: async (page) => {
+                                                  setHistoryPage(page);
+                                                  await loadHistory({
+                                                      imei: filterImei || '',
+                                                      page,
+                                                      limit: HISTORY_PAGE_SIZE,
+                                                  });
+                                              },
+                                          }
+                                        : { pageSize: 10, showSizeChanger: false }
+                                }
                             />
                         )}
                     </Card>
@@ -769,7 +839,7 @@ export default function MaintenancePage() {
                 </div>
 
                 <Form layout="vertical" form={confirmForm}>
-                    <Form.Item label="Ngày bảo trì (nếu để trống, hệ thống sẽ lấy ngày hôm nay)" name="maintenanceDate">
+                    <Form.Item label="Ngày bảo trì" name="maintenanceDate">
                         <DatePicker className={styles.datePicker} format="YYYY-MM-DD" allowClear />
                     </Form.Item>
 
@@ -777,16 +847,6 @@ export default function MaintenancePage() {
                         <TextArea rows={3} placeholder="Nhập ghi chú nếu cần..." />
                     </Form.Item>
                 </Form>
-
-                {rowToConfirm?._localId ? (
-                    <Alert
-                        style={{ marginTop: 8 }}
-                        type="info"
-                        showIcon
-                        message="Thông tin"
-                        description="Mục “Cần xác nhận” hiện được lưu tạm trên trình duyệt (local). Sau khi xác nhận, dữ liệu sẽ nằm trong “Lịch sử”."
-                    />
-                ) : null}
             </Modal>
         </div>
     );

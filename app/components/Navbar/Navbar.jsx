@@ -27,7 +27,7 @@ const navItems = [
     { key: 'route', labelVi: 'Hành Trình', labelEn: 'Cruise', img: hanhtrinh, path: '/cruise' },
     { key: 'report', labelVi: 'Báo cáo', labelEn: 'Report', img: baocao, path: '/report' },
 
-    // { key: 'maintenance', labelVi: 'Bảo trì', labelEn: 'Maintenance', img: maintaince, path: '/maintenance' },
+    { key: 'maintenance', labelVi: 'Bảo trì', labelEn: 'Maintenance', img: maintaince, path: '/maintenance' },
 
     { key: 'manage', labelVi: 'Quản Lý', labelEn: 'Manage', img: quanly, path: '/manage' },
     { key: 'support', labelVi: 'Hỗ Trợ', labelEn: 'Support', img: hotro, path: '/support' },
