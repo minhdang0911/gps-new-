@@ -61,10 +61,21 @@ const StatusBar = () => {
     useEffect(() => {
         const updateClock = () => {
             const now = new Date();
-            const formatted = now.toLocaleTimeString('en-GB', { hour12: true });
+
+            // 12h + AM/PM viết hoa
+            const formatted = now
+                .toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: true,
+                })
+                .toUpperCase();
+
             const date = now.toLocaleDateString('vi-VN');
             setTime(`${formatted} ${date}`);
         };
+
         updateClock();
         const timer = setInterval(updateClock, 1000);
         return () => clearInterval(timer);
