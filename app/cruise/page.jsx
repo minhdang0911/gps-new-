@@ -1093,7 +1093,7 @@ const CruisePage = () => {
             const manufacturer = currentDevice.device_category_id?.name || currentDevice.device_category_id?.code || '';
 
             const mapped = allData.map((item) => {
-                const { speedText } = buildStatusHard({ acc: item.acc, spd: item.spd }, isEn);
+                const { speedText } = buildStatusHard({ acc: item.acc, spd: item.vgp }, isEn);
 
                 return {
                     lat: item.lat,
@@ -1105,7 +1105,7 @@ const CruisePage = () => {
                     dateTime: item.tim || item.created || item.createdAt || '',
                     velocity: speedText,
                     acc: item.acc,
-                    spd: item.spd,
+                    spd: item.vgp,
                     address: '',
                 };
             });

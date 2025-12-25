@@ -5,7 +5,6 @@ import { usePathname } from 'next/navigation';
 import Image from 'next/image';
 import { Breadcrumb, Typography, Space, Badge } from 'antd';
 import './StatusBar.css';
-
 import xeDung from '../../assets/ico_biker_1.webp';
 import xeChay from '../../assets/ico_biker_2.webp';
 import xe50 from '../../assets/ico_biker_3.webp';

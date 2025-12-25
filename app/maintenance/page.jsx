@@ -161,16 +161,32 @@ export default function MaintenancePage() {
     const confirmedBy = useMemo(() => {
         if (typeof window === 'undefined') return '';
 
-        try {
-            const userString = localStorage.getItem('userid');
-            if (!userString) return '';
-            const user = JSON.parse(userString);
-            return user || '';
-        } catch (error) {
-            console.log('LocalStorage userid is not JSON:', error);
-            const userString = localStorage.getItem('userid');
-            return userString || '';
+        const raw = localStorage.getItem('userid');
+        if (!raw) return '';
+
+        const s = raw.trim();
+
+        // Nếu là JSON object/array/string (bắt đầu bằng { [ ")
+        if (s.startsWith('{') || s.startsWith('[') || s.startsWith('"')) {
+            try {
+                const parsed = JSON.parse(s);
+
+                // object có _id
+                if (parsed && typeof parsed === 'object' && parsed._id) return String(parsed._id);
+
+                // JSON string "691f..."
+                if (typeof parsed === 'string') return parsed;
+
+                // fallback
+                return '';
+            } catch {
+                // JSON lỗi thì fallback chuỗi thô
+                return s;
+            }
         }
+
+        // chuỗi thô
+        return s;
     }, []);
 
     /* =======================
@@ -600,21 +616,21 @@ export default function MaintenancePage() {
             width: 170,
             render: (v) => (v && dayjs(v).isValid() ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-'),
         },
-        { title: 'Thiết bị', key: 'device', width: 280, render: (_, row) => renderDeviceCellFromRow(row) },
-        { title: 'Đại lý', key: 'distributor', width: 220, render: (_, row) => renderDistributor(row) },
-        { title: 'Xác nhận bởi', key: 'confirmedBy', width: 200, render: (_, row) => renderConfirmedBy(row) },
+        { title: 'Thiết bị', key: 'device', width: 150, render: (_, row) => renderDeviceCellFromRow(row) },
+        { title: 'Đại lý', key: 'distributor', width: 150, render: (_, row) => renderDistributor(row) },
+        { title: 'Xác nhận bởi', key: 'confirmedBy', width: 100, render: (_, row) => renderConfirmedBy(row) },
         {
             title: 'Km bảo trì',
             dataIndex: 'maintenanceKm',
             key: 'maintenanceKm',
-            width: 120,
+            width: 100,
             render: (v) => (v === null || v === undefined ? '-' : `${v}`),
         },
         {
             title: 'Ngày bảo trì',
             dataIndex: 'maintenanceDate',
             key: 'maintenanceDate',
-            width: 150,
+            width: 120,
             render: (v) => (v && dayjs(v).isValid() ? dayjs(v).format('YYYY-MM-DD') : '-'),
         },
         { title: 'Ghi chú', dataIndex: 'note', key: 'note', ellipsis: true, width: 250, render: (v) => v || '-' },
