@@ -1,7 +1,22 @@
 'use client';
 
 import React, { useMemo, useState, useCallback } from 'react';
-import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography, Select, Grid } from 'antd';
+import {
+    Card,
+    Form,
+    Input,
+    Button,
+    Row,
+    Col,
+    Table,
+    DatePicker,
+    Space,
+    Typography,
+    Select,
+    Grid,
+    Statistic,
+    Divider,
+} from 'antd';
 import { SearchOutlined, ReloadOutlined, DownloadOutlined, SettingOutlined } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 
@@ -159,7 +174,7 @@ const TripReportPage = () => {
                 // không map được: tuỳ bạn muốn
                 // 1) báo warning
                 // message.warning(isEn ? 'Plate not mapped to IMEI' : 'Biển số chưa map ra IMEI');
-                // 2) hoặc cứ cho search theo plate FE (nhưng bạn nói muốn chỉ cover mapping thôi)
+                // 2) hoặc cứ cho search theo plate FE
             }
         }
 
@@ -183,8 +198,13 @@ const TripReportPage = () => {
         fetchData({ page: 1, filters: values, sortMode: 'none' }, { force: true });
     };
 
+    // ✅ fix: đổi trang / đổi pageSize thì fetch luôn (tránh case hook không auto-fetch)
     const handleTableChange = (pager) => {
         setPagination({ current: pager.current, pageSize: pager.pageSize });
+        clearSelection();
+
+        // Nếu fetchData không nhận pageSize thì bỏ pageSize đi.
+        fetchData({ page: pager.current, pageSize: pager.pageSize, filters: filterValues, sortMode }, { force: true });
     };
 
     const rowSelection = useMemo(
@@ -200,7 +220,7 @@ const TripReportPage = () => {
                 setSelectedRows(rows);
             },
         }),
-        [selectedRowKeys],
+        [selectedRowKeys, setSelectedRowKeys, setSelectedRows],
     );
 
     // ===== Column manager =====
@@ -229,7 +249,7 @@ const TripReportPage = () => {
         return m;
     }, [allColsForModal]);
 
-    // ✅ report config (kpis + charts) from processedData
+    // ✅ NEW: report config (kpis + charts) from processedData  ✅✅✅
     const reportConfig = useMemo(() => {
         return buildTripReportReportConfig({
             rows: processedData || [],
@@ -237,6 +257,31 @@ const TripReportPage = () => {
             t,
         });
     }, [processedData, isEn, t]);
+
+    // ✅ NEW: summary (tổng theo kết quả đã lọc)
+    const totalKm = useMemo(() => {
+        const toNum = (v) => {
+            if (v == null) return 0;
+            if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+            // string "12.3" / "12,3" / "1,234.56" -> normalize
+            const s = String(v).trim().replace(/,/g, '');
+            const n = Number(s);
+            return Number.isFinite(n) ? n : 0;
+        };
+
+        return (processedData || []).reduce((sum, r) => sum + toNum(r?.mileageToday), 0);
+    }, [processedData]);
+
+    const totalTrips = useMemo(() => {
+        const toNum = (v) => {
+            if (v == null) return 0;
+            const s = String(v).trim().replace(/,/g, '');
+            const n = Number(s);
+            return Number.isFinite(n) ? n : 0;
+        };
+
+        return (processedData || []).reduce((sum, r) => sum + toNum(r?.numberOfTrips), 0);
+    }, [processedData]);
 
     return (
         <div className="usage-report-page">
@@ -371,25 +416,48 @@ const TripReportPage = () => {
                         }
                     >
                         {viewMode === 'table' ? (
-                            <Table
-                                rowKey={(r) => r._id || `${r.imei}-${r.date}`}
-                                columns={columns}
-                                locale={{ emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu' }}
-                                dataSource={tableData}
-                                loading={loading}
-                                rowSelection={rowSelection}
-                                pagination={{
-                                    current: pagination.current,
-                                    pageSize: pagination.pageSize,
-                                    total: totalRecords,
-                                    showSizeChanger: true,
-                                    pageSizeOptions: ['10', '20', '50', '100'],
-                                    showQuickJumper: true,
-                                    showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
-                                }}
-                                onChange={handleTableChange}
-                                scroll={{ x: 2350, y: 600 }}
-                            />
+                            <>
+                                {/* ✅ NEW: Summary row */}
+                                <Row gutter={[12, 12]} style={{ marginBottom: 8 }}>
+                                    <Col xs={12} sm="auto">
+                                        <Statistic
+                                            title={isEn ? 'Total distance (filtered)' : 'Tổng quãng đường'}
+                                            value={totalKm}
+                                            precision={2}
+                                            suffix="km"
+                                        />
+                                    </Col>
+
+                                    <Col xs={12} sm="auto">
+                                        <Statistic
+                                            title={isEn ? 'Total trips (filtered)' : 'Tổng số chuyến '}
+                                            value={totalTrips}
+                                        />
+                                    </Col>
+                                </Row>
+
+                                <Divider style={{ margin: '8px 0' }} />
+
+                                <Table
+                                    rowKey={(r) => r._id || `${r.imei}-${r.date}`}
+                                    columns={columns}
+                                    locale={{ emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu' }}
+                                    dataSource={tableData}
+                                    loading={loading}
+                                    rowSelection={rowSelection}
+                                    pagination={{
+                                        current: pagination.current,
+                                        pageSize: pagination.pageSize,
+                                        total: totalRecords,
+                                        showSizeChanger: true,
+                                        pageSizeOptions: ['10', '20', '50', '100'],
+                                        showQuickJumper: true,
+                                        showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
+                                    }}
+                                    onChange={handleTableChange}
+                                    scroll={{ x: 2350, y: 600 }}
+                                />
+                            </>
                         ) : (
                             <ReportPanel
                                 title={isEn ? 'Report' : 'Báo cáo'}

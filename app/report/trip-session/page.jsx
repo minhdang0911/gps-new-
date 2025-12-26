@@ -1,7 +1,23 @@
+// TripSessionReportPage.jsx
+
 'use client';
 
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography, Grid } from 'antd';
+import {
+    Card,
+    Form,
+    Input,
+    Button,
+    Row,
+    Col,
+    Table,
+    DatePicker,
+    Space,
+    Typography,
+    Grid,
+    Divider,
+    Statistic,
+} from 'antd';
 import { SearchOutlined, ReloadOutlined, DownloadOutlined, SettingOutlined } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 
@@ -107,7 +123,7 @@ const TripSessionReportPage = () => {
                 setSelectedRows(rows);
             },
         }),
-        [selectedRowKeys],
+        [selectedRowKeys, setSelectedRowKeys, setSelectedRows],
     );
 
     // ✅ FE FILTER (IMEI / Biển số)
@@ -120,18 +136,15 @@ const TripSessionReportPage = () => {
 
         if ((!imeis || imeis.length === 0) && !imeiText && !plateText) return list;
 
-        // 1) filter exact by imeis set
         if (imeis && imeis.length > 0) {
             const set = new Set(imeis.map((x) => normStr(String(x))));
             return list.filter((row) => set.has(getRowImei(row)));
         }
 
-        // 2) partial imei
         if (imeiText) {
             return list.filter((row) => getRowImei(row).includes(imeiText));
         }
 
-        // 3) fallback: filter by plate text directly
         if (plateText) {
             return list.filter((row) => getRowPlate(row).includes(plateText));
         }
@@ -206,7 +219,6 @@ const TripSessionReportPage = () => {
         setSortMode('none');
         setPagination((p) => ({ ...p, current: 1 }));
 
-        // ✅ reset cũng force fetch
         fetchBase({ resetPage: true }, { force: true });
     };
 
@@ -239,7 +251,7 @@ const TripSessionReportPage = () => {
     const { exportExcel } = useTripSessionExcel({ isEn, t });
     const onExport = () => exportExcel({ pagedData, pagination });
 
-    // ✅ report config
+    // ✅ report config (FIX: define reportConfig)
     const reportConfig = useMemo(() => {
         return buildTripSessionReportConfig({
             rows: processedData || [],
@@ -247,6 +259,25 @@ const TripSessionReportPage = () => {
             t,
         });
     }, [processedData, isEn, t]);
+
+    // ✅ summary totals (tổng theo kết quả đã lọc)
+    const totalKm = useMemo(() => {
+        const toNum = (v) => {
+            if (v == null) return 0;
+            if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+            const s = String(v).trim().replace(/,/g, '');
+            const n = Number(s);
+            return Number.isFinite(n) ? n : 0;
+        };
+
+        // ⚠️ đổi key nếu data của trip session không phải mileageToday
+        return (processedData || []).reduce(
+            (sum, r) => sum + toNum(r?.mileageToday ?? r?.distanceKm ?? r?.distance),
+            0,
+        );
+    }, [processedData]);
+
+    const totalTrips = useMemo(() => processedData?.length || 0, [processedData]);
 
     return (
         <div className="usage-report-page">
@@ -316,6 +347,7 @@ const TripSessionReportPage = () => {
                                     value={sortMode}
                                     onChange={(v) => {
                                         setSortMode(v);
+                                        clearSelection();
                                         setPagination((p) => ({ ...p, current: 1 }));
                                     }}
                                     disabled={viewMode !== 'table'}
@@ -351,30 +383,53 @@ const TripSessionReportPage = () => {
                         }
                     >
                         {viewMode === 'table' ? (
-                            <Table
-                                locale={{ emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu' }}
-                                rowKey={(r) =>
-                                    r._id ||
-                                    r.sessionId ||
-                                    r.tripCode ||
-                                    `${r.tripCode}-${dayjs(r.startTime).valueOf()}`
-                                }
-                                columns={columns}
-                                dataSource={tableData}
-                                loading={loading}
-                                rowSelection={rowSelection}
-                                pagination={{
-                                    current: pagination.current,
-                                    pageSize: pagination.pageSize,
-                                    total: pagination.total,
-                                    showSizeChanger: true,
-                                    pageSizeOptions: ['10', '20', '50', '100'],
-                                    showQuickJumper: true,
-                                    showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
-                                }}
-                                onChange={handleTableChange}
-                                scroll={{ x: 1400 }}
-                            />
+                            <>
+                                {/* Summary row */}
+                                <Row gutter={[12, 12]} style={{ marginBottom: 8 }}>
+                                    <Col xs={12} sm="auto">
+                                        <Statistic
+                                            title={isEn ? 'Total distance (filtered)' : 'Tổng quãng đường'}
+                                            value={totalKm}
+                                            precision={2}
+                                            suffix="km"
+                                        />
+                                    </Col>
+
+                                    <Col xs={12} sm="auto">
+                                        <Statistic
+                                            title={isEn ? 'Total trips (filtered)' : 'Tổng số chuyến'}
+                                            value={totalTrips}
+                                        />
+                                    </Col>
+                                </Row>
+
+                                <Divider style={{ margin: '8px 0' }} />
+
+                                <Table
+                                    locale={{ emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu' }}
+                                    rowKey={(r) =>
+                                        r._id ||
+                                        r.sessionId ||
+                                        r.tripCode ||
+                                        `${r.tripCode}-${dayjs(r.startTime).valueOf()}`
+                                    }
+                                    columns={columns}
+                                    dataSource={tableData}
+                                    loading={loading}
+                                    rowSelection={rowSelection}
+                                    pagination={{
+                                        current: pagination.current,
+                                        pageSize: pagination.pageSize,
+                                        total: pagination.total,
+                                        showSizeChanger: true,
+                                        pageSizeOptions: ['10', '20', '50', '100'],
+                                        showQuickJumper: true,
+                                        showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
+                                    }}
+                                    onChange={handleTableChange}
+                                    scroll={{ x: 1400 }}
+                                />
+                            </>
                         ) : (
                             <ReportPanel
                                 title={isEn ? 'Report' : 'Báo cáo'}

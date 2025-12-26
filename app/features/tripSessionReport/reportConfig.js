@@ -6,11 +6,6 @@ const round = (n, digits = 2) => {
     return Math.round(Number(n) * p) / p;
 };
 
-const safeNum = (v) => {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : null;
-};
-
 const getTripTime = (r) => r?.tripTimestamp || r?.startTime || r?.createdAt || null;
 
 const getDayKey = (r) => {
@@ -31,7 +26,6 @@ export function buildTripSessionReportConfig({ rows = [], isEn, t }) {
 
     let sumTempAvg = 0;
     let cTempAvg = 0;
-
     let maxTemp = null;
 
     let sumSoh = 0;
@@ -67,14 +61,7 @@ export function buildTripSessionReportConfig({ rows = [], isEn, t }) {
     const avgSoh = cSoh ? sumSoh / cSoh : null;
 
     const kpis = [
-        {
-            key: 'totalTrips',
-            title: isEn ? 'Trips' : 'Số chuyến',
-            value: totalTrips,
-            xs: 12,
-            md: 6,
-            lg: 6,
-        },
+        { key: 'totalTrips', title: isEn ? 'Trips' : 'Số chuyến', value: totalTrips, xs: 12, md: 6, lg: 6 },
         {
             key: 'vehicles',
             title: isEn ? 'Vehicles' : 'Số xe',
@@ -99,14 +86,7 @@ export function buildTripSessionReportConfig({ rows = [], isEn, t }) {
             md: 6,
             lg: 6,
         },
-        {
-            key: 'avgSoh',
-            title: isEn ? 'Avg SOH' : 'SOH TB',
-            value: round(avgSoh, 1),
-            xs: 12,
-            md: 6,
-            lg: 6,
-        },
+        { key: 'avgSoh', title: isEn ? 'Avg SOH' : 'SOH TB', value: round(avgSoh, 1), xs: 12, md: 6, lg: 6 },
     ];
 
     // ======================
@@ -167,12 +147,7 @@ export function buildTripSessionReportConfig({ rows = [], isEn, t }) {
             xKey: 'day',
             yAxes: [{ id: 'left' }, { id: 'right', orientation: 'right' }],
             series: [
-                {
-                    type: 'bar',
-                    dataKey: 'trips',
-                    name: isEn ? 'Trips' : 'Số chuyến',
-                    yAxisId: 'left',
-                },
+                { type: 'bar', dataKey: 'trips', name: isEn ? 'Trips' : 'Số chuyến', yAxisId: 'left' },
                 {
                     type: 'line',
                     dataKey: 'avgTemp',
@@ -180,13 +155,7 @@ export function buildTripSessionReportConfig({ rows = [], isEn, t }) {
                     yAxisId: 'right',
                     dot: false,
                 },
-                {
-                    type: 'line',
-                    dataKey: 'avgSoh',
-                    name: isEn ? 'Avg SOH' : 'SOH TB',
-                    yAxisId: 'right',
-                    dot: false,
-                },
+                { type: 'line', dataKey: 'avgSoh', name: isEn ? 'Avg SOH' : 'SOH TB', yAxisId: 'right', dot: false },
             ],
         },
     ];
