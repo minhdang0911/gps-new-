@@ -68,6 +68,39 @@ const getRowImei = (row) => normStr(String(row?.imei ?? row?.IMEI ?? row?.device
 const getRowPlate = (row) =>
     normalizePlate(String(row?.license_plate ?? row?.licensePlate ?? row?.plate ?? row?.licensePlateText ?? ''));
 
+/**
+ * ✅ Format distance kiểu VN: ngắn gọn, dễ hiểu
+ * - < 1 km      -> m
+ * - 1.. < 10 km -> "x km y m"
+ * - 10..<1000   -> "xx km" (làm tròn)
+ * - >= 1000     -> "x.x nghìn km"
+ * - >= 1,000,000-> "x.xx triệu km"
+ */
+export function formatDistanceVN(km) {
+    const n = Number(km);
+    if (!Number.isFinite(n) || n <= 0) return '0 m';
+
+    if (n < 1) {
+        return `${Math.round(n * 1000)} m`;
+    }
+
+    if (n < 10) {
+        const wholeKm = Math.floor(n);
+        const meters = Math.round((n - wholeKm) * 1000);
+        return meters > 0 ? `${wholeKm} km ${meters} m` : `${wholeKm} km`;
+    }
+
+    if (n < 1000) {
+        return `${Math.round(n)} km`;
+    }
+
+    if (n < 1_000_000) {
+        return `${(n / 1000).toFixed(1)} nghìn km`;
+    }
+
+    return `${(n / 1_000_000).toFixed(2)} triệu km`;
+}
+
 const TripSessionReportPage = () => {
     const [form] = Form.useForm();
 
@@ -123,7 +156,7 @@ const TripSessionReportPage = () => {
                 setSelectedRows(rows);
             },
         }),
-        [selectedRowKeys, setSelectedRowKeys, setSelectedRows],
+        [selectedRowKeys],
     );
 
     // ✅ FE FILTER (IMEI / Biển số)
@@ -251,7 +284,7 @@ const TripSessionReportPage = () => {
     const { exportExcel } = useTripSessionExcel({ isEn, t });
     const onExport = () => exportExcel({ pagedData, pagination });
 
-    // ✅ report config (FIX: define reportConfig)
+    // ✅ report config
     const reportConfig = useMemo(() => {
         return buildTripSessionReportConfig({
             rows: processedData || [],
@@ -390,8 +423,7 @@ const TripSessionReportPage = () => {
                                         <Statistic
                                             title={isEn ? 'Total distance (filtered)' : 'Tổng quãng đường'}
                                             value={totalKm}
-                                            precision={2}
-                                            suffix="km"
+                                            formatter={(v) => formatDistanceVN(Number(v))}
                                         />
                                     </Col>
 
