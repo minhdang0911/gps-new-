@@ -104,6 +104,7 @@ const ReportLayout = ({ children }) => {
             short: t.tripShort,
             icon: <AimOutlined />,
             helpKey: 'trip',
+            smallText: true, // ✅ giảm font menu này
         },
         {
             key: '/report/trip-report',
@@ -120,6 +121,7 @@ const ReportLayout = ({ children }) => {
             short: t.lastCruiseShort,
             icon: <EnvironmentOutlined />,
             helpKey: 'lastCruise',
+            smallText: true, // ✅ giảm font menu này
         },
         {
             key: '/report/battery-summary',
@@ -188,7 +190,9 @@ const ReportLayout = ({ children }) => {
                                 <div key={item.key} className={`report-topnav-tab ${active ? 'is-active' : ''}`}>
                                     <Link href={item.href} className="report-topnav-tab__link">
                                         {item.icon}
-                                        <span className="report-topnav-tab__text">{item.short}</span>
+                                        <span className={`report-topnav-tab__text ${item.smallText ? 'is-small' : ''}`}>
+                                            {item.short}
+                                        </span>
                                     </Link>
                                     <HelpIcon text={helpText} isMobile={true} />
                                 </div>
@@ -224,7 +228,7 @@ const ReportLayout = ({ children }) => {
                     <Tooltip title={item.label} placement="right" mouseEnterDelay={0.5}>
                         <Link
                             href={item.href}
-                            className="report-menu-link"
+                            className={`report-menu-link ${item.smallText ? 'is-small' : ''}`}
                             style={{
                                 flex: 1,
                                 overflow: 'hidden',

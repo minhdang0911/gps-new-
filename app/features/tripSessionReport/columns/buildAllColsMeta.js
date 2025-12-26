@@ -195,7 +195,7 @@ export function buildAllColsMeta({ t, isEn, isMobile }) {
             column: {
                 title: <ColTitle label={t.table.distanceKm} tip={colHelp.distanceKm} isEn={isEn} isMobile={isMobile} />,
                 dataIndex: 'distanceKm',
-                width: 160,
+                width: 180,
             },
         },
         {

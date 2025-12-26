@@ -101,6 +101,44 @@ export function formatDistanceVN(km) {
     return `${(n / 1_000_000).toFixed(2)} triệu km`;
 }
 
+/**
+ * ✅ Format distance kiểu EN
+ * - < 1 km      -> m
+ * - 1.. < 10 km -> "x km y m"
+ * - 10..<1000   -> "xx km" (rounded)
+ * - >= 1000     -> "x.xk km"
+ * - >= 1,000,000-> "x.xxM km"
+ */
+export function formatDistanceEN(km) {
+    const n = Number(km);
+    if (!Number.isFinite(n) || n <= 0) return '0 m';
+
+    if (n < 1) {
+        return `${Math.round(n * 1000)} m`;
+    }
+
+    if (n < 10) {
+        const wholeKm = Math.floor(n);
+        const meters = Math.round((n - wholeKm) * 1000);
+        return meters > 0 ? `${wholeKm} km ${meters} m` : `${wholeKm} km`;
+    }
+
+    if (n < 1000) {
+        return `${Math.round(n)} km`;
+    }
+
+    if (n < 1_000_000) {
+        return `${(n / 1000).toFixed(1)}k km`;
+    }
+
+    return `${(n / 1_000_000).toFixed(2)}M km`;
+}
+
+/** ✅ Wrapper theo locale */
+export function formatDistance(km, locale = 'vi') {
+    return locale === 'en' ? formatDistanceEN(km) : formatDistanceVN(km);
+}
+
 const TripSessionReportPage = () => {
     const [form] = Form.useForm();
 
@@ -423,7 +461,7 @@ const TripSessionReportPage = () => {
                                         <Statistic
                                             title={isEn ? 'Total distance (filtered)' : 'Tổng quãng đường'}
                                             value={totalKm}
-                                            formatter={(v) => formatDistanceVN(Number(v))}
+                                            formatter={(v) => formatDistance(Number(v), isEn ? 'en' : 'vi')}
                                         />
                                     </Col>
 

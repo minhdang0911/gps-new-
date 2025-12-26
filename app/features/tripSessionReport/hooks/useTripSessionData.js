@@ -89,10 +89,39 @@ export function useTripSessionData({
         return makeKey('tripSessions:base', basePayload);
     }, [basePayload]);
 
+    const cleanFloat = (value, digits = 3) => {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return value;
+        const f = 10 ** digits;
+        return Math.round((n + Number.EPSILON) * f) / f;
+    };
+
+    const cleanTripRow = (r) => ({
+        ...r,
+        // distance
+        distanceKm: cleanFloat(r?.distanceKm, 3),
+        mileageToday: cleanFloat(r?.mileageToday, 3),
+        distance: cleanFloat(r?.distance, 3),
+
+        // energy / percent
+        consumedKw: cleanFloat(r?.consumedKw, 3),
+        socEnd: cleanFloat(r?.socEnd, 2),
+        soh: cleanFloat(r?.soh, 2),
+
+        // coords (để gọn nhưng vẫn chính xác)
+        endLat: cleanFloat(r?.endLat, 6),
+        endLng: cleanFloat(r?.endLng, 6),
+        startLat: cleanFloat(r?.startLat, 6),
+        startLng: cleanFloat(r?.startLng, 6),
+    });
+
     const swr = useSWR(key, fetcher, swrOpt);
     const loading = swr.isLoading || swr.isValidating;
 
-    const apiList = useMemo(() => pickList(swr.data), [swr.data]);
+    const apiList = useMemo(() => {
+        const list = pickList(swr.data) || [];
+        return list.map(cleanTripRow);
+    }, [swr.data]);
 
     const serverData = useMemo(() => {
         const list = apiList || [];

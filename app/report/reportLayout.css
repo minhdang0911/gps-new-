@@ -8,6 +8,16 @@
     background: #f3f4f6;
 }
 
+/* giảm font size cho đúng 2 menu desktop */
+.report-menu-link.is-small {
+    font-size: 11px; /* chỉnh 12/13 tuỳ bạn */
+}
+
+/* giảm font size cho đúng 2 tab mobile */
+.report-topnav-tab__text.is-small {
+    font-size: 11px; /* chỉnh 11/12 tuỳ bạn */
+}
+
 /* SIDEBAR */
 .report-sider {
     background: #ffffff !important; /* TRẮNG / XÁM RẤT NHẸ */
