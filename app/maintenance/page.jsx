@@ -11,7 +11,6 @@ import {
     Button,
     Space,
     Table,
-    Tag,
     message,
     Spin,
     Empty,
@@ -20,10 +19,7 @@ import {
     DatePicker,
     Input,
 } from 'antd';
-import { CheckCircleFilled, CloseCircleFilled } from '@ant-design/icons';
-
-import { getDevices } from '../lib/api/devices';
-import { startMaintenance, confirmMaintenance } from '../lib/api/maintain';
+import { startMaintenance, confirmMaintenance, getMaintenanceDue } from '../lib/api/maintain';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -103,18 +99,20 @@ export default function MaintenanceActivatePage() {
     const [confirmForm] = Form.useForm();
     const [rowToConfirm, setRowToConfirm] = useState(null);
 
+    // ✅ CHỈ ĐỔI API: getMaintenanceDue thay cho getDevices
     const loadDevices = async ({ license_plate = '', imei = '' } = {}) => {
         try {
             setLoadingDevices(true);
 
-            const res = await getDevices({
+            const res = await getMaintenanceDue({
                 page: 1,
                 limit: 200000,
                 ...(license_plate ? { license_plate } : {}),
                 ...(imei ? { imei } : {}),
             });
 
-            const list = res?.devices || [];
+            // tuỳ backend trả về key gì: devices / data / items
+            const list = res?.devices || res?.data || res?.items || [];
             setDevices(list);
 
             const map = ensureRandomStarted(list);
@@ -209,7 +207,7 @@ export default function MaintenanceActivatePage() {
             setRowToConfirm(null);
             confirmForm.resetFields();
 
-            // ✅ nếu bạn muốn: confirm xong coi như “đã kích hoạt” để đổi tag + remove khỏi dropdown
+            // ✅ confirm xong coi như “đã kích hoạt” để remove khỏi dropdown
             if (rowToConfirm?._id) {
                 const next = { ...startedMap, [rowToConfirm._id]: true };
                 setStartedMap(next);
@@ -237,7 +235,6 @@ export default function MaintenanceActivatePage() {
 
     const doSearch = async () => {
         await loadDevices({ license_plate: searchPlate.trim(), imei: searchImei.trim() });
-        // Nếu device đang chọn bị filter mất thì clear
         setSelectedDeviceId('');
     };
 
@@ -245,6 +242,7 @@ export default function MaintenanceActivatePage() {
         await loadDevices({ license_plate: searchPlate.trim(), imei: searchImei.trim() });
     };
 
+    // ✅ BỎ CỘT TRẠNG THÁI
     const columns = [
         {
             title: 'Tên thiết bị',
@@ -272,23 +270,6 @@ export default function MaintenanceActivatePage() {
             render: (v) => (v && dayjs(v).isValid() ? dayjs(v).format('DD-MM-YYYY') : 'Chưa cập nhật'),
         },
         {
-            title: 'Trạng thái',
-            key: 'started',
-            width: 140,
-            render: (_, row) => {
-                const started = !!startedMap[row?._id];
-                return started ? (
-                    <Tag icon={<CheckCircleFilled />} color="green">
-                        Đã kích hoạt
-                    </Tag>
-                ) : (
-                    <Tag icon={<CloseCircleFilled />} color="red">
-                        Chưa kích hoạt
-                    </Tag>
-                );
-            },
-        },
-        {
             title: 'Hành động',
             key: 'action',
             width: 140,
@@ -305,7 +286,6 @@ export default function MaintenanceActivatePage() {
             <Title level={3} style={{ marginBottom: 4 }}>
                 Kích hoạt bảo dưỡng
             </Title>
-            <Text type="secondary">Thiết bị đã kích hoạt sẽ không còn hiện trong dropdown.</Text>
 
             {/* Select + 1 nút Kích hoạt */}
             <Card style={{ marginTop: 12, marginBottom: 12 }}>
@@ -384,7 +364,20 @@ export default function MaintenanceActivatePage() {
                 </Row>
             </Card>
 
-            <Card title="Danh sách thiết bị">
+            <Card
+                title={
+                    <div
+                        style={{
+                            fontSize: '1.5rem',
+                            fontWeight: 600,
+                            textAlign: 'center',
+                            width: '100%',
+                        }}
+                    >
+                        Danh sách xe đến kì bảo dưỡng
+                    </div>
+                }
+            >
                 {loadingDevices ? (
                     <div style={{ textAlign: 'center', padding: 24 }}>
                         <Spin />

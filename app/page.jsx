@@ -750,7 +750,7 @@ const MonitorPage = () => {
                     {t.battery.soh} {soh != null ? `${soh}%` : NA_TEXT}
                 </div>
                 <div>
-                    {isEn ? 'Charge/Discharge cycles' : 'Chu kỳ sạc/xả'}: {chc != null ? chc : NA_TEXT}
+                    {isEn ? 'Charge/Discharge cycles' : 'Chu kỳ sạc/xả'}: {chc != null ? chc : 0}
                 </div>
                 <div>
                     {t.battery.temperature} {temp != null ? `${temp}°C` : NA_TEXT}
