@@ -25,7 +25,7 @@ import Link from 'next/link';
 const navItems = [
     { key: 'monitor', labelVi: 'Giám Sát', labelEn: 'Monitor', img: giamsat, path: '/' },
     { key: 'route', labelVi: 'Hành Trình', labelEn: 'Cruise', img: hanhtrinh, path: '/cruise' },
-    { key: 'maintenance', labelVi: 'Bảo trì', labelEn: 'Maintenance', img: maintaince, path: '/maintenance' },
+    { key: 'maintenance', labelVi: 'Bảo dưỡng', labelEn: 'Maintenance', img: maintaince, path: '/maintenance' },
     { key: 'report', labelVi: 'Báo cáo', labelEn: 'Report', img: baocao, path: '/report' },
     { key: 'manage', labelVi: 'Quản Lý', labelEn: 'Manage', img: quanly, path: '/manage' },
     { key: 'support', labelVi: 'Hỗ Trợ', labelEn: 'Support', img: hotro, path: '/support' },

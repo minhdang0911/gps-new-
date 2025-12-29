@@ -13,6 +13,8 @@ import {
     EnvironmentOutlined,
     DashboardOutlined,
     QuestionCircleOutlined,
+    ToolOutlined,
+    ClockCircleOutlined,
 } from '@ant-design/icons';
 
 import './reportLayout.css';
@@ -76,6 +78,13 @@ const ReportLayout = ({ children }) => {
             battery: isEn
                 ? 'Battery daily summary: overview per device by day  (SOC/voltage/temperature/location).'
                 : 'Tổng quan pin theo thiết bị: tổng hợp theo ngày và hiển thị trạng thái  (SOC/điện áp/nhiệt độ/vị trí).',
+            maintenanceHistory: isEn
+                ? 'Maintenance history report: confirmed maintenance records. Search by IMEI or license plate (plate is mapped to IMEI).'
+                : 'Báo cáo lịch sử bảo trì: các record bảo trì đã xác nhận. Tìm theo IMEI hoặc biển số (biển số sẽ map ra IMEI).',
+
+            maintenanceDue: isEn
+                ? 'Maintenance due report: upcoming maintenance schedules. Search by IMEI or license plate (plate is mapped to IMEI).'
+                : 'Báo cáo sắp đến hạn: danh sách bảo trì dự kiến/sắp tới. Tìm theo IMEI hoặc biển số (biển số sẽ map ra IMEI).',
         }),
         [isEn],
     );
@@ -130,6 +139,23 @@ const ReportLayout = ({ children }) => {
             short: t.batteryShort,
             icon: <DashboardOutlined />,
             helpKey: 'battery',
+        },
+        {
+            key: '/report/maintenance-history',
+            basePath: '/report/maintenance-history',
+            label: isEn ? 'Maintenance history' : 'Lịch sử bảo dưỡng',
+            short: isEn ? 'History' : 'Lịch sử',
+            icon: <ToolOutlined />,
+            helpKey: 'maintenanceHistory',
+        },
+        {
+            key: '/report/maintenance-due',
+            basePath: '/report/maintenance-due',
+            label: isEn ? 'Maintenance due' : 'Sắp đến hạn bảo dưỡng',
+            short: isEn ? 'Due' : 'Đến hạn',
+            icon: <ClockCircleOutlined />,
+            helpKey: 'maintenanceDue',
+            smallText: true,
         },
     ];
 

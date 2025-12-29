@@ -1,7 +1,13 @@
 import React from 'react';
 import { Tooltip } from 'antd';
 import { QuestionCircleOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
 import { formatDateTime, formatDuration } from '../utils';
+
+const toNum = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+};
 
 const colHelp = {
     index: { vi: 'Số thứ tự của dòng trong bảng.', en: 'Order number of the row.' },
@@ -20,7 +26,17 @@ const colHelp = {
     endTime: { vi: 'Thời điểm kết thúc chuyến đi.', en: 'Trip end time.' },
     duration: { vi: 'Tổng thời gian của chuyến đi.', en: 'Total trip duration.' },
     distanceKm: { vi: 'Quãng đường di chuyển trong chuyến đi (km).', en: 'Distance traveled (km).' },
-    consumedKw: { vi: 'Lượng điện tiêu thụ trong chuyến đi.', en: 'Energy consumed.' },
+
+    // ✅ chỉ giữ 2 cột bạn cần
+    consumedKwh: {
+        vi: 'Năng lượng tiêu thụ trong chuyến đi (kWh).',
+        en: 'Energy consumed during the trip (kWh).',
+    },
+    consumedKw: {
+        vi: 'Công suất tiêu thụ (kW).',
+        en: 'Power consumption (kW).',
+    },
+
     socEnd: { vi: 'Phần trăm pin còn lại khi kết thúc chuyến đi.', en: 'Battery remaining at end.' },
     endLat: { vi: 'Vị trí kết thúc – vĩ độ.', en: 'End latitude.' },
     endLng: { vi: 'Vị trí kết thúc – kinh độ.', en: 'End longitude.' },
@@ -198,15 +214,51 @@ export function buildAllColsMeta({ t, isEn, isMobile }) {
                 width: 180,
             },
         },
+
+        // ✅ CHỈ GIỮ 2 CỘT: consumedKwh + consumedKw
+
         {
-            key: 'consumedKw',
-            label: t.table.consumedKw,
+            key: 'consumedKwh',
+            label: isEn ? 'Energy consumed (kWh)' : 'Năng lượng tiêu thụ (kWh)',
             column: {
-                title: <ColTitle label={t.table.consumedKw} tip={colHelp.consumedKw} isEn={isEn} isMobile={isMobile} />,
-                dataIndex: 'consumedKw',
-                width: 202,
+                title: (
+                    <ColTitle
+                        label={isEn ? 'Energy consumed (kWh)' : 'Năng lượng tiêu thụ (kWh)'}
+                        tip={colHelp.consumedKwh}
+                        isEn={isEn}
+                        isMobile={isMobile}
+                    />
+                ),
+                dataIndex: 'consumedKwh',
+                width: 220,
+                render: (v) => {
+                    const n = toNum(v);
+                    return n === 0 ? '0' : n.toFixed(3);
+                },
             },
         },
+
+        {
+            key: 'consumedKw',
+            label: isEn ? 'Power (kW)' : 'Công suất (kW)',
+            column: {
+                title: (
+                    <ColTitle
+                        label={isEn ? 'Power (kW)' : 'Công suất (kW)'}
+                        tip={colHelp.consumedKw}
+                        isEn={isEn}
+                        isMobile={isMobile}
+                    />
+                ),
+                dataIndex: 'consumedKw',
+                width: 160,
+                render: (v) => {
+                    const n = toNum(v);
+                    return n === 0 ? '0' : n.toFixed(3);
+                },
+            },
+        },
+
         {
             key: 'socEnd',
             label: t.table.socEnd,

@@ -28,8 +28,6 @@ function normalizeTripPayload({ values, plateToImeis, page = 1, limit = API_SAFE
     const startTime = timeRange?.[0] ? timeRange[0].toISOString?.() || String(timeRange[0]) : undefined;
     const endTime = timeRange?.[1] ? timeRange[1].toISOString?.() || String(timeRange[1]) : undefined;
 
-    // ✅ BE không support imei/license_plate thì bỏ khỏi payload nếu muốn
-    // Ở đây mình vẫn giữ license_plate (nếu BE có support) — bạn có thể remove nếu chắc chắn BE không nhận.
     const plate = values?.license_plate?.trim?.();
 
     return {
@@ -39,11 +37,7 @@ function normalizeTripPayload({ values, plateToImeis, page = 1, limit = API_SAFE
         soh: values?.soh || undefined,
         startTime,
         endTime,
-
-        // nếu BE không dùng, bạn có thể comment 2 dòng dưới:
         license_plate: plate || undefined,
-
-        // nếu BE có hỗ trợ imeis thì mở lại:
         // imeis: plate ? (plateToImeis?.get?.(plate) || undefined) : undefined,
     };
 }
@@ -62,7 +56,6 @@ export function useTripSessionData({
 
     const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 });
     const [sortMode, setSortMode] = useState('none');
-
     const [basePayload, setBasePayload] = useState(null);
 
     const fetcher = useCallback(
@@ -85,9 +78,7 @@ export function useTripSessionData({
         [],
     );
 
-    const key = useMemo(() => {
-        return makeKey('tripSessions:base', basePayload);
-    }, [basePayload]);
+    const key = useMemo(() => makeKey('tripSessions:base', basePayload), [basePayload]);
 
     const cleanFloat = (value, digits = 3) => {
         const n = Number(value);
@@ -103,12 +94,12 @@ export function useTripSessionData({
         mileageToday: cleanFloat(r?.mileageToday, 3),
         distance: cleanFloat(r?.distance, 3),
 
-        // energy / percent
+        // ✅ power + energy
         consumedKw: cleanFloat(r?.consumedKw, 3),
+        consumedKwh: cleanFloat(r?.consumedKwh, 3), // ✅ THÊM DÒNG NÀY
+
         socEnd: cleanFloat(r?.socEnd, 2),
         soh: cleanFloat(r?.soh, 2),
-
-        // coords (để gọn nhưng vẫn chính xác)
         endLat: cleanFloat(r?.endLat, 6),
         endLng: cleanFloat(r?.endLng, 6),
         startLat: cleanFloat(r?.startLat, 6),
@@ -136,12 +127,9 @@ export function useTripSessionData({
     }, [apiList, attachLicensePlate, imeiToPlate]);
 
     const toastLoadError = useCallback(() => {
-        // message.error(
-        //   t?.messages?.loadError || (!isEn ? 'Không tải được danh sách hành trình' : 'Failed to load trip sessions'),
-        // );
+        // message.error(...)
     }, [isEn, t]);
 
-    // ✅ Force fetch khi user bấm Search/Reset (payload y hệt vẫn gọi)
     const forceFetch = useCallback(
         async (prefix, payload) => {
             const k = makeKey(prefix, payload);
@@ -150,7 +138,6 @@ export function useTripSessionData({
         [globalMutate, fetcher],
     );
 
-    // ===== INITIAL PAYLOAD =====
     useEffect(() => {
         const values = form.getFieldsValue();
         const payload = normalizeTripPayload({
@@ -163,7 +150,6 @@ export function useTripSessionData({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // ===== actions =====
     const fetchBase = useCallback(
         async ({ resetPage } = {}, { force = false } = {}) => {
             try {
@@ -176,9 +162,7 @@ export function useTripSessionData({
                 });
 
                 if (resetPage) setPagination((p) => ({ ...p, current: 1 }));
-
                 setBasePayload(payload);
-
                 if (force) await forceFetch('tripSessions:base', payload);
             } catch (err) {
                 console.error(err);
@@ -188,16 +172,11 @@ export function useTripSessionData({
         [form, plateToImeis, forceFetch, toastLoadError],
     );
 
-    // ✅ warning truncate only (KHÔNG set total ở hook nữa)
     useEffect(() => {
         if (loadingDeviceMap) return;
         const list = serverData || [];
         if (list.length >= API_SAFE_LIMIT) {
-            // message.warning(
-            //     isEn
-            //         ? `Data may be truncated (limit=${API_SAFE_LIMIT}).`
-            //         : `Dữ liệu có thể bị cắt (limit=${API_SAFE_LIMIT}).`,
-            // );
+            // message.warning(...)
         }
     }, [loadingDeviceMap, serverData, isEn]);
 
@@ -212,14 +191,11 @@ export function useTripSessionData({
     return {
         serverData,
         loading,
-
         pagination,
         setPagination,
-
         sortMode,
         setSortMode,
-
-        fetchBase, // fetchBase({resetPage:true},{force:true})
+        fetchBase,
         mutate,
     };
 }

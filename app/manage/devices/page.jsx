@@ -130,10 +130,10 @@ export default function ManageDevicesPage() {
         [currentPage, pageSize, filters],
     );
 
-    const devicesKey = token ? ['devices', token, listParams] : null;
+    const devicesKey = ['devices', listParams];
 
-    const devicesFetcher = async ([, tk, params]) => {
-        return getDevices(tk, params);
+    const devicesFetcher = async ([, params]) => {
+        return getDevices(params);
     };
 
     const {
@@ -146,7 +146,6 @@ export default function ManageDevicesPage() {
         revalidateOnFocus: false,
         dedupingInterval: 10_000,
     });
-
     const devices = devicesRes?.devices || [];
     const total =
         devicesRes?.total ??

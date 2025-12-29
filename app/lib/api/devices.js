@@ -5,12 +5,9 @@ import qs from 'qs';
 // ===========================
 // GET DEVICE LIST
 // ===========================
-export const getDevices = async (token, params = {}) => {
+export const getDevices = async (params = {}) => {
     try {
         const res = await api.get('devices', {
-            headers: {
-                Authorization: `Bearer ${token}`,
-            },
             params: {
                 phone_number: params.phone_number || '',
                 license_plate: params.license_plate || '',

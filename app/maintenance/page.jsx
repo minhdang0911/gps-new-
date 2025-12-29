@@ -10,443 +10,171 @@ import {
     Select,
     Button,
     Space,
-    Segmented,
     Table,
+    Tag,
+    message,
+    Spin,
+    Empty,
     Modal,
     Form,
     DatePicker,
     Input,
-    message,
-    Spin,
-    Empty,
-    Alert,
-    Tag,
 } from 'antd';
+import { CheckCircleFilled, CloseCircleFilled } from '@ant-design/icons';
 
-import styles from './Maintenance.module.css';
-
-import { startMaintenance, confirmMaintenance, getMaintenanceDue, getMaintenanceHistory } from '../lib/api/maintain';
 import { getDevices } from '../lib/api/devices';
-import { getUserList } from '../lib/api/user';
+import { startMaintenance, confirmMaintenance } from '../lib/api/maintain';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
 
-/* =======================
-  LOCAL STORAGE (pending “cần xác nhận”)
-======================= */
-const PENDING_KEY = (imei) => `maint_pending_${imei}`;
+const STARTED_KEY = 'maint_started_map_v1';
 
-function readPending(imei) {
-    if (!imei || typeof window === 'undefined') return [];
+/** ====== started map (tạm thời random + localStorage) ====== */
+function readStartedMap() {
+    if (typeof window === 'undefined') return {};
     try {
-        const raw = localStorage.getItem(PENDING_KEY(imei));
-        const parsed = JSON.parse(raw || '[]');
-        return Array.isArray(parsed) ? parsed : [];
+        const raw = localStorage.getItem(STARTED_KEY);
+        const parsed = JSON.parse(raw || '{}');
+        return parsed && typeof parsed === 'object' ? parsed : {};
     } catch {
-        return [];
+        return {};
     }
 }
+function writeStartedMap(mapObj) {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(STARTED_KEY, JSON.stringify(mapObj || {}));
+}
+function ensureRandomStarted(devices) {
+    const current = readStartedMap();
+    let changed = false;
 
-function writePending(imei, items) {
-    if (!imei || typeof window === 'undefined') return;
-    localStorage.setItem(PENDING_KEY(imei), JSON.stringify(items || []));
+    devices.forEach((d) => {
+        const id = d?._id;
+        if (!id) return;
+        if (current[id] === undefined) {
+            current[id] = Math.random() < 0.3; // random 30%
+            changed = true;
+        }
+    });
+
+    if (changed) writeStartedMap(current);
+    return current;
 }
 
-function clearPending(imei) {
-    if (!imei || typeof window === 'undefined') return;
-    localStorage.removeItem(PENDING_KEY(imei));
+/** ====== confirmedBy giống code cũ ====== */
+function getConfirmedByFromLocalStorage() {
+    if (typeof window === 'undefined') return '';
+    const raw = localStorage.getItem('userid');
+    if (!raw) return '';
+
+    const s = raw.trim();
+    if (s.startsWith('{') || s.startsWith('[') || s.startsWith('"')) {
+        try {
+            const parsed = JSON.parse(s);
+            if (parsed && typeof parsed === 'object' && parsed._id) return String(parsed._id);
+            if (typeof parsed === 'string') return parsed;
+            return '';
+        } catch {
+            return s;
+        }
+    }
+    return s;
 }
 
-function addPending(imei, device) {
-    const current = readPending(imei);
-    if (current.length > 0) return { ok: false, reason: 'exists' };
-
-    const item = {
-        _localId: `local_${Date.now()}`,
-        imei,
-        distributor_id: device?.distributor_id?._id || device?.distributor_id || null,
-        createdAt: new Date().toISOString(),
-    };
-
-    writePending(imei, [item]);
-    return { ok: true, item };
-}
-
-function getArrayFromResponse(res) {
-    if (!res) return [];
-    if (Array.isArray(res)) return res;
-    if (Array.isArray(res.items)) return res.items;
-    if (Array.isArray(res.history)) return res.history;
-    if (Array.isArray(res.data)) return res.data;
-    if (Array.isArray(res?.result?.items)) return res.result.items;
-    return [];
-}
-
-/**
- * Lấy items + total theo nhiều schema backend hay gặp:
- * - { items: [], total }
- * - { data: [], total }
- * - { items: [], pagination: { total } }
- * - fallback: total = items.length
- */
-function extractItemsTotal(res) {
-    const items = getArrayFromResponse(res);
-    const total =
-        Number(res?.total) ||
-        Number(res?.pagination?.total) ||
-        Number(res?.meta?.total) ||
-        Number(res?.result?.total) ||
-        items.length;
-
-    return { items, total };
-}
-
-export default function MaintenancePage() {
-    /* =======================
-    STATE
-  ======================= */
+export default function MaintenanceActivatePage() {
     const [devices, setDevices] = useState([]);
     const [loadingDevices, setLoadingDevices] = useState(false);
 
-    // Filter device
-    const [filterDeviceId, setFilterDeviceId] = useState('');
-    const selectedDevice = useMemo(() => devices.find((d) => d._id === filterDeviceId), [devices, filterDeviceId]);
-    const filterImei = selectedDevice?.imei || '';
+    const [startedMap, setStartedMap] = useState({});
+    const [selectedDeviceId, setSelectedDeviceId] = useState('');
+    const selectedDevice = useMemo(() => devices.find((d) => d._id === selectedDeviceId), [devices, selectedDeviceId]);
 
-    // viewMode: pending | due | history
-    const [viewMode, setViewMode] = useState('history');
+    const [starting, setStarting] = useState(false);
 
-    // pending local
-    const [pendingAll, setPendingAll] = useState([]);
-    const pendingFiltered = useMemo(() => {
-        if (!filterImei) return pendingAll;
-        return pendingAll.filter((x) => x?.imei === filterImei);
-    }, [pendingAll, filterImei]);
+    // ====== Search (2 ô: biển số + IMEI) ======
+    const [searchPlate, setSearchPlate] = useState('');
+    const [searchImei, setSearchImei] = useState('');
 
-    // due
-    const [dueData, setDueData] = useState(null);
-    const dueAll = useMemo(() => getArrayFromResponse(dueData), [dueData]);
-    const [loadingDue, setLoadingDue] = useState(false);
-
-    // history (phân trang để xem được tất cả)
-    const [historyData, setHistoryData] = useState([]); // items of current page
-    const [historyTotal, setHistoryTotal] = useState(0);
-    const [loadingHistory, setLoadingHistory] = useState(false);
-    const [historyPage, setHistoryPage] = useState(1);
-    const HISTORY_PAGE_SIZE = 10;
-
-    // Backend có cho phép xem “tổng quan” hay không
-    const [supportsAll, setSupportsAll] = useState(true);
-
-    const [loadingStart, setLoadingStart] = useState(false);
-
-    // users + distributors map
-    const [loadingUsers, setLoadingUsers] = useState(false);
-    const [userMap, setUserMap] = useState(() => new Map());
-    const [distributorMap, setDistributorMap] = useState(() => new Map());
-
-    // confirm modal
+    // ====== Confirm modal state (giống code cũ) ======
+    const confirmedBy = useMemo(() => getConfirmedByFromLocalStorage(), []);
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [confirming, setConfirming] = useState(false);
     const [confirmForm] = Form.useForm();
     const [rowToConfirm, setRowToConfirm] = useState(null);
 
-    // Select dropdown open
-    const [selectOpen, setSelectOpen] = useState(false);
-
-    /* =======================
-    USER ID (confirmedBy)
-  ======================= */
-    const confirmedBy = useMemo(() => {
-        if (typeof window === 'undefined') return '';
-
-        const raw = localStorage.getItem('userid');
-        if (!raw) return '';
-
-        const s = raw.trim();
-
-        // Nếu là JSON object/array/string (bắt đầu bằng { [ ")
-        if (s.startsWith('{') || s.startsWith('[') || s.startsWith('"')) {
-            try {
-                const parsed = JSON.parse(s);
-
-                // object có _id
-                if (parsed && typeof parsed === 'object' && parsed._id) return String(parsed._id);
-
-                // JSON string "691f..."
-                if (typeof parsed === 'string') return parsed;
-
-                // fallback
-                return '';
-            } catch {
-                // JSON lỗi thì fallback chuỗi thô
-                return s;
-            }
-        }
-
-        // chuỗi thô
-        return s;
-    }, []);
-
-    /* =======================
-    HELPERS
-  ======================= */
-    const deviceByImei = useMemo(() => {
-        const m = new Map();
-        devices.forEach((d) => {
-            if (d?.imei) m.set(d.imei, d);
-        });
-        return m;
-    }, [devices]);
-
-    const getDisplayDevice = (row) => {
-        const imei = row?.imei || row?.device?.imei || row?.device_id?.imei;
-        if (imei && deviceByImei.get(imei)) return deviceByImei.get(imei);
-        return row?.device_id || row?.device || null;
-    };
-
-    const renderDeviceCellFromRow = (row) => {
-        const d = getDisplayDevice(row);
-        const imei = row?.imei || d?.imei || '-';
-        const plate = row?.license_plate || d?.license_plate || '—';
-        return (
-            <div className={styles.deviceCell}>
-                <div className={styles.deviceName}>{plate}</div>
-                <div className={styles.deviceSub}>IMEI: {imei}</div>
-            </div>
-        );
-    };
-
-    const renderDistributor = (row) => {
-        const distributorId =
-            row?.distributor_id ||
-            row?.device_id?.distributor_id?._id ||
-            row?.device_id?.distributor_id ||
-            row?.device?.distributor_id?._id ||
-            row?.device?.distributor_id;
-
-        if (loadingUsers) return '...';
-        if (!distributorId) return '-';
-        return distributorMap.get(distributorId) || distributorId;
-    };
-
-    const renderConfirmedBy = (row) => {
-        const id = row?.confirmedBy || row?.confirmed_by;
-        if (!id) return '-';
-        if (loadingUsers) return '...';
-        return userMap.get(id) || id;
-    };
-
-    // Pending overview from localStorage
-    const loadPendingOverviewFromLocal = (deviceList) => {
-        if (typeof window === 'undefined') return;
-        const all = [];
-        deviceList.forEach((d) => {
-            const imei = d?.imei;
-            if (!imei) return;
-            const p = readPending(imei);
-            if (p?.length) all.push(...p);
-        });
-        setPendingAll(all);
-    };
-
-    const historyHasConfirmedAfter = (historyItems, timestampMs) => {
-        return historyItems.some((h) => {
-            const ht = dayjs(h?.createdAt).valueOf();
-            if (Number.isNaN(ht)) return false;
-            return !!h?.confirmedBy && ht >= timestampMs;
-        });
-    };
-
-    const syncPendingWithHistory = (imei, historyItems) => {
-        const pending = readPending(imei);
-        if (pending.length === 0) return;
-
-        const pendingCreatedAt = dayjs(pending[0]?.createdAt).valueOf();
-        if (!Number.isNaN(pendingCreatedAt) && historyHasConfirmedAfter(historyItems, pendingCreatedAt)) {
-            clearPending(imei);
-        }
-    };
-
-    /* =======================
-    LOAD DEVICES / USERS
-  ======================= */
-    const loadDevices = async () => {
+    const loadDevices = async ({ license_plate = '', imei = '' } = {}) => {
         try {
             setLoadingDevices(true);
-            const res = await getDevices({ page: 1, limit: 200 });
+
+            const res = await getDevices({
+                page: 1,
+                limit: 200000,
+                ...(license_plate ? { license_plate } : {}),
+                ...(imei ? { imei } : {}),
+            });
+
             const list = res?.devices || [];
             setDevices(list);
-            loadPendingOverviewFromLocal(list);
-        } catch (err) {
-            console.error(err);
+
+            const map = ensureRandomStarted(list);
+            setStartedMap(map);
+        } catch (e) {
+            console.error(e);
             message.error('Không tải được danh sách thiết bị');
         } finally {
             setLoadingDevices(false);
         }
     };
 
-    const loadUsersOnce = async () => {
-        try {
-            setLoadingUsers(true);
-
-            const res = await getUserList({ page: 1, limit: 2000 });
-            const list = res?.items || [];
-
-            const uMap = new Map();
-            const dMap = new Map();
-
-            list.forEach((u) => {
-                const label = u?.name || u?.username || u?.email || u?._id;
-                if (u?._id) uMap.set(u._id, label);
-
-                const isDistributor =
-                    u?.position === 'distributor' ||
-                    u?.role === 'distributor' ||
-                    (Array.isArray(u?.roles) && u.roles.includes('distributor'));
-
-                if (isDistributor && u?._id) dMap.set(u._id, label);
-            });
-
-            setUserMap(uMap);
-            setDistributorMap(dMap);
-        } catch (err) {
-            console.error(err);
-            // message.error('Không tải được danh sách người dùng');
-        } finally {
-            setLoadingUsers(false);
-        }
-    };
-
-    /* =======================
-    LOAD DUE / HISTORY
-  ======================= */
-    const loadDue = async (imei) => {
-        try {
-            setLoadingDue(true);
-            const res = imei ? await getMaintenanceDue({ imei }) : await getMaintenanceDue({});
-            setDueData(res);
-            setSupportsAll(true);
-        } catch (err) {
-            console.error(err);
-            if (!imei) setSupportsAll(false);
-            if (imei) message.error('Không tải được danh sách sắp đến hạn');
-        } finally {
-            setLoadingDue(false);
-        }
-    };
-
-    // ✅ Lịch sử: có phân trang để người dùng xem được toàn bộ dữ liệu
-    const loadHistory = async ({ imei = '', page = 1, limit = HISTORY_PAGE_SIZE }) => {
-        try {
-            setLoadingHistory(true);
-
-            const res = imei
-                ? await getMaintenanceHistory({ imei, page, limit })
-                : await getMaintenanceHistory({ page, limit });
-
-            const { items, total } = extractItemsTotal(res);
-
-            setHistoryData(items);
-            setHistoryTotal(total);
-            setSupportsAll(true);
-
-            if (imei) syncPendingWithHistory(imei, items);
-        } catch (err) {
-            console.error(err);
-            if (!imei) setSupportsAll(false);
-            if (imei) message.error('Không tải được lịch sử bảo trì');
-        } finally {
-            setLoadingHistory(false);
-        }
-    };
-
-    /* =======================
-    EFFECTS
-  ======================= */
     useEffect(() => {
-        loadDevices();
-        loadUsersOnce();
-
-        // Mặc định: tổng quan
-        loadDue('');
-        setHistoryPage(1);
-        loadHistory({ imei: '', page: 1, limit: HISTORY_PAGE_SIZE });
+        loadDevices({ license_plate: '', imei: '' });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Khi chọn thiết bị -> load theo thiết bị + reset page
-    useEffect(() => {
-        if (!filterImei) return;
+    /** thiết bị chưa start -> mới được chọn trong Select */
+    const selectableDevices = useMemo(() => {
+        return devices.filter((d) => d?._id && !startedMap[d._id]);
+    }, [devices, startedMap]);
 
-        loadDue(filterImei);
-        setHistoryPage(1);
-        loadHistory({ imei: filterImei, page: 1, limit: HISTORY_PAGE_SIZE });
-
-        const p = readPending(filterImei);
-        setViewMode(p.length > 0 ? 'pending' : 'history');
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [filterImei]);
-
-    /* =======================
-    DATA
-  ======================= */
-    const dueList = useMemo(() => {
-        if (!filterImei) return dueAll;
-        return dueAll.filter((x) => (x?.imei || x?.device_id?.imei || x?.device?.imei) === filterImei);
-    }, [dueAll, filterImei]);
-
-    const historyList = useMemo(() => historyData || [], [historyData]);
-
-    /* =======================
-    ACTIONS
-  ======================= */
-    const handleCreateSchedule = async () => {
-        if (!filterDeviceId) return message.warning('Hãy chọn thiết bị trước khi tạo lịch');
-        if (!filterImei) return message.error('Thiết bị không có IMEI');
-
-        const existing = readPending(filterImei);
-        if (existing.length > 0) {
-            setViewMode('pending');
-            message.info('Thiết bị đã có lịch bảo trì đang chờ xác nhận. Vui lòng xác nhận để hoàn tất.');
-            return;
-        }
+    /** Start (chỉ 1 nút Kích hoạt) */
+    const handleStart = async () => {
+        if (!selectedDeviceId) return message.warning('Hãy chọn thiết bị trước khi kích hoạt');
+        const d = selectedDevice;
+        if (!d?._id) return message.error('Thiết bị không hợp lệ');
 
         try {
-            setLoadingStart(true);
-            await startMaintenance({ device_id: filterDeviceId });
+            setStarting(true);
+            await startMaintenance({ device_id: d._id });
 
-            const r = addPending(filterImei, selectedDevice);
-            if (!r.ok && r.reason === 'exists') {
-                message.info('Thiết bị đã có lịch bảo trì đang chờ xác nhận. Vui lòng xác nhận để hoàn tất.');
-            } else {
-                message.success('Đã tạo lịch bảo trì. Vui lòng xác nhận để hoàn tất.');
-            }
+            const next = { ...startedMap, [d._id]: true };
+            setStartedMap(next);
+            writeStartedMap(next);
 
-            loadPendingOverviewFromLocal(devices);
-            setViewMode('pending');
-        } catch (err) {
-            console.error(err);
-
-            const backendMsg = err?.response?.data?.message || '';
+            message.success('Kích hoạt bảo dưỡng thành công');
+            setSelectedDeviceId('');
+        } catch (e) {
+            console.error(e);
+            const backendMsg = e?.response?.data?.message || '';
             if (backendMsg === 'Maintenance already started') {
-                message.info('Thiết bị đã có lịch bảo trì đang chờ xác nhận. Vui lòng xác nhận để hoàn tất.');
-                loadPendingOverviewFromLocal(devices);
-                setViewMode('pending');
+                const next = { ...startedMap, [selectedDeviceId]: true };
+                setStartedMap(next);
+                writeStartedMap(next);
+                setSelectedDeviceId('');
+                message.info('Thiết bị đã được kích hoạt trước đó');
                 return;
             }
-
-            message.error('Tạo lịch bảo trì không thành công. Vui lòng thử lại.');
+            message.error('Kích hoạt không thành công. Vui lòng thử lại.');
         } finally {
-            setLoadingStart(false);
+            setStarting(false);
         }
     };
 
+    /** ====== Confirm logic: y chang code cũ ====== */
     const openConfirm = (row) => {
         if (!confirmedBy) return message.error('Không tìm thấy thông tin tài khoản. Vui lòng đăng nhập lại.');
 
-        const imei = row?.imei || filterImei;
+        const imei = row?.imei;
         if (!imei) return message.error('Không xác định được IMEI để xác nhận');
 
         setRowToConfirm(row);
@@ -459,7 +187,7 @@ export default function MaintenancePage() {
     };
 
     const handleConfirm = async () => {
-        const imei = rowToConfirm?.imei || filterImei;
+        const imei = rowToConfirm?.imei;
         if (!imei) return message.error('Không xác định được IMEI để xác nhận');
         if (!confirmedBy) return message.error('Không tìm thấy thông tin tài khoản. Vui lòng đăng nhập lại.');
 
@@ -476,365 +204,207 @@ export default function MaintenancePage() {
 
             await confirmMaintenance(payload);
 
-            // ✅ 1) Xóa pending local ngay lập tức để tab "Cần xác nhận" biến mất
-            clearPending(imei);
-
-            message.success('Xác nhận bảo trì thành công.');
+            message.success('Xác nhận bảo dưỡng thành công.');
             setConfirmOpen(false);
             setRowToConfirm(null);
             confirmForm.resetFields();
 
-            // ✅ 2) Reload lịch sử thiết bị đó (và pending overview)
-            loadPendingOverviewFromLocal(devices);
+            // ✅ nếu bạn muốn: confirm xong coi như “đã kích hoạt” để đổi tag + remove khỏi dropdown
+            if (rowToConfirm?._id) {
+                const next = { ...startedMap, [rowToConfirm._id]: true };
+                setStartedMap(next);
+                writeStartedMap(next);
 
-            // ✅ 3) Chuyển sang tab lịch sử (đúng UX)
-            setViewMode('history');
-
-            // ✅ 4) Reload history trang 1
-            setHistoryPage(1);
-            await loadHistory({ imei: imei, page: 1, limit: HISTORY_PAGE_SIZE });
+                if (selectedDeviceId === rowToConfirm._id) setSelectedDeviceId('');
+            }
         } catch (err) {
             console.error(err);
 
             const backendMsg = err?.response?.data?.message || '';
             if (backendMsg.includes('E11000') && backendMsg.includes('imei')) {
-                // Trường hợp server báo đã confirm rồi
-                clearPending(imei);
-                loadPendingOverviewFromLocal(devices);
-                setViewMode('history');
-                setHistoryPage(1);
-                await loadHistory({ imei: imei, page: 1, limit: HISTORY_PAGE_SIZE });
-                message.info('Lịch bảo trì của thiết bị này đã được xác nhận trước đó. Vui lòng kiểm tra lại lịch sử.');
+                message.info('Lịch bảo dưỡng của thiết bị này đã được xác nhận trước đó.');
+                setConfirmOpen(false);
+                setRowToConfirm(null);
+                confirmForm.resetFields();
                 return;
             }
 
-            message.error('Xác nhận bảo trì không thành công. Vui lòng thử lại.');
+            message.error('Xác nhận bảo dưỡng không thành công. Vui lòng thử lại.');
         } finally {
             setConfirming(false);
         }
     };
 
-    const reload = async () => {
-        loadPendingOverviewFromLocal(devices);
-
-        if (filterImei) {
-            await loadDue(filterImei);
-            await loadHistory({ imei: filterImei, page: historyPage, limit: HISTORY_PAGE_SIZE });
-        } else {
-            await loadDue('');
-            await loadHistory({ imei: '', page: historyPage, limit: HISTORY_PAGE_SIZE });
-        }
+    const doSearch = async () => {
+        await loadDevices({ license_plate: searchPlate.trim(), imei: searchImei.trim() });
+        // Nếu device đang chọn bị filter mất thì clear
+        setSelectedDeviceId('');
     };
 
-    const handleViewAll = async () => {
-        setFilterDeviceId('');
-        setViewMode('history');
-
-        await loadDue('');
-        setHistoryPage(1);
-        await loadHistory({ imei: '', page: 1, limit: HISTORY_PAGE_SIZE });
+    const doReload = async () => {
+        await loadDevices({ license_plate: searchPlate.trim(), imei: searchImei.trim() });
     };
 
-    /* =======================
-    TABS
-  ======================= */
-    const showPendingTab = filterImei ? pendingFiltered.length > 0 : pendingAll.length > 0;
-
-    const segmentedOptions = useMemo(() => {
-        const ops = [];
-        const pendingCount = filterImei ? pendingFiltered.length : pendingAll.length;
-        const dueCount = filterImei ? dueList.length : dueAll.length;
-
-        if (showPendingTab) ops.push({ label: `Cần xác nhận (${pendingCount})`, value: 'pending' });
-        ops.push({ label: `Lịch sử (${historyTotal})`, value: 'history' });
-        ops.push({ label: `Sắp đến hạn (${dueCount})`, value: 'due' });
-        return ops;
-    }, [
-        showPendingTab,
-        filterImei,
-        pendingFiltered.length,
-        pendingAll.length,
-        dueList.length,
-        dueAll.length,
-        historyTotal,
-    ]);
-
-    useEffect(() => {
-        if (!showPendingTab && viewMode === 'pending') setViewMode('history');
-    }, [showPendingTab, viewMode]);
-
-    /* =======================
-    TABLE
-  ======================= */
-    const pendingColumns = [
+    const columns = [
         {
-            title: 'Thời gian tạo',
+            title: 'Tên thiết bị',
+            key: 'deviceName',
+            width: 160,
+            render: (_, row) => row?.device_category_id?.name || row?.device_category_id?.code || '-',
+        },
+        { title: 'SĐT thiết bị', dataIndex: 'phone_number', key: 'phone_number', width: 140, render: (v) => v || '-' },
+        { title: 'SĐT chủ xe', key: 'ownerPhone', width: 140, render: (_, row) => row?.user_id?.phone || '-' },
+        { title: 'Biển số', dataIndex: 'license_plate', key: 'license_plate', width: 140, render: (v) => v || '-' },
+        { title: 'Tên lái xe', dataIndex: 'driver', key: 'driver', width: 140, render: (v) => v || '-' },
+        { title: 'IMEI', dataIndex: 'imei', key: 'imei', width: 170, render: (v) => v || '-' },
+        {
+            title: 'Ngày tạo',
             dataIndex: 'createdAt',
             key: 'createdAt',
-            width: 170,
-            render: (v) => (v && dayjs(v).isValid() ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-'),
+            width: 130,
+            render: (v) => (v && dayjs(v).isValid() ? dayjs(v).format('DD-MM-YYYY') : '-'),
         },
-        { title: 'Thiết bị', key: 'device', width: 280, render: (_, row) => renderDeviceCellFromRow(row) },
-        { title: 'Đại lý', key: 'distributor', width: 220, render: (_, row) => renderDistributor(row) },
+        {
+            title: 'Ngày hết hạn',
+            dataIndex: 'date_exp',
+            key: 'date_exp',
+            width: 130,
+            render: (v) => (v && dayjs(v).isValid() ? dayjs(v).format('DD-MM-YYYY') : 'Chưa cập nhật'),
+        },
+        {
+            title: 'Trạng thái',
+            key: 'started',
+            width: 140,
+            render: (_, row) => {
+                const started = !!startedMap[row?._id];
+                return started ? (
+                    <Tag icon={<CheckCircleFilled />} color="green">
+                        Đã kích hoạt
+                    </Tag>
+                ) : (
+                    <Tag icon={<CloseCircleFilled />} color="red">
+                        Chưa kích hoạt
+                    </Tag>
+                );
+            },
+        },
         {
             title: 'Hành động',
             key: 'action',
-            width: 170,
+            width: 140,
             render: (_, row) => (
-                <Button size="small" type="primary" onClick={() => openConfirm(row)}>
+                <Button type="primary" size="small" onClick={() => openConfirm(row)}>
                     Xác nhận
                 </Button>
             ),
         },
     ];
 
-    const dueColumns = [
-        { title: 'Thiết bị', key: 'device', width: 280, render: (_, row) => renderDeviceCellFromRow(row) },
-        { title: 'Đại lý', key: 'distributor', width: 220, render: (_, row) => renderDistributor(row) },
-        {
-            title: 'Km dự kiến',
-            dataIndex: 'maintenanceKm',
-            key: 'maintenanceKm',
-            width: 120,
-            render: (v) => (v === null || v === undefined ? '-' : `${v}`),
-        },
-        {
-            title: 'Ngày dự kiến',
-            dataIndex: 'maintenanceDate',
-            key: 'maintenanceDate',
-            width: 150,
-            render: (v) => (v && dayjs(v).isValid() ? dayjs(v).format('YYYY-MM-DD') : '-'),
-        },
-        { title: 'Ghi chú', dataIndex: 'note', key: 'note', ellipsis: true, render: (v) => v || '-' },
-    ];
-
-    const historyColumns = [
-        {
-            title: 'Thời gian tạo',
-            dataIndex: 'createdAt',
-            key: 'createdAt',
-            width: 170,
-            render: (v) => (v && dayjs(v).isValid() ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-'),
-        },
-        { title: 'Thiết bị', key: 'device', width: 150, render: (_, row) => renderDeviceCellFromRow(row) },
-        { title: 'Đại lý', key: 'distributor', width: 150, render: (_, row) => renderDistributor(row) },
-        { title: 'Xác nhận bởi', key: 'confirmedBy', width: 100, render: (_, row) => renderConfirmedBy(row) },
-        {
-            title: 'Km bảo trì',
-            dataIndex: 'maintenanceKm',
-            key: 'maintenanceKm',
-            width: 100,
-            render: (v) => (v === null || v === undefined ? '-' : `${v}`),
-        },
-        {
-            title: 'Ngày bảo trì',
-            dataIndex: 'maintenanceDate',
-            key: 'maintenanceDate',
-            width: 120,
-            render: (v) => (v && dayjs(v).isValid() ? dayjs(v).format('YYYY-MM-DD') : '-'),
-        },
-        { title: 'Ghi chú', dataIndex: 'note', key: 'note', ellipsis: true, width: 250, render: (v) => v || '-' },
-    ];
-
-    const columns = viewMode === 'pending' ? pendingColumns : viewMode === 'due' ? dueColumns : historyColumns;
-
-    const dataSource =
-        viewMode === 'pending'
-            ? filterImei
-                ? pendingFiltered
-                : pendingAll
-            : viewMode === 'due'
-            ? dueList
-            : historyList;
-
-    const isLoading = (viewMode === 'history' && loadingHistory) || (viewMode === 'due' && loadingDue);
-
-    const statusTag = useMemo(() => {
-        if (filterImei) {
-            return pendingFiltered.length > 0 ? (
-                <Tag color="orange">Đang lọc theo thiết bị (cần xác nhận)</Tag>
-            ) : (
-                <Tag color="green">Đang lọc theo thiết bị</Tag>
-            );
-        }
-        return <Tag color="blue">Đang xem tất cả thiết bị</Tag>;
-    }, [filterImei, pendingFiltered.length]);
-
-    /* =======================
-    SELECT: Sticky OPTION "Tất cả thiết bị"
-  ======================= */
-    const handleChooseAllInDropdown = async () => {
-        setSelectOpen(false);
-        await handleViewAll();
-    };
-
     return (
-        <div className={styles.page}>
-            <div className={styles.header}>
-                <Title level={3} className={styles.title}>
-                    Bảo trì thiết bị
-                </Title>
-                <Text type="secondary">
-                    Bạn có thể chọn thiết bị để xem riêng từng thiết bị, hoặc chọn <b>Tất cả thiết bị</b> để xem tổng
-                    quan.
-                </Text>
-            </div>
+        <div style={{ padding: 16 }}>
+            <Title level={3} style={{ marginBottom: 4 }}>
+                Kích hoạt bảo dưỡng
+            </Title>
+            <Text type="secondary">Thiết bị đã kích hoạt sẽ không còn hiện trong dropdown.</Text>
 
-            {/* TOOLBAR */}
-            <Card className={styles.card} style={{ marginBottom: 16 }}>
+            {/* Select + 1 nút Kích hoạt */}
+            <Card style={{ marginTop: 12, marginBottom: 12 }}>
                 <Row gutter={[12, 12]} align="middle">
-                    <Col xs={24} lg={10}>
-                        <Space orientation="vertical" style={{ width: '100%' }} size={6}>
+                    <Col xs={24} lg={16}>
+                        <Space direction="vertical" style={{ width: '100%' }} size={6}>
                             <Text strong>Chọn thiết bị</Text>
 
                             <Select
-                                className={`${styles.select} ${styles.alwaysClear || ''}`}
+                                style={{ width: '100%' }}
                                 loading={loadingDevices}
-                                value={filterDeviceId || undefined}
-                                open={selectOpen}
-                                onDropdownVisibleChange={setSelectOpen}
-                                onChange={(v) => setFilterDeviceId(v)}
+                                value={selectedDeviceId || undefined}
+                                onChange={setSelectedDeviceId}
                                 showSearch
                                 optionFilterProp="label"
-                                placeholder="Tất cả thiết bị (Tổng quan)"
-                                dropdownRender={(menu) => (
-                                    <div>
-                                        {/* Sticky "option" */}
-                                        <div
-                                            style={{
-                                                position: 'sticky',
-                                                top: 0,
-                                                zIndex: 2,
-                                                background: '#fff',
-                                                borderBottom: '1px solid rgba(5,5,5,0.06)',
-                                            }}
-                                        >
-                                            <div
-                                                className="ant-select-item ant-select-item-option"
-                                                style={{
-                                                    padding: '8px 12px',
-                                                    cursor: 'pointer',
-                                                    fontWeight: 600,
-                                                    background: !filterDeviceId ? '#e6f4ff' : 'transparent',
-                                                }}
-                                                onMouseDown={(e) => {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
-                                                    handleChooseAllInDropdown();
-                                                }}
-                                            >
-                                                Tất cả thiết bị (Tổng quan)
-                                            </div>
-                                        </div>
-
-                                        <div style={{ maxHeight: 320, overflow: 'auto' }}>{menu}</div>
-                                    </div>
-                                )}
-                                options={devices.map((d) => ({
+                                placeholder="Chọn thiết bị chưa kích hoạt..."
+                                options={selectableDevices.map((d) => ({
                                     value: d._id,
                                     label: `${d.license_plate || d.imei} (IMEI: ${d.imei})`,
                                 }))}
                             />
 
-                            <Text type="secondary">Gợi ý: Bạn có thể gõ để tìm nhanh theo biển số/IMEI.</Text>
+                            <Text type="secondary">Gợi ý: gõ để tìm theo biển số/IMEI.</Text>
                         </Space>
                     </Col>
 
-                    <Col xs={24} lg={14}>
-                        <Space wrap style={{ justifyContent: 'flex-end', width: '100%' }}>
-                            {statusTag}
-
-                            <Button onClick={handleViewAll} disabled={!filterDeviceId}>
-                                Xem tất cả
-                            </Button>
-
+                    <Col xs={24} lg={8}>
+                        <Space wrap style={{ width: '100%', justifyContent: 'flex-end' }}>
                             <Button
                                 type="primary"
                                 size="large"
-                                loading={loadingStart}
-                                onClick={handleCreateSchedule}
-                                disabled={!filterDeviceId}
+                                loading={starting}
+                                disabled={!selectedDeviceId}
+                                onClick={handleStart}
                             >
-                                Tạo lịch cho thiết bị
+                                Kích hoạt
                             </Button>
-
-                            <Button onClick={reload}>Tải lại</Button>
                         </Space>
                     </Col>
                 </Row>
+            </Card>
 
-                {!supportsAll && (
-                    <Alert
-                        style={{ marginTop: 12 }}
-                        type="warning"
-                        showIcon
-                        message="Hiện tại không thể xem tổng quan cho tất cả thiết bị."
-                        description="Bạn vẫn có thể chọn từng thiết bị để xem và thao tác bình thường."
+            {/* Search trên table: chỉ 2 ô + 2 nút (Tìm + Tải lại). Tải lại nằm kế Tìm */}
+            <Card style={{ marginBottom: 12 }}>
+                <Row gutter={[12, 12]} align="middle">
+                    <Col xs={24} lg={8}>
+                        <Input
+                            value={searchPlate}
+                            onChange={(e) => setSearchPlate(e.target.value)}
+                            placeholder="Tìm theo biển số..."
+                            allowClear
+                            onPressEnter={doSearch}
+                        />
+                    </Col>
+
+                    <Col xs={24} lg={8}>
+                        <Input
+                            value={searchImei}
+                            onChange={(e) => setSearchImei(e.target.value)}
+                            placeholder="Tìm theo IMEI..."
+                            allowClear
+                            onPressEnter={doSearch}
+                        />
+                    </Col>
+
+                    <Col xs={24} lg={8}>
+                        <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+                            <Button onClick={doSearch} loading={loadingDevices}>
+                                Tìm
+                            </Button>
+                            <Button onClick={doReload} loading={loadingDevices}>
+                                Tải lại
+                            </Button>
+                        </Space>
+                    </Col>
+                </Row>
+            </Card>
+
+            <Card title="Danh sách thiết bị">
+                {loadingDevices ? (
+                    <div style={{ textAlign: 'center', padding: 24 }}>
+                        <Spin />
+                    </div>
+                ) : devices.length === 0 ? (
+                    <Empty description="Không có thiết bị" />
+                ) : (
+                    <Table
+                        rowKey={(row) => row?._id}
+                        columns={columns}
+                        dataSource={devices}
+                        scroll={{ x: 1200 }}
+                        pagination={{ pageSize: 10, showSizeChanger: false }}
                     />
                 )}
             </Card>
 
-            {/* MAIN TABLE */}
-            <Row gutter={[16, 16]}>
-                <Col xs={24}>
-                    <Card
-                        className={styles.card}
-                        title={
-                            <Space className={styles.cardTitleRow}>
-                                <span>Danh sách</span>
-                                <Segmented value={viewMode} onChange={setViewMode} options={segmentedOptions} />
-                            </Space>
-                        }
-                    >
-                        {isLoading ? (
-                            <div className={styles.center}>
-                                <Spin />
-                            </div>
-                        ) : dataSource.length === 0 ? (
-                            <Empty
-                                description={
-                                    viewMode === 'pending'
-                                        ? 'Không có lịch nào cần xác nhận'
-                                        : viewMode === 'due'
-                                        ? 'Không có lịch sắp đến hạn'
-                                        : 'Chưa có lịch sử bảo trì'
-                                }
-                            />
-                        ) : (
-                            <Table
-                                rowKey={(row) =>
-                                    row?._id || row?._localId || `${row?.createdAt || ''}-${Math.random()}`
-                                }
-                                columns={columns}
-                                dataSource={dataSource}
-                                scroll={{ x: 980 }}
-                                pagination={
-                                    viewMode === 'history'
-                                        ? {
-                                              current: historyPage,
-                                              pageSize: HISTORY_PAGE_SIZE,
-                                              total: historyTotal,
-                                              showSizeChanger: false,
-                                              onChange: async (page) => {
-                                                  setHistoryPage(page);
-                                                  await loadHistory({
-                                                      imei: filterImei || '',
-                                                      page,
-                                                      limit: HISTORY_PAGE_SIZE,
-                                                  });
-                                              },
-                                          }
-                                        : { pageSize: 10, showSizeChanger: false }
-                                }
-                            />
-                        )}
-                    </Card>
-                </Col>
-            </Row>
-
-            {/* CONFIRM MODAL */}
+            {/* ✅ CONFIRM MODAL giống code cũ */}
             <Modal
-                title="Xác nhận bảo trì"
+                title="Xác nhận bảo dưỡng"
                 open={confirmOpen}
                 onCancel={() => {
                     setConfirmOpen(false);
@@ -847,16 +417,16 @@ export default function MaintenancePage() {
                 confirmLoading={confirming}
                 destroyOnHidden
             >
-                <div className={styles.modalInfo}>
+                <div style={{ marginBottom: 12 }}>
                     <Text type="secondary">Thiết bị:</Text>{' '}
-                    <Text strong>{selectedDevice?.license_plate || rowToConfirm?.imei || '-'}</Text>
+                    <Text strong>{rowToConfirm?.license_plate || rowToConfirm?.imei || '-'}</Text>
                     <br />
-                    <Text type="secondary">IMEI:</Text> <Text strong>{rowToConfirm?.imei || filterImei || '-'}</Text>
+                    <Text type="secondary">IMEI:</Text> <Text strong>{rowToConfirm?.imei || '-'}</Text>
                 </div>
 
                 <Form layout="vertical" form={confirmForm}>
-                    <Form.Item label="Ngày bảo trì" name="maintenanceDate">
-                        <DatePicker className={styles.datePicker} format="YYYY-MM-DD" allowClear />
+                    <Form.Item label="Ngày bảo dưỡng" name="maintenanceDate">
+                        <DatePicker format="YYYY-MM-DD" allowClear style={{ width: '100%' }} />
                     </Form.Item>
 
                     <Form.Item label="Ghi chú (không bắt buộc)" name="note">
