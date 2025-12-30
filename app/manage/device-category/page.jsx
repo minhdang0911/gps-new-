@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useMemo, useState, useSyncExternalStore } from 'react';
+import React, { useMemo, useState, useSyncExternalStore, useEffect } from 'react';
 import useSWR from 'swr';
-import { Table, Button, Modal, Form, Input, Select, Space, Popconfirm, message, Card } from 'antd';
+import { Table, Button, Modal, Form, Input, Select, Space, Popconfirm, message, Card, Spin } from 'antd';
 import {
     PlusOutlined,
     EditOutlined,
@@ -42,8 +42,6 @@ function useLocalStorageValue(key, fallback = '') {
     const subscribe = (callback) => {
         if (typeof window === 'undefined') return () => {};
         const handler = (e) => {
-            // storage event chỉ bắn khi đổi từ tab khác.
-            // nếu muốn cùng tab cũng update => dispatch StorageEvent thủ công ở nơi setItem
             if (!e || e.key === key) callback();
         };
         window.addEventListener('storage', handler);
@@ -63,7 +61,7 @@ function useLocalStorageValue(key, fallback = '') {
 const DeviceCategoryPage = () => {
     const pathname = usePathname() || '/';
 
-    // ✅ token/role/lang đọc trực tiếp (không setState trong effect)
+    // ✅ token/role/lang đọc trực tiếp
     const token = useLocalStorageValue('accessToken', '');
     const role = useLocalStorageValue('role', '');
     const langFromStorage = useLocalStorageValue('iky_lang', 'vi');
@@ -94,7 +92,7 @@ const DeviceCategoryPage = () => {
         madeInFrom: '',
     });
 
-    // pagination: chỉ giữ current/pageSize (total lấy từ API response)
+    // pagination
     const [pagination, setPagination] = useState({
         current: 1,
         pageSize: 20,
@@ -103,6 +101,9 @@ const DeviceCategoryPage = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
     const [form] = Form.useForm();
+
+    // ✅ Fix dropdown trong Modal bị “click không ra”/bị che
+    const popupInParent = (triggerNode) => triggerNode?.parentElement || document.body;
 
     // helper label xuất xứ
     const getMadeInFromLabel = (value, mifOptions = []) => {
@@ -121,12 +122,25 @@ const DeviceCategoryPage = () => {
 
     /* =========================
         SWR: madeInFrom options
+        ✅ FIX:
+        - expose isLoading + mutate
+        - show loading UI for Select
     ========================= */
     const mifKey = token ? ['madeInFromOptions', token] : null;
 
-    const { data: mifRes } = useSWR(mifKey, ([, tk]) => getMadeInFromOptions(tk), {
+    const {
+        data: mifRes,
+        isLoading: mifLoading,
+        mutate: mutateMIF,
+        isValidating: mifValidating,
+    } = useSWR(mifKey, ([, tk]) => getMadeInFromOptions(tk), {
         revalidateOnFocus: false,
         dedupingInterval: 60_000,
+        onError: (err) => {
+            console.error('Load madeInFrom options error:', err);
+            // không spam message nếu không có token
+            if (token) message.error(t.loadError);
+        },
     });
 
     const mifOptions = useMemo(() => {
@@ -136,8 +150,6 @@ const DeviceCategoryPage = () => {
 
     /* =========================
         SWR: list device categories
-        - key gồm pagination + filters
-        - keepPreviousData: giữ list cũ khi đổi page/filter
     ========================= */
     const listParams = useMemo(() => {
         return {
@@ -188,12 +200,26 @@ const DeviceCategoryPage = () => {
 
     /* =========================
         MODAL
+        ✅ FIX:
+        - prefetch mifOptions khi mở modal để user không cần F5
     ========================= */
+    const prefetchMIF = () => {
+        try {
+            mutateMIF?.();
+        } catch (_) {}
+    };
+
+    useEffect(() => {
+        if (isModalOpen) prefetchMIF();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isModalOpen]);
+
     const openCreateModal = () => {
         if (!isAdmin) {
             message.warning(t.noPermissionCreate);
             return;
         }
+        prefetchMIF();
         setEditingItem(null);
         form.resetFields();
         setIsModalOpen(true);
@@ -205,6 +231,7 @@ const DeviceCategoryPage = () => {
             return;
         }
 
+        prefetchMIF();
         setEditingItem(record);
         form.setFieldsValue({
             code: record.code,
@@ -499,6 +526,8 @@ const DeviceCategoryPage = () => {
         );
     }
 
+    const showMifLoading = mifLoading || mifValidating;
+
     return (
         <div className="dc-page">
             <Card
@@ -547,12 +576,19 @@ const DeviceCategoryPage = () => {
                         value={filters.model}
                         onChange={(e) => setFilters((prev) => ({ ...prev, model: e.target.value }))}
                     />
+
                     <Select
                         allowClear
                         placeholder={t.filters.origin}
                         value={filters.madeInFrom || undefined}
                         onChange={(value) => setFilters((prev) => ({ ...prev, madeInFrom: value || '' }))}
                         style={{ minWidth: 180 }}
+                        getPopupContainer={popupInParent}
+                        loading={showMifLoading}
+                        disabled={showMifLoading}
+                        notFoundContent={showMifLoading ? <Spin size="small" /> : null}
+                        showSearch
+                        optionFilterProp="children"
                     >
                         {mifOptions.map((opt) => (
                             <Option key={opt.value} value={opt.value}>
@@ -600,7 +636,7 @@ const DeviceCategoryPage = () => {
                 okText={t.modal.okText}
                 cancelText={t.modal.cancelText}
                 wrapClassName="dc-modal"
-                destroyOnHidden
+                destroyOnClose
             >
                 <Form form={form} layout="vertical">
                     <Form.Item
@@ -640,7 +676,15 @@ const DeviceCategoryPage = () => {
                         name="madeInFrom"
                         rules={[{ required: true, message: t.form.originRequired }]}
                     >
-                        <Select placeholder={t.form.originPlaceholder}>
+                        <Select
+                            placeholder={t.form.originPlaceholder}
+                            getPopupContainer={popupInParent}
+                            loading={showMifLoading}
+                            disabled={showMifLoading}
+                            notFoundContent={showMifLoading ? <Spin size="small" /> : null}
+                            showSearch
+                            optionFilterProp="children"
+                        >
                             {mifOptions.map((opt) => (
                                 <Option key={opt.value} value={opt.value}>
                                     {getMadeInFromLabel(opt.value, mifOptions)}

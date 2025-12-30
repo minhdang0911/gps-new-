@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useMemo, useState, useSyncExternalStore } from 'react';
+import React, { useMemo, useState, useSyncExternalStore, useEffect } from 'react';
 import useSWR from 'swr';
-import { Table, Button, Modal, Form, Input, Select, Space, Popconfirm, message, Card } from 'antd';
+import { Table, Button, Modal, Form, Input, Select, Space, Popconfirm, message, Card, Spin } from 'antd';
 import {
     PlusOutlined,
     EditOutlined,
@@ -39,15 +39,12 @@ const locales = { vi, en };
 const { Option } = Select;
 
 /**
- * ✅ đọc localStorage “chuẩn React” (không cần useEffect + setState)
- * - tự update khi có storage event (đa tab) / hoặc khi bạn tự dispatch event (cùng tab)
+ * ✅ đọc localStorage “chuẩn React”
  */
 function useLocalStorageValue(key, fallback = '') {
     const subscribe = (callback) => {
         if (typeof window === 'undefined') return () => {};
         const handler = (e) => {
-            // storage event chỉ bắn khi đổi từ tab khác.
-            // nếu bạn muốn cùng tab cũng update => bạn có thể dispatch Event('storage') thủ công sau khi setItem
             if (!e || e.key === key) callback();
         };
         window.addEventListener('storage', handler);
@@ -72,7 +69,6 @@ const VehicleCategoryPage = () => {
     const role = useLocalStorageValue('role', '');
 
     // ===== LANG =====
-    // ✅ không dùng setIsEn trong effect nữa
     const isEnFromPath = useMemo(() => {
         const segments = pathname.split('/').filter(Boolean);
         const last = segments[segments.length - 1];
@@ -101,36 +97,55 @@ const VehicleCategoryPage = () => {
         madeInFrom: '',
     });
 
-    // pagination state: chỉ là nguồn từ UI (không sync ngược từ response bằng effect)
+    // pagination state
     const [pagination, setPagination] = useState({
         current: 1,
         pageSize: 20,
     });
 
-    const total = 0; // sẽ lấy từ listRes
-
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
     const [form] = Form.useForm();
 
+    // ✅ Fix dropdown trong Modal / layout bị “click không ra”
+    const popupInParent = (triggerNode) => triggerNode?.parentElement || document.body;
+
     /* =========================
         SWR: options
+        ✅ FIX:
+        - expose isLoading + mutate
+        - add loading UI cho Select
     ========================= */
     const mifKey = token ? ['madeInFromOptions', token] : null;
     const manuKey = token ? ['manufacturerOptions', token] : null;
     const deviceTypeKey = token ? ['deviceTypeOptions', token] : null;
 
-    const { data: mifRes } = useSWR(mifKey, ([, tk]) => getMadeInFromOptions(tk), {
+    const {
+        data: mifRes,
+        isLoading: mifLoading,
+        isValidating: mifValidating,
+        mutate: mutateMIF,
+    } = useSWR(mifKey, ([, tk]) => getMadeInFromOptions(tk), {
         revalidateOnFocus: false,
         dedupingInterval: 60_000,
     });
 
-    const { data: manuRes } = useSWR(manuKey, ([, tk]) => getManufacturerOptions(tk), {
+    const {
+        data: manuRes,
+        isLoading: manuLoading,
+        isValidating: manuValidating,
+        mutate: mutateManu,
+    } = useSWR(manuKey, ([, tk]) => getManufacturerOptions(tk), {
         revalidateOnFocus: false,
         dedupingInterval: 60_000,
     });
 
-    const { data: dcRes } = useSWR(deviceTypeKey, ([, tk]) => getDeviceCategories(tk, { page: 1, limit: 100 }), {
+    const {
+        data: dcRes,
+        isLoading: dcLoading,
+        isValidating: dcValidating,
+        mutate: mutateDC,
+    } = useSWR(deviceTypeKey, ([, tk]) => getDeviceCategories(tk, { page: 1, limit: 100 }), {
         revalidateOnFocus: false,
         dedupingInterval: 60_000,
     });
@@ -179,10 +194,25 @@ const VehicleCategoryPage = () => {
         return found ? found.label : value || '';
     };
 
+    const mifBusy = mifLoading || mifValidating;
+    const manuBusy = manuLoading || manuValidating;
+    const dcBusy = dcLoading || dcValidating;
+
+    const prefetchOptions = () => {
+        try {
+            mutateMIF?.();
+            mutateManu?.();
+            mutateDC?.();
+        } catch (_) {}
+    };
+
+    useEffect(() => {
+        if (isModalOpen) prefetchOptions();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isModalOpen]);
+
     /* =========================
         SWR: list vehicle categories
-        - key gồm pagination + filters
-        - keepPreviousData để tránh “trống 0.5s”
     ========================= */
     const listParams = useMemo(() => {
         return {
@@ -223,7 +253,6 @@ const VehicleCategoryPage = () => {
 
     /* =========================
         TABLE CHANGE
-        - ✅ không cần setPagination trong effect
     ========================= */
     const handleTableChange = (pag) => {
         setPagination({
@@ -240,6 +269,7 @@ const VehicleCategoryPage = () => {
             message.warning(t.noPermissionCreate);
             return;
         }
+        prefetchOptions();
         setEditingItem(null);
         form.resetFields();
         setIsModalOpen(true);
@@ -251,6 +281,7 @@ const VehicleCategoryPage = () => {
             return;
         }
 
+        prefetchOptions();
         setEditingItem(record);
         form.setFieldsValue({
             name: record.name,
@@ -585,6 +616,12 @@ const VehicleCategoryPage = () => {
                         value={filters.manufacturer || undefined}
                         onChange={(value) => setFilters((prev) => ({ ...prev, manufacturer: value || '' }))}
                         style={{ minWidth: 180 }}
+                        getPopupContainer={popupInParent}
+                        loading={manuBusy}
+                        disabled={manuBusy}
+                        notFoundContent={manuBusy ? <Spin size="small" /> : null}
+                        showSearch
+                        optionFilterProp="children"
                     >
                         {manufacturerOptions.map((opt) => (
                             <Option key={opt.value} value={opt.value}>
@@ -613,6 +650,12 @@ const VehicleCategoryPage = () => {
                         value={filters.madeInFrom || undefined}
                         onChange={(value) => setFilters((prev) => ({ ...prev, madeInFrom: value || '' }))}
                         style={{ minWidth: 180 }}
+                        getPopupContainer={popupInParent}
+                        loading={mifBusy}
+                        disabled={mifBusy}
+                        notFoundContent={mifBusy ? <Spin size="small" /> : null}
+                        showSearch
+                        optionFilterProp="children"
                     >
                         {mifOptions.map((opt) => (
                             <Option key={opt.value} value={opt.value}>
@@ -660,7 +703,7 @@ const VehicleCategoryPage = () => {
                 okText={t.modal.okText}
                 cancelText={t.modal.cancelText}
                 wrapClassName="vc-modal"
-                destroyOnHidden
+                destroyOnClose
             >
                 <Form form={form} layout="vertical">
                     <Form.Item
@@ -676,7 +719,15 @@ const VehicleCategoryPage = () => {
                         name="manufacturer"
                         rules={[{ required: true, message: t.form.manufacturerRequired }]}
                     >
-                        <Select placeholder={t.form.manufacturerLabel}>
+                        <Select
+                            placeholder={t.form.manufacturerLabel}
+                            getPopupContainer={popupInParent}
+                            loading={manuBusy}
+                            disabled={manuBusy}
+                            notFoundContent={manuBusy ? <Spin size="small" /> : null}
+                            showSearch
+                            optionFilterProp="children"
+                        >
                             {manufacturerOptions.map((opt) => (
                                 <Option key={opt.value} value={opt.value}>
                                     {opt.label}
@@ -706,7 +757,15 @@ const VehicleCategoryPage = () => {
                         name="madeInFrom"
                         rules={[{ required: true, message: t.form.originRequired }]}
                     >
-                        <Select placeholder={t.form.originPlaceholder}>
+                        <Select
+                            placeholder={t.form.originPlaceholder}
+                            getPopupContainer={popupInParent}
+                            loading={mifBusy}
+                            disabled={mifBusy}
+                            notFoundContent={mifBusy ? <Spin size="small" /> : null}
+                            showSearch
+                            optionFilterProp="children"
+                        >
                             {mifOptions.map((opt) => (
                                 <Option key={opt.value} value={opt.value}>
                                     {getMifLabel(opt.value)}
@@ -716,7 +775,16 @@ const VehicleCategoryPage = () => {
                     </Form.Item>
 
                     <Form.Item label={t.form.deviceTypeLabel} name="deviceTypeId">
-                        <Select allowClear placeholder={t.form.deviceTypePlaceholder}>
+                        <Select
+                            allowClear
+                            placeholder={t.form.deviceTypePlaceholder}
+                            getPopupContainer={popupInParent}
+                            loading={dcBusy}
+                            disabled={dcBusy}
+                            notFoundContent={dcBusy ? <Spin size="small" /> : null}
+                            showSearch
+                            optionFilterProp="children"
+                        >
                             {deviceTypeOptions.map((opt) => (
                                 <Option key={opt.value} value={opt.value}>
                                     {opt.label}

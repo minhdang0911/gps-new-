@@ -2,7 +2,21 @@
 
 import React, { useMemo, useRef, useState, useEffect, useSyncExternalStore, useCallback } from 'react';
 import useSWR from 'swr';
-import { Card, Input, Button, Table, Space, Modal, Typography, Select, Descriptions, message, Row, Col } from 'antd';
+import {
+    Card,
+    Input,
+    Button,
+    Table,
+    Space,
+    Modal,
+    Typography,
+    Select,
+    Descriptions,
+    message,
+    Row,
+    Col,
+    Spin,
+} from 'antd';
 import {
     PlusOutlined,
     EditOutlined,
@@ -81,6 +95,9 @@ export default function ManageUserPage() {
     const currentRole = useLocalStorageValue('role', '');
     const langFromStorage = useLocalStorageValue('iky_lang', 'vi');
 
+    // ✅ Fix dropdown trong Modal / layout bị “click không ra”
+    const popupInParent = (triggerNode) => triggerNode?.parentElement || document.body;
+
     const isEnFromPath = useMemo(() => {
         const segments = pathname.split('/').filter(Boolean);
         const last = segments[segments.length - 1];
@@ -155,7 +172,6 @@ export default function ManageUserPage() {
         return params;
     }, [dUsername, dEmail, dPhone, dRole]);
 
-    // Nếu customer hoặc role rỗng thì chặn key
     const usersKey = canView ? ['users', listParams, isEn] : null;
 
     const {
@@ -185,10 +201,17 @@ export default function ManageUserPage() {
     /* =========================
         SWR: DISTRIBUTORS OPTIONS
         - chỉ load khi mở modal
+        ✅ FIX:
+        - expose mutate + validating + loading UI để dropdown ko “đơ”
     ========================= */
     const distributorsKey = userModalVisible ? ['distributors', isEn] : null;
 
-    const { data: distributorsRes, isLoading: loadingDistributors } = useSWR(
+    const {
+        data: distributorsRes,
+        isLoading: loadingDistributors,
+        isValidating: validatingDistributors,
+        mutate: mutateDistributors,
+    } = useSWR(
         distributorsKey,
         async () => {
             const res = await getUserList({
@@ -209,10 +232,19 @@ export default function ManageUserPage() {
     );
 
     const distributorOptions = distributorsRes || [];
+    const distributorsBusy = loadingDistributors || validatingDistributors;
+
+    // ✅ Prefetch distributor list khi mở modal (đỡ phải F5 mới có options)
+    useEffect(() => {
+        if (!userModalVisible) return;
+        try {
+            mutateDistributors?.();
+        } catch (_) {}
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [userModalVisible]);
 
     /* =========================
         SWR: VIEW USER INFO
-        - load khi mở modal view + có id
     ========================= */
     const viewKey = viewUserModalVisible && viewUserId ? ['userInfo', viewUserId, isEn] : null;
 
@@ -246,6 +278,11 @@ export default function ManageUserPage() {
         userFormDataRef.current = init;
         setInitialFormData(init);
 
+        // ✅ prefetch options trước khi show modal (tránh dropdown “đơ”)
+        try {
+            mutateDistributors?.();
+        } catch (_) {}
+
         setUserModalVisible(true);
     };
 
@@ -271,6 +308,11 @@ export default function ManageUserPage() {
 
         userFormDataRef.current = init;
         setInitialFormData(init);
+
+        // ✅ prefetch options trước khi show modal
+        try {
+            mutateDistributors?.();
+        } catch (_) {}
 
         setUserModalVisible(true);
     };
@@ -636,6 +678,7 @@ export default function ManageUserPage() {
                                 onChange={(val) => setFilterRole(val || '')}
                                 allowClear
                                 style={{ width: '100%' }}
+                                getPopupContainer={popupInParent}
                             >
                                 <Option value="administrator">{roleLabelMap.administrator}</Option>
                                 <Option value="distributor">{roleLabelMap.distributor}</Option>
@@ -665,19 +708,28 @@ export default function ManageUserPage() {
                 okText={t.modal.okText}
                 cancelText={t.modal.cancelText}
                 wrapClassName="user-modal"
-                destroyOnHidden
+                destroyOnClose
                 okButtonProps={{ disabled: !canEdit }}
             >
-                <UserForm
-                    initialData={initialFormData}
-                    currentRole={currentRole}
-                    distributors={distributorOptions}
-                    distributorsLoading={loadingDistributors} // (nếu UserForm support)
-                    isEditing={!!editingUser}
-                    onChange={(data) => {
-                        userFormDataRef.current = data;
-                    }}
-                />
+                {/* ✅ nếu distributor options chưa load thì show spinner để user khỏi bấm Select “đơ” */}
+                {distributorsBusy ? (
+                    <div style={{ padding: 16 }}>
+                        <Spin />
+                    </div>
+                ) : (
+                    <UserForm
+                        initialData={initialFormData}
+                        currentRole={currentRole}
+                        distributors={distributorOptions}
+                        distributorsLoading={distributorsBusy}
+                        isEditing={!!editingUser}
+                        onChange={(data) => {
+                            userFormDataRef.current = data;
+                        }}
+                        // (nếu UserForm có Select bên trong Modal)
+                        getPopupContainer={popupInParent}
+                    />
+                )}
             </Modal>
 
             <Modal
@@ -689,7 +741,7 @@ export default function ManageUserPage() {
                 }}
                 footer={<Button onClick={() => setViewUserModalVisible(false)}>{t.view.close}</Button>}
                 wrapClassName="user-modal"
-                destroyOnHidden
+                destroyOnClose
             >
                 {loadingViewUser ? (
                     t.view.loading

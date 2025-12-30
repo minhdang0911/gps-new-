@@ -16,6 +16,7 @@ import {
     Descriptions,
     Select,
     message,
+    Spin,
 } from 'antd';
 
 import {
@@ -154,20 +155,44 @@ export default function ManageDevicesPage() {
 
     /* =========================
         SWR: OPTIONS
+        ✅ FIX:
+        - expose isLoading + mutate để prefetch khi mở modal
+        - user fetcher fallback: thử không token, fail thì thử có token (tránh 401 làm dropdown trống)
     ========================= */
-    const { data: dcRes } = useSWR(
-        token ? ['deviceCategories', token] : null,
-        ([, tk]) => getDeviceCategories(tk, { limit: 1000 }),
-        { revalidateOnFocus: false, dedupingInterval: 60_000 },
-    );
+    const {
+        data: dcRes,
+        isLoading: dcLoading,
+        mutate: mutateDC,
+    } = useSWR(token ? ['deviceCategories', token] : null, ([, tk]) => getDeviceCategories(tk, { limit: 1000 }), {
+        revalidateOnFocus: false,
+        dedupingInterval: 60_000,
+    });
 
-    const { data: vcRes } = useSWR(
-        token ? ['vehicleCategories', token] : null,
-        ([, tk]) => getVehicleCategories(tk, { limit: 1000 }),
-        { revalidateOnFocus: false, dedupingInterval: 60_000 },
-    );
+    const {
+        data: vcRes,
+        isLoading: vcLoading,
+        mutate: mutateVC,
+    } = useSWR(token ? ['vehicleCategories', token] : null, ([, tk]) => getVehicleCategories(tk, { limit: 1000 }), {
+        revalidateOnFocus: false,
+        dedupingInterval: 60_000,
+    });
 
-    const { data: usersRes } = useSWR(['users'], () => getUserList({ limit: 2000 }), {
+    const usersFetcher = async () => {
+        // Nếu API users của bạn không cần token: call 1 sẽ OK.
+        // Nếu cần token mà bạn quên truyền: call 1 fail -> call 2 thử truyền token.
+        try {
+            return await getUserList({ limit: 2000 });
+        } catch (e1) {
+            if (!token) throw e1;
+            return await getUserList(token, { limit: 2000 });
+        }
+    };
+
+    const {
+        data: usersRes,
+        isLoading: usersLoading,
+        mutate: mutateUsers,
+    } = useSWR(['users', token || 'no-token'], usersFetcher, {
         revalidateOnFocus: false,
         dedupingInterval: 60_000,
     });
@@ -175,6 +200,21 @@ export default function ManageDevicesPage() {
     const deviceCategories = dcRes?.items || [];
     const vehicleCategories = vcRes?.items || [];
     const userOptions = usersRes?.items || [];
+
+    const prefetchOptions = () => {
+        // trigger revalidate; không cần await
+        try {
+            mutateDC?.();
+            mutateVC?.();
+            mutateUsers?.();
+        } catch (_) {}
+    };
+
+    // ✅ Prefetch mỗi khi mở modal để user bấm là có data ngay (khỏi F5)
+    useEffect(() => {
+        if (modalMode) prefetchOptions();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [modalMode]);
 
     /* =========================
         SWR: DETAIL (CRUISE + BATTERY)
@@ -198,6 +238,35 @@ export default function ManageDevicesPage() {
     );
 
     const batteryInfo = batteryRes?.batteryStatus || null;
+
+    /* =========================
+        ✅ STATUS HELPERS (ACC FIX + VEHICLE STATUS)
+        - Trạng thái máy:
+            acc === 1 => Tắt máy
+            acc null/undefined/không có => Mở máy
+        - Trạng thái xe:
+            acc === 1 => Đổ xe
+            có spd => Chạy xe X km/h
+            không có spd => Dừng xe
+    ========================= */
+    const isAccOff = (acc) => acc === 1;
+
+    const getEngineStatusText = (cruise) => {
+        return isAccOff(cruise?.acc) ? (isEn ? 'Engine off' : 'Tắt máy') : isEn ? 'Engine on' : 'Mở máy';
+    };
+
+    const getVehicleStatusText = (cruise) => {
+        // acc=1 => đổ xe
+        if (isAccOff(cruise?.acc)) return isEn ? 'Parked' : 'Đổ xe';
+
+        // có spd => chạy
+        if (cruise?.spd !== null && cruise?.spd !== undefined) {
+            return isEn ? `Moving ${cruise.spd} km/h` : `Chạy xe ${cruise.spd} km/h`;
+        }
+
+        // không spd => dừng
+        return isEn ? 'Stopped' : 'Dừng xe';
+    };
 
     /* =========================
         EXPORT EXCEL (dynamic import)
@@ -320,10 +389,10 @@ export default function ManageDevicesPage() {
 
             saveAs(new Blob([excelBuffer]), `DanhSachThietBi_${getTodayForFileName()}.xlsx`);
 
-            message.success(t.exportSuccess || 'Xuất Excel thành công');
+            message.success(t.exportSuccess || (isEn ? 'Export Excel success' : 'Xuất Excel thành công'));
         } catch (err) {
             console.error(err);
-            message.error(t.exportFailed || 'Xuất Excel thất bại');
+            message.error(t.exportFailed || (isEn ? 'Export Excel failed' : 'Xuất Excel thất bại'));
         }
     };
 
@@ -332,6 +401,7 @@ export default function ManageDevicesPage() {
     ========================= */
     const openAdd = () => {
         if (!canAddDevice) return message.warning(t.noPermissionAdd);
+        prefetchOptions();
         setModalMode('add');
         form.resetFields();
     };
@@ -342,6 +412,7 @@ export default function ManageDevicesPage() {
     const openEdit = (item) => {
         if (!canEditDevice) return message.warning(t.noPermissionEdit);
 
+        prefetchOptions();
         setModalMode('edit');
         setSelectedDevice(item);
         form.setFieldsValue({
@@ -387,7 +458,7 @@ export default function ManageDevicesPage() {
             const values = await form.validateFields();
 
             if (!validatePhone(values.phone_number)) {
-                return message.error(t.invalidPhone || 'Số điện thoại không hợp lệ');
+                return message.error(t.invalidPhone || (isEn ? 'Invalid phone number' : 'Số điện thoại không hợp lệ'));
             }
 
             const payload = {
@@ -502,13 +573,15 @@ export default function ManageDevicesPage() {
                 }),
             }).addTo(map);
 
+            // ✅ FIX popup: trạng thái máy + trạng thái xe theo rule acc=1 là tắt máy/đổ xe
             mk.bindPopup(
                 `
             <b>${t.imei}:</b> ${selectedDevice.imei}<br/>
             <b>${t.plate}:</b> ${selectedDevice.license_plate || '-'}<br/>
             <b>${t.deviceType}:</b> ${selectedDevice.device_category_id?.name || '-'}<br/>
-            <b>${t.speed}:</b> ${cruiseInfo?.spd || 0} km/h<br/>
-            <b>${t.acc}:</b> ${cruiseInfo?.acc === 1 ? t.running : t.stopped}<br/>
+            <b>${t.speed}:</b> ${cruiseInfo?.spd ?? 0} km/h<br/>
+            <b>${isEn ? 'Engine status' : 'Trạng thái máy'}:</b> ${getEngineStatusText(cruiseInfo)}<br/>
+            <b>${isEn ? 'Vehicle status' : 'Trạng thái xe'}:</b> ${getVehicleStatusText(cruiseInfo)}<br/>
             <b>${t.battery}:</b> ${batteryInfo?.soc ?? '--'}%
         `,
             );
@@ -518,7 +591,7 @@ export default function ManageDevicesPage() {
 
         initMap();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [viewMode, selectedDevice, cruiseInfo, batteryInfo, t]);
+    }, [viewMode, selectedDevice, cruiseInfo, batteryInfo, isEn, t]);
 
     /* =========================
         TABLE COLUMNS (SORTER)
@@ -560,12 +633,6 @@ export default function ManageDevicesPage() {
             dataIndex: 'driver',
             sorter: (a, b) => (a.driver || '').localeCompare(b.driver || ''),
         },
-        // {
-        //     title: t.customer,
-        //     dataIndex: 'user_id',
-        //     sorter: (a, b) => (a.user_id?.email || '').localeCompare(b.user_id?.email || ''),
-        //     render: (u) => u?.email || t.notAssigned,
-        // },
         {
             title: t.vehicleLine,
             dataIndex: 'vehicle_category_id',
@@ -735,10 +802,19 @@ export default function ManageDevicesPage() {
                             </Descriptions.Item>
                             <Descriptions.Item label={t.firmware}>{cruiseInfo?.fwr || '-'}</Descriptions.Item>
                             <Descriptions.Item label={t.battery}>{batteryInfo?.soc ?? '--'}%</Descriptions.Item>
-                            <Descriptions.Item label={t.speed}>{cruiseInfo?.spd || 0} km/h</Descriptions.Item>
-                            <Descriptions.Item label={t.acc}>
-                                {cruiseInfo?.acc === 1 ? t.running : t.stopped}
+
+                            <Descriptions.Item label={t.speed}>{cruiseInfo?.spd ?? 0} km/h</Descriptions.Item>
+
+                            {/* ✅ FIX: trạng thái máy theo rule acc=1 là tắt máy */}
+                            <Descriptions.Item label={isEn ? 'Engine status' : 'Trạng thái máy'}>
+                                {getEngineStatusText(cruiseInfo)}
                             </Descriptions.Item>
+
+                            {/* ✅ ADD: trạng thái xe */}
+                            <Descriptions.Item label={isEn ? 'Vehicle status' : 'Trạng thái xe'}>
+                                {getVehicleStatusText(cruiseInfo)}
+                            </Descriptions.Item>
+
                             <Descriptions.Item label={t.position}>
                                 {cruiseInfo?.lat}, {cruiseInfo?.lon}
                             </Descriptions.Item>
@@ -767,6 +843,11 @@ export default function ManageDevicesPage() {
         </Space>
     );
 
+    // ✅ Fix dropdown trong Modal bị “click không ra”/bị che
+    const popupInParent = (triggerNode) => triggerNode.parentElement;
+
+    const optionsLoading = dcLoading || vcLoading || usersLoading;
+
     return (
         <>
             {viewMode === 'list' ? renderList() : renderDetail()}
@@ -779,6 +860,7 @@ export default function ManageDevicesPage() {
                 okText={t.save}
                 width={600}
                 confirmLoading={false}
+                destroyOnClose
             >
                 <Form form={form} layout="vertical">
                     <Form.Item name="imei" label="IMEI" rules={[{ required: true }]}>
@@ -798,7 +880,15 @@ export default function ManageDevicesPage() {
                     </Form.Item>
 
                     <Form.Item name="device_category_id" label={t.deviceType} rules={[{ required: true }]}>
-                        <Select placeholder={t.modal.selectDeviceType}>
+                        <Select
+                            placeholder={t.modal.selectDeviceType}
+                            getPopupContainer={popupInParent}
+                            loading={dcLoading}
+                            disabled={dcLoading}
+                            notFoundContent={dcLoading ? <Spin size="small" /> : null}
+                            showSearch
+                            optionFilterProp="children"
+                        >
                             {deviceCategories.map((d) => (
                                 <Option key={d._id} value={d._id}>
                                     {d.name}
@@ -808,7 +898,16 @@ export default function ManageDevicesPage() {
                     </Form.Item>
 
                     <Form.Item name="vehicle_category_id" label={t.modal.selectVehicleType}>
-                        <Select placeholder={t.modal.selectVehicleType}>
+                        <Select
+                            placeholder={t.modal.selectVehicleType}
+                            getPopupContainer={popupInParent}
+                            loading={vcLoading}
+                            disabled={vcLoading}
+                            notFoundContent={vcLoading ? <Spin size="small" /> : null}
+                            allowClear
+                            showSearch
+                            optionFilterProp="children"
+                        >
                             {vehicleCategories.map((v) => (
                                 <Option key={v._id} value={v._id}>
                                     {v.name}
@@ -818,7 +917,16 @@ export default function ManageDevicesPage() {
                     </Form.Item>
 
                     <Form.Item name="user_id" label={t.customer}>
-                        <Select allowClear placeholder={t.modal.selectCustomer}>
+                        <Select
+                            allowClear
+                            placeholder={t.modal.selectCustomer}
+                            getPopupContainer={popupInParent}
+                            loading={usersLoading}
+                            disabled={usersLoading}
+                            notFoundContent={usersLoading ? <Spin size="small" /> : null}
+                            showSearch
+                            optionFilterProp="children"
+                        >
                             {userOptions
                                 .filter((u) => u.position === 'customer')
                                 .map((u) => (
@@ -830,7 +938,16 @@ export default function ManageDevicesPage() {
                     </Form.Item>
 
                     <Form.Item name="distributor_id" label={t.distributor}>
-                        <Select allowClear placeholder={t.modal.selectDistributor}>
+                        <Select
+                            allowClear
+                            placeholder={t.modal.selectDistributor}
+                            getPopupContainer={popupInParent}
+                            loading={usersLoading}
+                            disabled={usersLoading}
+                            notFoundContent={usersLoading ? <Spin size="small" /> : null}
+                            showSearch
+                            optionFilterProp="children"
+                        >
                             {userOptions
                                 .filter((u) => u.position === 'distributor')
                                 .map((u) => (
@@ -840,6 +957,15 @@ export default function ManageDevicesPage() {
                                 ))}
                         </Select>
                     </Form.Item>
+
+                    {/* (Optional) nếu muốn user thấy “đang tải option” rõ ràng hơn */}
+                    {optionsLoading && (
+                        <div style={{ marginTop: 8 }}>
+                            <Text type="secondary">
+                                <Spin size="small" /> {isEn ? 'Loading options…' : 'Đang tải danh mục…'}
+                            </Text>
+                        </div>
+                    )}
                 </Form>
             </Modal>
         </>

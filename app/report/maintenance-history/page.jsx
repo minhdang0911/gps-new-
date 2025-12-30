@@ -7,6 +7,7 @@ import { Card, Empty, Spin, Table, Typography, message } from 'antd';
 import MaintenanceReportFilters from '../components/MaintenanceReportFilters';
 import { useMaintenanceDeviceMap } from '../../hooks/useMaintenanceDeviceMap';
 import { getMaintenanceHistory } from '../../lib/api/maintain';
+import { getUserList } from '../../lib/api/user';
 
 // ✅ auth store
 import { useAuthStore } from '../../stores/authStore';
@@ -43,6 +44,7 @@ export default function MaintenanceHistoryReportPage() {
     const [loading, setLoading] = useState(false);
 
     const [page, setPage] = useState(1);
+    const [userMap, setUserMap] = useState(new Map());
     const PAGE_SIZE = 10;
 
     // ✅ role
@@ -76,6 +78,37 @@ export default function MaintenanceHistoryReportPage() {
             setLoading(false);
         }
     };
+
+    useEffect(() => {
+        const loadUsers = async () => {
+            try {
+                const res = await getUserList({ limit: 5000 });
+                const items = res?.items || res?.data || res || [];
+
+                const m = new Map();
+                items.forEach((u) => {
+                    const id = u?._id;
+                    if (!id) return;
+
+                    // ưu tiên name -> username -> email
+                    const display =
+                        (u?.name && String(u.name).trim()) ||
+                        (u?.username && String(u.username).trim()) ||
+                        (u?.email && String(u.email).trim()) ||
+                        id;
+
+                    m.set(String(id), display);
+                });
+
+                setUserMap(m);
+            } catch (e) {
+                // không block UI
+                console.warn('loadUsers failed', e);
+            }
+        };
+
+        loadUsers();
+    }, []);
 
     // load lần đầu
     useEffect(() => {
@@ -131,7 +164,23 @@ export default function MaintenanceHistoryReportPage() {
                 dataIndex: 'confirmedBy',
                 key: 'confirmedBy',
                 width: 170,
-                render: (v) => v || '-',
+                render: (v) => {
+                    if (!v) return '-';
+
+                    // nếu backend trả object user
+                    if (typeof v === 'object') {
+                        const name = v?.name || v?.username || v?.email;
+                        return name || '-';
+                    }
+
+                    const key = String(v);
+
+                    // nếu là id -> map ra display
+                    if (userMap.has(key)) return userMap.get(key);
+
+                    // nếu không phải id (vd backend trả username/email thẳng) thì show luôn
+                    return key;
+                },
             },
 
             {
@@ -148,8 +197,7 @@ export default function MaintenanceHistoryReportPage() {
         }
 
         return cols;
-    }, [hideConfirmedByCol, imeiToPlate]);
-
+    }, [hideConfirmedByCol, imeiToPlate, userMap]);
     return (
         <div style={{ padding: 16 }}>
             <Title level={3}>Báo cáo lịch sử bảo trì</Title>

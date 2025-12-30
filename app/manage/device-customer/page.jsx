@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useMemo, useState, useSyncExternalStore } from 'react';
+import React, { useMemo, useState, useSyncExternalStore, useEffect } from 'react';
 import useSWR from 'swr';
-import { Card, Table, Button, Modal, Form, Select, Space, message, Tag, Typography, Popconfirm } from 'antd';
+import { Card, Table, Button, Modal, Form, Select, Space, message, Tag, Typography, Popconfirm, Spin } from 'antd';
 import { PlusOutlined, ReloadOutlined, DeleteOutlined, UserOutlined, DownloadOutlined } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 
@@ -75,13 +75,20 @@ export default function DeviceCustomerPage() {
     // User chọn customer (nếu chưa chọn => dùng customer đầu tiên từ API)
     const [selectedCustomer, setSelectedCustomer] = useState(null);
 
+    // ✅ Fix dropdown trong Modal / layout bị “click không ra”
+    const popupInParent = (triggerNode) => triggerNode?.parentElement || document.body;
+
     /* =========================
         SWR: customers (position=customer)
-        Note: getUserList của bạn không cần token theo code cũ
     ========================= */
     const customersKey = canView ? ['customers', isEn] : null;
 
-    const { data: customersRes, isLoading: customersLoading } = useSWR(
+    const {
+        data: customersRes,
+        isLoading: customersLoading,
+        isValidating: customersValidating,
+        mutate: mutateCustomers,
+    } = useSWR(
         customersKey,
         async () => {
             const res = await getUserList({ page: 1, limit: 100 });
@@ -126,7 +133,6 @@ export default function DeviceCustomerPage() {
             dedupingInterval: 10_000,
             onError: (err) => {
                 console.error('Load device of customer error:', err);
-                // message.error(t.loadDevicesError);
             },
         },
     );
@@ -138,7 +144,12 @@ export default function DeviceCustomerPage() {
     ========================= */
     const allDevicesKey = token && canView ? ['allDevices', token] : null;
 
-    const { data: allDevicesRes, isLoading: loadingAllDevices } = useSWR(
+    const {
+        data: allDevicesRes,
+        isLoading: loadingAllDevices,
+        isValidating: validatingAllDevices,
+        mutate: mutateAllDevices,
+    } = useSWR(
         allDevicesKey,
         async ([, tk]) => {
             const res = await getDevices(tk, { page: 1, limit: 200 });
@@ -155,6 +166,16 @@ export default function DeviceCustomerPage() {
     );
 
     const allDevices = allDevicesRes || [];
+
+    // ✅ Prefetch options khi mở modal (đỡ “bấm không thấy option”)
+    useEffect(() => {
+        if (!isAddModalOpen) return;
+        try {
+            mutateAllDevices?.();
+            mutateCustomers?.();
+        } catch (_) {}
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isAddModalOpen]);
 
     /* =========================
         ACTIONS
@@ -436,6 +457,9 @@ export default function DeviceCustomerPage() {
         );
     }
 
+    const customersBusy = customersLoading || customersValidating;
+    const allDevicesBusy = loadingAllDevices || validatingAllDevices;
+
     return (
         <div className="dcustomer-page">
             <Card
@@ -455,7 +479,10 @@ export default function DeviceCustomerPage() {
                                     .toLowerCase()
                                     .includes(input.toLowerCase())
                             }
-                            loading={customersLoading}
+                            loading={customersBusy}
+                            disabled={customersBusy}
+                            notFoundContent={customersBusy ? <Spin size="small" /> : null}
+                            getPopupContainer={popupInParent}
                         >
                             {customers.map((c) => (
                                 <Option key={c._id} value={c._id}>
@@ -479,7 +506,13 @@ export default function DeviceCustomerPage() {
                         <Button
                             type="primary"
                             icon={<PlusOutlined />}
-                            onClick={() => setIsAddModalOpen(true)}
+                            onClick={() => {
+                                // ✅ prefetch để mở modal là có data
+                                try {
+                                    mutateAllDevices?.();
+                                } catch (_) {}
+                                setIsAddModalOpen(true);
+                            }}
                             disabled={!currentCustomerId || !canEdit}
                         >
                             {t.buttons.addDevice}
@@ -510,7 +543,7 @@ export default function DeviceCustomerPage() {
                 }}
                 okText={t.modal.okText}
                 cancelText={t.modal.cancelText}
-                destroyOnHidden
+                destroyOnClose
             >
                 <Form form={form} layout="vertical">
                     <Form.Item
@@ -521,13 +554,16 @@ export default function DeviceCustomerPage() {
                         <Select
                             showSearch
                             placeholder={t.modal.imeiPlaceholder}
-                            loading={loadingAllDevices}
+                            loading={allDevicesBusy}
+                            disabled={allDevicesBusy}
+                            notFoundContent={allDevicesBusy ? <Spin size="small" /> : null}
                             optionFilterProp="children"
                             filterOption={(input, option) =>
                                 String(option?.children || '')
                                     .toLowerCase()
                                     .includes(input.toLowerCase())
                             }
+                            getPopupContainer={popupInParent}
                         >
                             {allDevices.map((d) => (
                                 <Option key={d._id} value={d.imei}>
