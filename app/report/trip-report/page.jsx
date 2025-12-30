@@ -28,19 +28,15 @@ import en from '../../locales/en.json';
 
 import '../usage-session/usageSession.css';
 
-// ✅ helper (existing)
 import { buildImeiToLicensePlateMap, attachLicensePlate } from '../../util/deviceMap';
 
-// ✅ reusable (existing)
 import ReportSortSelect from '../../components/report/ReportSortSelect';
 import ColumnManagerModal from '../../components/report/ColumnManagerModal';
 import { useReportColumns } from '../../hooks/useReportColumns';
 
-// ✅ compare (component chung + insight riêng)
 import ReportCompareModal from '../../components/report/ReportCompareModal';
 import { buildTripReportInsight } from '../../features/tripReport/compare/tripReportCompareInsight';
 
-// ✅ extracted (existing)
 import { useLangFromPath } from '../../features/usageSessionReport/locale';
 import { LOCKED_KEYS, STORAGE_KEY } from '../../features/tripReport/constants';
 import { buildAllColsMeta } from '../../features/tripReport/columns/buildAllColsMeta';
@@ -49,12 +45,13 @@ import { useTripReportDistributors } from '../../features/tripReport/hooks/useTr
 import { useTripReportData } from '../../features/tripReport/hooks/useTripReportData';
 import { useTripReportExcel } from '../../features/tripReport/hooks/useTripReportExcel';
 
-// ✅ NEW: generic report components
 import ReportViewToggle from '../../components/chart/ReportViewToggle';
 import ReportPanel from '../../components/chart/ReportPanel';
 
-// ✅ NEW: adapter/config for THIS report
 import { buildTripReportReportConfig } from '../../features/tripReport/reportConfig';
+
+// ✅ NEW: auth store (để lấy role)
+import { useAuthStore } from '../../stores/authStore';
 
 const { RangePicker } = DatePicker;
 const { useBreakpoint } = Grid;
@@ -142,7 +139,7 @@ const TripReportPage = () => {
     // ✅ excel
     const { exportExcel } = useTripReportExcel({ isEn, t, getDistributorLabel });
 
-    // ===== Compare states (✅ moved UP before clearSelection) =====
+    // ===== Compare states =====
     const [compareOpen, setCompareOpen] = useState(false);
     const [selectedRowKeys, setSelectedRowKeys] = useState([]);
     const [selectedRows, setSelectedRows] = useState([]);
@@ -163,22 +160,14 @@ const TripReportPage = () => {
         const imeiInput = normStr(values?.imei || '');
         const plateInput = normalizePlate(values?.license_plate || '');
 
-        // nếu user KHÔNG nhập imei mà có biển số => map sang imei
         if (!imeiInput && plateInput) {
             const mappedImeis = plateToImeis?.get?.(plateInput) || [];
-
             if (mappedImeis.length > 0) {
-                // nếu API chỉ nhận 1 imei => lấy cái đầu
                 form.setFieldValue('imei', String(mappedImeis[0]));
-            } else {
-                // không map được: tuỳ bạn muốn
-                // 1) báo warning
-                // message.warning(isEn ? 'Plate not mapped to IMEI' : 'Biển số chưa map ra IMEI');
-                // 2) hoặc cứ cho search theo plate FE
             }
         }
 
-        const newValues = form.getFieldsValue(); // lấy lại sau khi set imei
+        const newValues = form.getFieldsValue();
         setFilterValues(newValues);
         clearSelection();
         setPagination((p) => ({ ...p, current: 1 }));
@@ -192,18 +181,15 @@ const TripReportPage = () => {
         setPagination((p) => ({ ...p, current: 1 }));
         clearSelection();
 
-        const values = {}; // reset filters
+        const values = {};
         setFilterValues(values);
 
         fetchData({ page: 1, filters: values, sortMode: 'none' }, { force: true });
     };
 
-    // ✅ fix: đổi trang / đổi pageSize thì fetch luôn (tránh case hook không auto-fetch)
     const handleTableChange = (pager) => {
         setPagination({ current: pager.current, pageSize: pager.pageSize });
         clearSelection();
-
-        // Nếu fetchData không nhận pageSize thì bỏ pageSize đi.
         fetchData({ page: pager.current, pageSize: pager.pageSize, filters: filterValues, sortMode }, { force: true });
     };
 
@@ -220,12 +206,25 @@ const TripReportPage = () => {
                 setSelectedRows(rows);
             },
         }),
-        [selectedRowKeys, setSelectedRowKeys, setSelectedRows],
+        [selectedRowKeys],
     );
 
     // ===== Column manager =====
     const [colModalOpen, setColModalOpen] = useState(false);
 
+    // ✅ lấy role từ store (ưu tiên), fallback localStorage
+    const user = useAuthStore((s) => s.user);
+    const role = useMemo(() => {
+        const r1 = user?.position || user?.role;
+        if (r1) return String(r1).toLowerCase();
+
+        if (typeof window !== 'undefined') {
+            return String(localStorage.getItem('role') || '').toLowerCase();
+        }
+        return '';
+    }, [user]);
+
+    // ✅ allColsMeta có filter cột distributor_id theo role
     const allColsMeta = useMemo(() => {
         return buildAllColsMeta({
             t,
@@ -233,8 +232,9 @@ const TripReportPage = () => {
             isMobile,
             distributorMap,
             getDistributorLabel,
+            role, // ✅ NEW
         });
-    }, [t, isEn, isMobile, distributorMap, getDistributorLabel]);
+    }, [t, isEn, isMobile, distributorMap, getDistributorLabel, role]);
 
     const { columns, visibleOrder, setVisibleOrder, allColsForModal } = useReportColumns({
         storageKey: STORAGE_KEY,
@@ -242,14 +242,12 @@ const TripReportPage = () => {
         lockedKeys: LOCKED_KEYS,
     });
 
-    // ✅ label map để compare-table ra đúng label
     const colLabelMap = useMemo(() => {
         const m = new Map();
         (allColsForModal || []).forEach((c) => m.set(c.key, c.label));
         return m;
     }, [allColsForModal]);
 
-    // ✅ NEW: report config (kpis + charts) from processedData  ✅✅✅
     const reportConfig = useMemo(() => {
         return buildTripReportReportConfig({
             rows: processedData || [],
@@ -258,17 +256,14 @@ const TripReportPage = () => {
         });
     }, [processedData, isEn, t]);
 
-    // ✅ NEW: summary (tổng theo kết quả đã lọc)
     const totalKm = useMemo(() => {
         const toNum = (v) => {
             if (v == null) return 0;
             if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
-            // string "12.3" / "12,3" / "1,234.56" -> normalize
             const s = String(v).trim().replace(/,/g, '');
             const n = Number(s);
             return Number.isFinite(n) ? n : 0;
         };
-
         return (processedData || []).reduce((sum, r) => sum + toNum(r?.mileageToday), 0);
     }, [processedData]);
 
@@ -279,7 +274,6 @@ const TripReportPage = () => {
             const n = Number(s);
             return Number.isFinite(n) ? n : 0;
         };
-
         return (processedData || []).reduce((sum, r) => sum + toNum(r?.numberOfTrips), 0);
     }, [processedData]);
 
@@ -361,7 +355,6 @@ const TripReportPage = () => {
                         title={t.table.title}
                         extra={
                             <Space size="middle" wrap>
-                                {/* ✅ Toggle mode */}
                                 <ReportViewToggle value={viewMode} onChange={setViewMode} locale={isEn ? 'en' : 'vi'} />
 
                                 <ReportSortSelect
@@ -371,7 +364,6 @@ const TripReportPage = () => {
                                         setSortMode(v);
                                         clearSelection();
                                         setPagination((p) => ({ ...p, current: 1 }));
-
                                         fetchData({ page: 1, filters: filterValues, sortMode: v }, { force: true });
                                     }}
                                     disabled={viewMode !== 'table'}
@@ -417,7 +409,6 @@ const TripReportPage = () => {
                     >
                         {viewMode === 'table' ? (
                             <>
-                                {/* ✅ NEW: Summary row */}
                                 <Row gutter={[12, 12]} style={{ marginBottom: 8 }}>
                                     <Col xs={12} sm="auto">
                                         <Statistic
@@ -484,7 +475,6 @@ const TripReportPage = () => {
                 onClose={() => setColModalOpen(false)}
                 allCols={allColsForModal}
                 visibleOrder={visibleOrder}
-                setVisibleOrder={setVisibleOrder}
                 storageKey={STORAGE_KEY}
                 lockedKeys={LOCKED_KEYS}
                 texts={{

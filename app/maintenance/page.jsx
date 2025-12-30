@@ -291,7 +291,7 @@ export default function MaintenanceActivatePage() {
             <Card style={{ marginTop: 12, marginBottom: 12 }}>
                 <Row gutter={[12, 12]} align="middle">
                     <Col xs={24} lg={16}>
-                        <Space direction="vertical" style={{ width: '100%' }} size={6}>
+                        <Space orientation="vertical" style={{ width: '100%' }} size={6}>
                             <Text strong>Chọn thiết bị</Text>
 
                             <Select

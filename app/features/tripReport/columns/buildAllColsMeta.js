@@ -63,10 +63,16 @@ const ColTitle = ({ label, tip, isMobile }) => (
     </span>
 );
 
-export function buildAllColsMeta({ t, isEn, isMobile, distributorMap, getDistributorLabel }) {
+export function buildAllColsMeta({ t, isEn, isMobile, distributorMap, getDistributorLabel, role }) {
     const tip = (k) => (isEn ? colHelp[k]?.en : colHelp[k]?.vi);
 
-    return [
+    // ✅ role normalize + rule hide distributor column
+    const roleNorm = String(role || '')
+        .toLowerCase()
+        .trim();
+    const hideDistributorCol = roleNorm === 'distributor' || roleNorm === 'customer';
+
+    const cols = [
         {
             key: 'index',
             label: t.table.index,
@@ -238,6 +244,8 @@ export function buildAllColsMeta({ t, isEn, isMobile, distributorMap, getDistrib
                 width: 150,
             },
         },
+
+        // ✅ CỘT ĐẠI LÝ
         {
             key: 'distributor_id',
             label: t.table.distributor_id,
@@ -248,6 +256,7 @@ export function buildAllColsMeta({ t, isEn, isMobile, distributorMap, getDistrib
                 render: (v) => getDistributorLabel(v),
             },
         },
+
         {
             key: 'createdAt',
             label: t.table.createdAt,
@@ -269,4 +278,11 @@ export function buildAllColsMeta({ t, isEn, isMobile, distributorMap, getDistrib
             },
         },
     ];
+
+    // ✅ HIDE distributor column globally (table + modal)
+    if (hideDistributorCol) {
+        return cols.filter((c) => c.key !== 'distributor_id');
+    }
+
+    return cols;
 }

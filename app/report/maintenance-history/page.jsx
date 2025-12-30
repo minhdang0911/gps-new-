@@ -2,11 +2,14 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import dayjs from 'dayjs';
-import { Card, Empty, Spin, Table, Tag, Typography, message } from 'antd';
+import { Card, Empty, Spin, Table, Typography, message } from 'antd';
 
 import MaintenanceReportFilters from '../components/MaintenanceReportFilters';
 import { useMaintenanceDeviceMap } from '../../hooks/useMaintenanceDeviceMap';
 import { getMaintenanceHistory } from '../../lib/api/maintain';
+
+// ✅ auth store
+import { useAuthStore } from '../../stores/authStore';
 
 const { Title, Text } = Typography;
 
@@ -42,6 +45,20 @@ export default function MaintenanceHistoryReportPage() {
     const [page, setPage] = useState(1);
     const PAGE_SIZE = 10;
 
+    // ✅ role
+    const user = useAuthStore((s) => s.user);
+    const role = useMemo(() => {
+        const r1 = user?.position || user?.role;
+        if (r1) return String(r1).toLowerCase();
+        if (typeof window !== 'undefined') {
+            return String(localStorage.getItem('role') || '').toLowerCase();
+        }
+        return '';
+    }, [user]);
+
+    // ✅ distributor / customer => ẩn "Xác nhận bởi"
+    const hideConfirmedByCol = role === 'distributor' || role === 'customer';
+
     const load = async ({ imei = filterImei, p = page } = {}) => {
         try {
             setLoading(true);
@@ -66,49 +83,72 @@ export default function MaintenanceHistoryReportPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const columns = [
-        {
-            title: 'Thời gian tạo',
-            dataIndex: 'createdAt',
-            key: 'createdAt',
-            width: 170,
-            render: (v) => (v && dayjs(v).isValid() ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-'),
-        },
-        {
-            title: 'IMEI',
-            key: 'imei',
-            width: 180,
-            render: (_, row) => row?.imei || row?.device?.imei || row?.device_id?.imei || '-',
-        },
-        {
-            title: 'Biển số',
-            key: 'license_plate',
-            width: 150,
-            render: (_, row) => {
-                const plate = row?.license_plate || row?.device?.license_plate || row?.device_id?.license_plate;
-                if (plate) return plate;
-
-                const rowImei = row?.imei || row?.device?.imei || row?.device_id?.imei;
-                return rowImei ? imeiToPlate.get(String(rowImei)) || '-' : '-';
+    const columns = useMemo(() => {
+        const cols = [
+            {
+                title: 'Thời gian tạo',
+                dataIndex: 'createdAt',
+                key: 'createdAt',
+                width: 170,
+                render: (v) => (v && dayjs(v).isValid() ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-'),
             },
-        },
-        {
-            title: 'Km bảo trì',
-            dataIndex: 'maintenanceKm',
-            key: 'maintenanceKm',
-            width: 120,
-            render: (v) => (v === null || v === undefined ? '-' : `${v}`),
-        },
-        {
-            title: 'Ngày bảo trì',
-            dataIndex: 'maintenanceDate',
-            key: 'maintenanceDate',
-            width: 130,
-            render: (v) => (v && dayjs(v).isValid() ? dayjs(v).format('YYYY-MM-DD') : '-'),
-        },
-        { title: 'Xác nhận bởi', dataIndex: 'confirmedBy', key: 'confirmedBy', width: 170, render: (v) => v || '-' },
-        { title: 'Ghi chú', dataIndex: 'note', key: 'note', ellipsis: true, render: (v) => v || '-' },
-    ];
+            {
+                title: 'IMEI',
+                key: 'imei',
+                width: 180,
+                render: (_, row) => row?.imei || row?.device?.imei || row?.device_id?.imei || '-',
+            },
+            {
+                title: 'Biển số',
+                key: 'license_plate',
+                width: 150,
+                render: (_, row) => {
+                    const plate = row?.license_plate || row?.device?.license_plate || row?.device_id?.license_plate;
+                    if (plate) return plate;
+
+                    const rowImei = row?.imei || row?.device?.imei || row?.device_id?.imei;
+                    return rowImei ? imeiToPlate.get(String(rowImei)) || '-' : '-';
+                },
+            },
+            {
+                title: 'Km bảo trì',
+                dataIndex: 'maintenanceKm',
+                key: 'maintenanceKm',
+                width: 120,
+                render: (v) => (v === null || v === undefined ? '-' : `${v}`),
+            },
+            {
+                title: 'Ngày bảo trì',
+                dataIndex: 'maintenanceDate',
+                key: 'maintenanceDate',
+                width: 130,
+                render: (v) => (v && dayjs(v).isValid() ? dayjs(v).format('YYYY-MM-DD') : '-'),
+            },
+
+            // ✅ CỘT SẼ BỊ ẨN VỚI distributor / customer
+            {
+                title: 'Xác nhận bởi',
+                dataIndex: 'confirmedBy',
+                key: 'confirmedBy',
+                width: 170,
+                render: (v) => v || '-',
+            },
+
+            {
+                title: 'Ghi chú',
+                dataIndex: 'note',
+                key: 'note',
+                ellipsis: true,
+                render: (v) => v || '-',
+            },
+        ];
+
+        if (hideConfirmedByCol) {
+            return cols.filter((c) => c.key !== 'confirmedBy');
+        }
+
+        return cols;
+    }, [hideConfirmedByCol, imeiToPlate]);
 
     return (
         <div style={{ padding: 16 }}>

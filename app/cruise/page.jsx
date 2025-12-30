@@ -411,6 +411,19 @@ const CruisePage = () => {
     // ✅ giữ point đang mở popup để rerender khi đổi ngôn ngữ
     const currentPopupPointRef = useRef(null);
 
+    // ✅ FIX: auto scroll table theo activeIndex khi đang play
+    const lastScrollRef = useRef(-1);
+    useEffect(() => {
+        if (!isPlaying) return;
+        if (!vlistRef.current) return;
+
+        if (lastScrollRef.current === activeIndex) return;
+        lastScrollRef.current = activeIndex;
+
+        // 'center' hoặc 'smart'
+        vlistRef.current.scrollToItem(activeIndex, 'center');
+    }, [activeIndex, isPlaying]);
+
     // load leaflet
     useEffect(() => {
         const loadLeaflet = async () => {
