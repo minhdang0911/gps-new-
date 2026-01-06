@@ -155,7 +155,7 @@ const TripSessionReportPage = () => {
     const [feFilters, setFeFilters] = useState({ imeis: [], imeiText: '', plateText: '' });
 
     // ✅ device maps
-    const { imeiToPlate, plateToImeis, loadingDeviceMap } = useTripDeviceMap({
+    const { imeiToPlate, plateToImeis, loadingDeviceMap, refreshDeviceMap } = useTripDeviceMap({
         buildImeiToLicensePlateMap,
     });
 
@@ -283,14 +283,15 @@ const TripSessionReportPage = () => {
         fetchBase({ resetPage: true }, { force: true });
     };
 
-    const onReset = () => {
+    const onReset = async () => {
         clearSelection();
         form.resetFields();
         setFeFilters({ imeis: [], imeiText: '', plateText: '' });
         setSortMode('none');
         setPagination((p) => ({ ...p, current: 1 }));
 
-        fetchBase({ resetPage: true }, { force: true });
+        // ✅ Reset = map mới + data mới
+        await Promise.allSettled([refreshDeviceMap(), fetchBase({ resetPage: true }, { force: true })]);
     };
 
     const handleTableChange = (pager) => {

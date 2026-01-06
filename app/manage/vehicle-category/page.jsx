@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState, useSyncExternalStore, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import useSWR from 'swr';
 import { Table, Button, Modal, Form, Input, Select, Space, Popconfirm, message, Card, Spin } from 'antd';
 import {
@@ -11,7 +11,6 @@ import {
     SearchOutlined,
     DownloadOutlined,
 } from '@ant-design/icons';
-
 import { usePathname } from 'next/navigation';
 
 import {
@@ -21,61 +20,39 @@ import {
     deleteVehicleCategory,
     getManufacturerOptions,
 } from '../../lib/api/vehicleCategory';
-
 import { getMadeInFromOptions, getDeviceCategories } from '../../lib/api/deviceCategory';
 
 import './VehicleCategoryPage.css';
 
-// Excel
-import * as XLSX from 'xlsx-js-style';
-import { saveAs } from 'file-saver';
-import { getTodayForFileName } from '../../util/FormatDate';
-
-import { MADE_IN_FROM_MAP } from '../../util/ConverMadeIn';
 import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
+
+import { useLocalStorageValue } from '../../hooks/useLocalStorageValue';
+import {
+    buildMapOptions,
+    buildDeviceTypeOptions,
+    getMifLabel as _getMifLabel,
+    getManufacturerLabel as _getManufacturerLabel,
+    getDeviceTypeLabel as _getDeviceTypeLabel,
+} from './vehicleCategory.utils';
+import { exportVehicleCategoriesExcel } from './vehicleCategory.exportExcel';
+import VehicleCategoryModal from './VehicleCategoryModal';
 
 const locales = { vi, en };
 const { Option } = Select;
 
-/**
- * ✅ đọc localStorage “chuẩn React”
- */
-function useLocalStorageValue(key, fallback = '') {
-    const subscribe = (callback) => {
-        if (typeof window === 'undefined') return () => {};
-        const handler = (e) => {
-            if (!e || e.key === key) callback();
-        };
-        window.addEventListener('storage', handler);
-        return () => window.removeEventListener('storage', handler);
-    };
-
-    const getSnapshot = () => {
-        if (typeof window === 'undefined') return fallback;
-        return localStorage.getItem(key) ?? fallback;
-    };
-
-    const getServerSnapshot = () => fallback;
-
-    return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-}
-
 const VehicleCategoryPage = () => {
     const pathname = usePathname() || '/';
 
-    // ✅ đọc token/role/lang trực tiếp từ localStorage store
     const token = useLocalStorageValue('accessToken', '');
     const role = useLocalStorageValue('role', '');
+    const langFromStorage = useLocalStorageValue('iky_lang', 'vi');
 
-    // ===== LANG =====
     const isEnFromPath = useMemo(() => {
         const segments = pathname.split('/').filter(Boolean);
         const last = segments[segments.length - 1];
         return last === 'en';
     }, [pathname]);
-
-    const langFromStorage = useLocalStorageValue('iky_lang', 'vi');
 
     const isEn = isEnFromPath ? true : langFromStorage === 'en';
     const t = isEn ? locales.en.vehicleCategory : locales.vi.vehicleCategory;
@@ -88,34 +65,16 @@ const VehicleCategoryPage = () => {
     const canCreate = isAdmin;
     const canDelete = isAdmin;
 
-    // FILTERS
-    const [filters, setFilters] = useState({
-        name: '',
-        manufacturer: '',
-        year: '',
-        model: '',
-        madeInFrom: '',
-    });
-
-    // pagination state
-    const [pagination, setPagination] = useState({
-        current: 1,
-        pageSize: 20,
-    });
+    const [filters, setFilters] = useState({ name: '', manufacturer: '', year: '', model: '', madeInFrom: '' });
+    const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
     const [form] = Form.useForm();
 
-    // ✅ Fix dropdown trong Modal / layout bị “click không ra”
     const popupInParent = (triggerNode) => triggerNode?.parentElement || document.body;
 
-    /* =========================
-        SWR: options
-        ✅ FIX:
-        - expose isLoading + mutate
-        - add loading UI cho Select
-    ========================= */
+    // ===== SWR OPTIONS
     const mifKey = token ? ['madeInFromOptions', token] : null;
     const manuKey = token ? ['manufacturerOptions', token] : null;
     const deviceTypeKey = token ? ['deviceTypeOptions', token] : null;
@@ -125,20 +84,14 @@ const VehicleCategoryPage = () => {
         isLoading: mifLoading,
         isValidating: mifValidating,
         mutate: mutateMIF,
-    } = useSWR(mifKey, ([, tk]) => getMadeInFromOptions(tk), {
-        revalidateOnFocus: false,
-        dedupingInterval: 60_000,
-    });
+    } = useSWR(mifKey, ([, tk]) => getMadeInFromOptions(tk), { revalidateOnFocus: false, dedupingInterval: 60_000 });
 
     const {
         data: manuRes,
         isLoading: manuLoading,
         isValidating: manuValidating,
         mutate: mutateManu,
-    } = useSWR(manuKey, ([, tk]) => getManufacturerOptions(tk), {
-        revalidateOnFocus: false,
-        dedupingInterval: 60_000,
-    });
+    } = useSWR(manuKey, ([, tk]) => getManufacturerOptions(tk), { revalidateOnFocus: false, dedupingInterval: 60_000 });
 
     const {
         data: dcRes,
@@ -150,49 +103,13 @@ const VehicleCategoryPage = () => {
         dedupingInterval: 60_000,
     });
 
-    const mifOptions = useMemo(() => {
-        const res = mifRes || {};
-        return Object.entries(res).map(([value, label]) => ({ value, label }));
-    }, [mifRes]);
+    const mifOptions = useMemo(() => buildMapOptions(mifRes || {}), [mifRes]);
+    const manufacturerOptions = useMemo(() => buildMapOptions(manuRes || {}), [manuRes]);
+    const deviceTypeOptions = useMemo(() => buildDeviceTypeOptions(dcRes?.items || []), [dcRes]);
 
-    const manufacturerOptions = useMemo(() => {
-        const res = manuRes || {};
-        return Object.entries(res).map(([value, label]) => ({ value, label }));
-    }, [manuRes]);
-
-    const deviceTypeOptions = useMemo(() => {
-        const items = dcRes?.items || [];
-        return items.map((item) => ({
-            value: item._id,
-            label: item.name || item.code || 'Không tên',
-        }));
-    }, [dcRes]);
-
-    // helper label: Xuất xứ
-    const getMifLabel = (value) => {
-        if (!value && value !== 0) return '';
-
-        const key = String(value);
-        const cfg = MADE_IN_FROM_MAP?.[key];
-
-        if (cfg) return isEn ? cfg.en : cfg.vi;
-
-        const found = mifOptions.find((opt) => String(opt.value) === key);
-        if (found?.label) return found.label;
-
-        return key;
-    };
-
-    const getManufacturerLabel = (value) => {
-        const found = manufacturerOptions.find((opt) => String(opt.value) === String(value));
-        return found ? found.label : value || '';
-    };
-
-    const getDeviceTypeLabel = (value) => {
-        if (!value) return '';
-        const found = deviceTypeOptions.find((opt) => String(opt.value) === String(value));
-        return found ? found.label : value || '';
-    };
+    const getMifLabel = (value) => _getMifLabel({ value, mifOptions, isEn });
+    const getManufacturerLabel = (value) => _getManufacturerLabel({ value, manufacturerOptions });
+    const getDeviceTypeLabel = (value) => _getDeviceTypeLabel({ value, deviceTypeOptions });
 
     const mifBusy = mifLoading || mifValidating;
     const manuBusy = manuLoading || manuValidating;
@@ -211,11 +128,9 @@ const VehicleCategoryPage = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isModalOpen]);
 
-    /* =========================
-        SWR: list vehicle categories
-    ========================= */
-    const listParams = useMemo(() => {
-        return {
+    // ===== SWR LIST
+    const listParams = useMemo(
+        () => ({
             page: pagination.current,
             limit: pagination.pageSize,
             name: filters.name || undefined,
@@ -223,8 +138,9 @@ const VehicleCategoryPage = () => {
             year: filters.year || undefined,
             model: filters.model || undefined,
             madeInFrom: filters.madeInFrom || undefined,
-        };
-    }, [pagination.current, pagination.pageSize, filters]);
+        }),
+        [pagination.current, pagination.pageSize, filters],
+    );
 
     const listKey = token && role && role !== 'customer' ? ['vehicleCategories', token, listParams] : null;
 
@@ -251,24 +167,11 @@ const VehicleCategoryPage = () => {
     const data = listRes?.items || [];
     const apiTotal = listRes?.total ?? 0;
 
-    /* =========================
-        TABLE CHANGE
-    ========================= */
-    const handleTableChange = (pag) => {
-        setPagination({
-            current: pag.current,
-            pageSize: pag.pageSize,
-        });
-    };
+    const handleTableChange = (pag) => setPagination({ current: pag.current, pageSize: pag.pageSize });
 
-    /* =========================
-        MODAL
-    ========================= */
+    // ===== MODAL handlers
     const openCreateModal = () => {
-        if (!isAdmin) {
-            message.warning(t.noPermissionCreate);
-            return;
-        }
+        if (!isAdmin) return message.warning(t.noPermissionCreate);
         prefetchOptions();
         setEditingItem(null);
         form.resetFields();
@@ -276,10 +179,7 @@ const VehicleCategoryPage = () => {
     };
 
     const openEditModal = (record) => {
-        if (!canEdit) {
-            message.warning(t.noPermissionEdit);
-            return;
-        }
+        if (!canEdit) return message.warning(t.noPermissionEdit);
 
         prefetchOptions();
         setEditingItem(record);
@@ -295,10 +195,7 @@ const VehicleCategoryPage = () => {
     };
 
     const handleDelete = async (record) => {
-        if (!isAdmin) {
-            message.warning(t.noPermissionDelete);
-            return;
-        }
+        if (!isAdmin) return message.warning(t.noPermissionDelete);
         if (!token) return;
 
         try {
@@ -312,10 +209,7 @@ const VehicleCategoryPage = () => {
     };
 
     const handleModalOk = async () => {
-        if (!canEdit) {
-            message.warning(t.noPermissionAction);
-            return;
-        }
+        if (!canEdit) return message.warning(t.noPermissionAction);
         if (!token) return;
 
         try {
@@ -359,133 +253,27 @@ const VehicleCategoryPage = () => {
         }
     };
 
-    /* =========================
-        SEARCH / RESET
-    ========================= */
-    const handleSearch = () => {
-        setPagination((p) => ({ ...p, current: 1 }));
-    };
-
+    // ===== SEARCH / RESET
+    const handleSearch = () => setPagination((p) => ({ ...p, current: 1 }));
     const handleResetFilter = () => {
-        setFilters({
-            name: '',
-            manufacturer: '',
-            year: '',
-            model: '',
-            madeInFrom: '',
-        });
+        setFilters({ name: '', manufacturer: '', year: '', model: '', madeInFrom: '' });
         setPagination((p) => ({ ...p, current: 1 }));
     };
 
-    /* =========================
-       EXPORT EXCEL
-    ========================= */
-    const exportExcel = () => {
-        if (!data.length) {
-            message.warning(t.noDataToExport);
-            return;
-        }
+    // ===== EXPORT EXCEL
+    const onExportExcel = () => {
+        const res = exportVehicleCategoriesExcel({
+            data,
+            t,
+            getManufacturerLabel,
+            getMifLabel: getMifLabel,
+            getDeviceTypeLabel,
+        });
 
-        try {
-            const excelData = data.map((item) => ({
-                [t.columns.name]: item.name || '',
-                [t.columns.manufacturer]: getManufacturerLabel(item.manufacturer),
-                Năm: item.year || '',
-                [t.columns.model]: item.model || '',
-                [t.columns.origin]: getMifLabel(item.madeInFrom),
-                [t.columns.deviceType]: getDeviceTypeLabel(item.deviceTypeId || item.deviceType_id),
-            }));
-
-            const ws = XLSX.utils.json_to_sheet(excelData, { origin: 'A2' });
-            const headers = Object.keys(excelData[0]);
-
-            const title = t.exportTitle;
-            ws['A1'] = { v: title, t: 's' };
-            ws['!merges'] = [
-                {
-                    s: { r: 0, c: 0 },
-                    e: { r: 0, c: headers.length - 1 },
-                },
-            ];
-            ws['A1'].s = {
-                font: { bold: true, sz: 18, color: { rgb: 'FFFFFF' } },
-                fill: { fgColor: { rgb: '4F81BD' } },
-                alignment: { horizontal: 'center', vertical: 'center' },
-            };
-            ws['!rows'] = [{ hpt: 26 }, { hpt: 22 }];
-
-            headers.forEach((h, idx) => {
-                const ref = XLSX.utils.encode_cell({ r: 1, c: idx });
-                if (!ws[ref]) return;
-                ws[ref].s = {
-                    font: { bold: true, color: { rgb: 'FFFFFF' } },
-                    fill: { fgColor: { rgb: '4F81BD' } },
-                    alignment: { horizontal: 'center', vertical: 'center' },
-                    border: {
-                        top: { style: 'thin', color: { rgb: '000000' } },
-                        bottom: { style: 'thin', color: { rgb: '000000' } },
-                        left: { style: 'thin', color: { rgb: '000000' } },
-                        right: { style: 'thin', color: { rgb: '000000' } },
-                    },
-                };
-            });
-
-            const range = XLSX.utils.decode_range(ws['!ref']);
-
-            for (let R = range.s.r; R <= range.e.r; R++) {
-                for (let C = range.s.c; C <= range.e.c; C++) {
-                    const ref = XLSX.utils.encode_cell({ r: R, c: C });
-                    const cell = ws[ref];
-                    if (!cell) continue;
-
-                    cell.s = cell.s || {};
-                    cell.s.alignment = { horizontal: 'center', vertical: 'center' };
-                    cell.s.border = {
-                        top: { style: 'thin', color: { rgb: '000000' } },
-                        bottom: { style: 'thin', color: { rgb: '000000' } },
-                        left: { style: 'thin', color: { rgb: '000000' } },
-                        right: { style: 'thin', color: { rgb: '000000' } },
-                    };
-
-                    if (R > 1 && R % 2 === 0) {
-                        cell.s.fill = cell.s.fill || {};
-                        cell.s.fill.fgColor = cell.s.fill.fgColor || { rgb: 'F9F9F9' };
-                    }
-                }
-            }
-
-            ws['!cols'] = headers.map((key) => {
-                const maxLen = Math.max(key.length, ...excelData.map((row) => String(row[key] || '').length));
-                return { wch: maxLen + 4 };
-            });
-
-            ws['!autofilter'] = {
-                ref: XLSX.utils.encode_range({
-                    s: { r: 1, c: 0 },
-                    e: { r: range.e.r, c: range.e.c },
-                }),
-            };
-
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'VehicleCategories');
-
-            const excelBuffer = XLSX.write(wb, {
-                bookType: 'xlsx',
-                type: 'array',
-                cellStyles: true,
-            });
-
-            saveAs(new Blob([excelBuffer]), `DanhSachDongXe_${getTodayForFileName()}.xlsx`);
-            message.success(t.exportSuccess);
-        } catch (err) {
-            console.error('Export excel vehicle category error:', err);
-            message.error(t.exportFailed);
-        }
+        if (!res.ok && res.reason === 'NO_DATA') message.warning(t.noDataToExport);
+        if (res.ok) message.success(t.exportSuccess);
     };
 
-    /* =========================
-       COLUMNS
-    ========================= */
     const columns = [
         {
             title: t.columns.name,
@@ -524,10 +312,7 @@ const VehicleCategoryPage = () => {
             title: t.columns.deviceType,
             dataIndex: 'deviceTypeId',
             key: 'deviceTypeId',
-            render: (value, record) => {
-                const v = value || record.deviceType_id;
-                return getDeviceTypeLabel(v) || '-';
-            },
+            render: (value, record) => getDeviceTypeLabel(value || record.deviceType_id) || '-',
         },
         {
             title: t.columns.actions,
@@ -558,18 +343,7 @@ const VehicleCategoryPage = () => {
         },
     ];
 
-    // customer -> chặn luôn trang
-    if (isCustomer) {
-        return (
-            <div className="vc-page">
-                <Card className="vc-card" title={t.title}>
-                    <p style={{ color: '#ef4444', fontWeight: 500, margin: 0 }}>{t.noPermissionPage}</p>
-                </Card>
-            </div>
-        );
-    }
-
-    if (!canView) {
+    if (isCustomer || !canView) {
         return (
             <div className="vc-page">
                 <Card className="vc-card" title={t.title}>
@@ -589,7 +363,7 @@ const VehicleCategoryPage = () => {
                         <Button icon={<ReloadOutlined />} onClick={() => mutateList()}>
                             {t.refresh}
                         </Button>
-                        <Button icon={<DownloadOutlined />} onClick={exportExcel} disabled={!data.length}>
+                        <Button icon={<DownloadOutlined />} onClick={onExportExcel} disabled={!data.length}>
                             {t.exportExcel}
                         </Button>
                         {canCreate && (
@@ -600,7 +374,6 @@ const VehicleCategoryPage = () => {
                     </Space>
                 }
             >
-                {/* Bộ lọc */}
                 <div className="vc-filter">
                     <Input
                         allowClear
@@ -636,7 +409,6 @@ const VehicleCategoryPage = () => {
                         value={filters.year}
                         onChange={(e) => setFilters((prev) => ({ ...prev, year: e.target.value }))}
                     />
-
                     <Input
                         allowClear
                         placeholder={t.filters.model}
@@ -672,7 +444,6 @@ const VehicleCategoryPage = () => {
                     </Space>
                 </div>
 
-                {/* Bảng */}
                 <Table
                     rowKey="_id"
                     loading={listLoading || listValidating}
@@ -691,109 +462,25 @@ const VehicleCategoryPage = () => {
                 />
             </Card>
 
-            {/* Modal thêm / sửa */}
-            <Modal
+            <VehicleCategoryModal
                 open={isModalOpen}
-                title={editingItem ? t.modal.editTitle : t.modal.createTitle}
+                editingItem={editingItem}
+                t={t}
+                form={form}
                 onOk={handleModalOk}
                 onCancel={() => {
                     setIsModalOpen(false);
                     form.resetFields();
                 }}
-                okText={t.modal.okText}
-                cancelText={t.modal.cancelText}
-                wrapClassName="vc-modal"
-                destroyOnClose
-            >
-                <Form form={form} layout="vertical">
-                    <Form.Item
-                        label={t.form.nameLabel}
-                        name="name"
-                        rules={[{ required: true, message: t.form.nameRequired }]}
-                    >
-                        <Input />
-                    </Form.Item>
-
-                    <Form.Item
-                        label={t.form.manufacturerLabel}
-                        name="manufacturer"
-                        rules={[{ required: true, message: t.form.manufacturerRequired }]}
-                    >
-                        <Select
-                            placeholder={t.form.manufacturerLabel}
-                            getPopupContainer={popupInParent}
-                            loading={manuBusy}
-                            disabled={manuBusy}
-                            notFoundContent={manuBusy ? <Spin size="small" /> : null}
-                            showSearch
-                            optionFilterProp="children"
-                        >
-                            {manufacturerOptions.map((opt) => (
-                                <Option key={opt.value} value={opt.value}>
-                                    {opt.label}
-                                </Option>
-                            ))}
-                        </Select>
-                    </Form.Item>
-
-                    <Form.Item
-                        label={t.form.yearLabel}
-                        name="year"
-                        rules={[{ required: true, message: t.form.yearRequired }]}
-                    >
-                        <Input />
-                    </Form.Item>
-
-                    <Form.Item
-                        label={t.form.modelLabel}
-                        name="model"
-                        rules={[{ required: true, message: t.form.modelRequired }]}
-                    >
-                        <Input />
-                    </Form.Item>
-
-                    <Form.Item
-                        label={t.form.originLabel}
-                        name="madeInFrom"
-                        rules={[{ required: true, message: t.form.originRequired }]}
-                    >
-                        <Select
-                            placeholder={t.form.originPlaceholder}
-                            getPopupContainer={popupInParent}
-                            loading={mifBusy}
-                            disabled={mifBusy}
-                            notFoundContent={mifBusy ? <Spin size="small" /> : null}
-                            showSearch
-                            optionFilterProp="children"
-                        >
-                            {mifOptions.map((opt) => (
-                                <Option key={opt.value} value={opt.value}>
-                                    {getMifLabel(opt.value)}
-                                </Option>
-                            ))}
-                        </Select>
-                    </Form.Item>
-
-                    <Form.Item label={t.form.deviceTypeLabel} name="deviceTypeId">
-                        <Select
-                            allowClear
-                            placeholder={t.form.deviceTypePlaceholder}
-                            getPopupContainer={popupInParent}
-                            loading={dcBusy}
-                            disabled={dcBusy}
-                            notFoundContent={dcBusy ? <Spin size="small" /> : null}
-                            showSearch
-                            optionFilterProp="children"
-                        >
-                            {deviceTypeOptions.map((opt) => (
-                                <Option key={opt.value} value={opt.value}>
-                                    {opt.label}
-                                </Option>
-                            ))}
-                        </Select>
-                    </Form.Item>
-                </Form>
-            </Modal>
+                popupInParent={popupInParent}
+                manuBusy={manuBusy}
+                mifBusy={mifBusy}
+                dcBusy={dcBusy}
+                manufacturerOptions={manufacturerOptions}
+                mifOptions={mifOptions}
+                deviceTypeOptions={deviceTypeOptions}
+                getMifLabel={getMifLabel}
+            />
         </div>
     );
 };

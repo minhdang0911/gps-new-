@@ -107,7 +107,7 @@ const TripReportPage = () => {
     const { distributorMap, getDistributorLabel } = useTripReportDistributors({ getUserList });
 
     // ✅ device maps
-    const { imeiToPlate, plateToImeis, loadingDeviceMap } = useTripReportDeviceMap({
+    const { imeiToPlate, plateToImeis, loadingDeviceMap, refreshDeviceMap } = useTripReportDeviceMap({
         buildImeiToLicensePlateMap,
     });
 
@@ -154,9 +154,11 @@ const TripReportPage = () => {
         (s || '').toString().trim().toUpperCase().replace(/\s+/g, '').replace(/[._]/g, '-').replace(/--+/g, '-');
 
     // ===== actions =====
-    const onFinish = () => {
-        const values = form.getFieldsValue();
+    const onFinish = async () => {
+        // ✅ ensure map mới trước khi map plate -> imei
+        await refreshDeviceMap();
 
+        const values = form.getFieldsValue();
         const imeiInput = normStr(values?.imei || '');
         const plateInput = normalizePlate(values?.license_plate || '');
 
@@ -175,7 +177,7 @@ const TripReportPage = () => {
         fetchData({ page: 1, filters: newValues, sortMode }, { force: true });
     };
 
-    const onReset = () => {
+    const onReset = async () => {
         form.resetFields();
         setSortMode('none');
         setPagination((p) => ({ ...p, current: 1 }));
@@ -184,7 +186,10 @@ const TripReportPage = () => {
         const values = {};
         setFilterValues(values);
 
-        fetchData({ page: 1, filters: values, sortMode: 'none' }, { force: true });
+        await Promise.allSettled([
+            refreshDeviceMap(),
+            fetchData({ page: 1, filters: values, sortMode: 'none' }, { force: true }),
+        ]);
     };
 
     const handleTableChange = (pager) => {
@@ -475,7 +480,7 @@ const TripReportPage = () => {
                 onClose={() => setColModalOpen(false)}
                 allCols={allColsForModal}
                 visibleOrder={visibleOrder}
-                storageKey={STORAGE_KEY}
+                setVisibleOrder={setVisibleOrder}
                 lockedKeys={LOCKED_KEYS}
                 texts={{
                     title: isEn ? 'Manage columns' : 'Quản lý cột',

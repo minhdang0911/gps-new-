@@ -410,7 +410,6 @@ const UsageSessionReportPage = () => {
                 allCols={allColsForModal}
                 visibleOrder={visibleOrder}
                 setVisibleOrder={setVisibleOrder}
-                storageKey={STORAGE_KEY}
                 lockedKeys={LOCKED_KEYS}
                 texts={{
                     title: isEn ? 'Manage columns' : 'Quản lý cột',

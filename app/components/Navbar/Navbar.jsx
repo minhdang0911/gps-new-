@@ -34,6 +34,8 @@ const navItems = [
 const Navbar = () => {
     const router = useRouter();
     const pathname = usePathname() || '/';
+
+    // ✅ FIX: ref phải là object từ useRef()
     const dropdownRef = useRef(null);
 
     const [openDropdown, setOpenDropdown] = useState(false);
@@ -41,9 +43,10 @@ const Navbar = () => {
     const [isEn, setIsEn] = useState(false);
     const [mounted, setMounted] = useState(false);
 
-    // ✅ Tất cả hooks phải được gọi trước bất kỳ return nào
-    const user = useAuthStore((state) => state.user);
-    const clearUser = useAuthStore((state) => state.clearUser);
+    // ✅ Zustand
+    const user = useAuthStore((s) => s.user);
+    const hydrated = useAuthStore((s) => s.hydrated);
+    const clearUser = useAuthStore((s) => s.clearUser);
 
     // tách /en khỏi pathname để lấy normalizedPath + flag en từ URL
     const { isEnFromPath, normalizedPath } = useMemo(() => {
@@ -132,10 +135,14 @@ const Navbar = () => {
         } catch (err) {
             console.error('Lỗi khi đăng xuất:', err);
         } finally {
-            // Xóa Zustand store
-            clearUser();
+            // ✅ Xóa Zustand store
+            try {
+                clearUser();
+            } catch (e) {
+                console.error('clearUser error:', e);
+            }
 
-            // Xóa token + dữ liệu
+            // ✅ Xóa token + dữ liệu
             if (typeof window !== 'undefined') {
                 localStorage.removeItem('accessToken');
                 localStorage.removeItem('refreshToken');
@@ -172,6 +179,7 @@ const Navbar = () => {
                     <img src={logo.src} alt="IKY GPS" className="iky-nav__logo-img" />
                 </div>
             </Link>
+
             <nav className="iky-nav__menu">
                 {filteredNavItems.map((item) => (
                     <button
@@ -203,6 +211,7 @@ const Navbar = () => {
                         <Image src={flagVi} alt="Tiếng Việt" width={16} height={16} />
                         <span className="iky-nav__lang-text">VI</span>
                     </button>
+
                     <button
                         type="button"
                         className={'iky-nav__lang-btn' + (isEn ? ' iky-nav__lang-btn--active' : '')}
@@ -214,7 +223,9 @@ const Navbar = () => {
                 </div>
 
                 <div className="iky-nav__user" ref={dropdownRef} onClick={() => setOpenDropdown((prev) => !prev)}>
-                    <span className="iky-nav__user-name">{user?.username || user?.email || 'Tài khoản'}</span>
+                    <span className="iky-nav__user-name">
+                        {!hydrated ? '...' : user?.username || user?.email || 'Tài khoản'}
+                    </span>
 
                     {openDropdown ? (
                         <UpOutlined className="iky-nav__user-caret" />
@@ -225,6 +236,7 @@ const Navbar = () => {
                     {openDropdown && (
                         <div className="iky-nav__dropdown" onClick={(e) => e.stopPropagation()}>
                             <button className="iky-nav__dropdown-item">{isEn ? 'Profile' : 'Cá nhân'}</button>
+
                             <button className="iky-nav__dropdown-item" onClick={handleLogout} disabled={isLoggingOut}>
                                 {isLoggingOut
                                     ? isEn

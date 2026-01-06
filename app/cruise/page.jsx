@@ -18,28 +18,10 @@ import Image from 'next/image';
 import { Select } from 'antd';
 import { FixedSizeList as VirtualList } from 'react-window';
 
+// ✅ use shared reverse geocode (multi-provider)
+import { reverseGeocodeAddress } from '../lib/address/reverseGeocode';
+
 const locales = { vi, en };
-
-// ===============================
-// 🔑 GOONG KEYS
-// ===============================
-const GOONG_KEYS = [
-    process.env.NEXT_PUBLIC_GOONG_API_KEY,
-    process.env.NEXT_PUBLIC_GOONG_API_KEY1,
-    process.env.NEXT_PUBLIC_GOONG_API_KEY3,
-    process.env.NEXT_PUBLIC_GOONG_API_KEY4,
-    process.env.NEXT_PUBLIC_GOONG_API_KEY5,
-    process.env.NEXT_PUBLIC_GOONG_API_KEY6,
-    process.env.NEXT_PUBLIC_GOONG_API_KEY7,
-    process.env.NEXT_PUBLIC_GOONG_API_KEY8,
-].filter(Boolean);
-
-let goongKeyIndex = 0;
-const getCurrentGoongKey = () => (GOONG_KEYS.length ? GOONG_KEYS[goongKeyIndex % GOONG_KEYS.length] : null);
-const moveToNextGoongKey = () => {
-    if (!GOONG_KEYS.length) return;
-    goongKeyIndex = (goongKeyIndex + 1) % GOONG_KEYS.length;
-};
 
 // ===============================
 // ⚙️ CONFIG
@@ -170,55 +152,6 @@ const nearestRenderIndex = (renderToRaw, rawIdx) => {
     const a = Math.max(0, Math.min(renderToRaw.length - 1, lo));
     const b = Math.max(0, Math.min(renderToRaw.length - 1, lo - 1));
     return Math.abs(renderToRaw[a] - rawIdx) < Math.abs(renderToRaw[b] - rawIdx) ? a : b;
-};
-
-// ===============================
-// ✅ Reverse Geocode Goong (cache + rotation)
-// ===============================
-const pickBestGoongV2Address = (results = []) => {
-    if (!Array.isArray(results) || results.length === 0) return '';
-    const chosen = results[0];
-    const formatted = (chosen.formatted_address || '').trim();
-    const addr = (chosen.address || '').trim();
-    const name = (chosen.name || '').trim();
-    if (formatted) return formatted;
-    if (name && addr) return `${name}, ${addr}`;
-    if (addr) return addr;
-    if (name) return name;
-    return '';
-};
-
-const callGoongReverse = async (lat, lon, lang = 'vi') => {
-    if (!GOONG_KEYS.length) return '';
-    for (let i = 0; i < GOONG_KEYS.length; i++) {
-        const apiKey = getCurrentGoongKey();
-        if (!apiKey) break;
-
-        try {
-            const url =
-                `https://rsapi.goong.io/v2/geocode?latlng=${lat},${lon}` +
-                `&api_key=${apiKey}&limit=1&has_deprecated_administrative_unit=true&language=${lang}`;
-
-            const res = await fetch(url);
-            const data = await res.json().catch(() => null);
-
-            if (res.status === 429 || res.status === 403 || data?.error_code === 429 || data?.error_code === 403) {
-                moveToNextGoongKey();
-                continue;
-            }
-            if (!res.ok || !data) {
-                moveToNextGoongKey();
-                continue;
-            }
-            const addr = pickBestGoongV2Address(data?.results || []);
-            if (addr) return addr;
-
-            moveToNextGoongKey();
-        } catch {
-            moveToNextGoongKey();
-        }
-    }
-    return '';
 };
 
 // ===============================
@@ -420,7 +353,6 @@ const CruisePage = () => {
         if (lastScrollRef.current === activeIndex) return;
         lastScrollRef.current = activeIndex;
 
-        // 'center' hoặc 'smart'
         vlistRef.current.scrollToItem(activeIndex, 'center');
     }, [activeIndex, isPlaying]);
 
@@ -551,7 +483,7 @@ const CruisePage = () => {
         }
     };
 
-    // ✅ fetch address lazily + cache (CACHE THEO NGÔN NGỮ)
+    // ✅ fetch address lazily + cache (CACHE THEO NGÔN NGỮ) - dùng multi-provider
     const ensureAddress = async (lat, lon) => {
         if (lat == null || lon == null) return '';
 
@@ -564,10 +496,11 @@ const CruisePage = () => {
         if (inflightRef.current.has(key)) return inflightRef.current.get(key);
 
         const p = (async () => {
-            const addr = await callGoongReverse(lat, lon, lang);
+            const res = await reverseGeocodeAddress(lat, lon, { lang, isEn });
+            const addr = res?.address || '';
             if (addr) addressCacheRef.current.set(key, addr);
             inflightRef.current.delete(key);
-            return addr || '';
+            return addr;
         })();
 
         inflightRef.current.set(key, p);

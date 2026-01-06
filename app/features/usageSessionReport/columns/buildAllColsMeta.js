@@ -80,10 +80,10 @@ export function buildAllColsMeta({ t, isEn, isMobile, vehicleFilterOptions, batt
             },
         },
         {
-            key: 'sessionId',
-            label: t.table.sessionId,
+            key: 'usageCode',
+            label: t.table.usageCode,
             column: {
-                title: <ColTitle label={t.table.sessionId} tip={colHelp.sessionId} isEn={isEn} isMobile={isMobile} />,
+                title: <ColTitle label={t.table.usageCode} tip={colHelp.usageCode} isEn={isEn} isMobile={isMobile} />,
                 dataIndex: 'usageCode',
                 ellipsis: true,
                 width: 210,
@@ -114,16 +114,7 @@ export function buildAllColsMeta({ t, isEn, isMobile, vehicleFilterOptions, batt
                 filteredValue: tableFilters.batteryId || null,
             },
         },
-        {
-            key: 'usageCode',
-            label: t.table.usageCode,
-            column: {
-                title: <ColTitle label={t.table.usageCode} tip={colHelp.usageCode} isEn={isEn} isMobile={isMobile} />,
-                dataIndex: 'usageCode',
-                ellipsis: true,
-                width: 210,
-            },
-        },
+
         {
             key: 'durationMinutes',
             label: t.table.durationMinutes,

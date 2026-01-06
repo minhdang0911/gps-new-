@@ -1,27 +1,26 @@
-@import 'tailwindcss';
-
 :root {
     --background: #ffffff;
     --foreground: #171717;
 }
 
-* {
-    -webkit-font-smoothing: antialiased !important;
-    -moz-osx-font-smoothing: grayscale !important;
-    text-rendering: optimizeLegibility !important;
-    padding: 0;
-    margin: 0;
+*,
+*::before,
+*::after {
     box-sizing: border-box;
 }
 
+/* reset nhẹ nhàng */
 html,
 body {
+    margin: 0;
+    padding: 0;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
 }
 
 body {
     background: var(--background);
-    color: black !important;
+    color: black;
     font-family: Arial, Helvetica, sans-serif;
 }

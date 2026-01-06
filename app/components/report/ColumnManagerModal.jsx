@@ -71,7 +71,8 @@ export default function ColumnManagerModal({
     visibleOrder,
     setVisibleOrder,
 
-    storageKey,
+    onApply, // ✅ thêm
+    onReset, // ✅ thêm
     lockedKeys = ['index'],
 
     texts = {
@@ -138,9 +139,6 @@ export default function ColumnManagerModal({
     };
 
     const handleApply = () => {
-        try {
-            localStorage.setItem(storageKey, JSON.stringify(visibleOrder));
-        } catch {}
         onClose?.();
     };
 
@@ -151,9 +149,7 @@ export default function ColumnManagerModal({
         const next = [...locked, ...rest];
 
         setVisibleOrder(next);
-        try {
-            localStorage.setItem(storageKey, JSON.stringify(next));
-        } catch {}
+        onReset?.(next); // 👈 báo cho hook persist
     };
 
     return (

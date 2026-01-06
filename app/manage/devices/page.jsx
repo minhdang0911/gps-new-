@@ -1,394 +1,147 @@
+// =========================
+// pages/manage-devices/page.jsx (hoặc file ManageDevicesPage bạn đang dùng)
+// =========================
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import useSWR from 'swr';
-import {
-    Card,
-    Input,
-    Button,
-    Table,
-    Space,
-    Typography,
-    Form,
-    Row,
-    Col,
-    Modal,
-    Descriptions,
-    Select,
-    message,
-    Spin,
-} from 'antd';
-
-import {
-    SearchOutlined,
-    PlusOutlined,
-    EditOutlined,
-    DeleteOutlined,
-    ArrowLeftOutlined,
-    EyeOutlined,
-    DownloadOutlined,
-} from '@ant-design/icons';
-
+import React, { useMemo, useState, useEffect } from 'react';
+import { Form, message } from 'antd';
 import { usePathname } from 'next/navigation';
 
-import markerIcon from '../../assets/marker-red.png';
+// ✅ đổi sang 4 icon theo logic mới
+import markerIconStop from '../../assets/marker-red.png';
+import markerRun from '../../assets/marker-run.png';
+import markerRun50 from '../../assets/marker-run50.png';
+import markerRun80 from '../../assets/marker-run80.png';
+
 import { getTodayForFileName } from '../../util/FormatDate';
 
-// API REAL
 import { getDevices, createDevice, updateDevice, deleteDevice } from '../../lib/api/devices';
 import { getDeviceCategories } from '../../lib/api/deviceCategory';
 import { getVehicleCategories } from '../../lib/api/vehicleCategory';
 import { getUserList } from '../../lib/api/user';
-
 import { getLastCruise } from '../../lib/api/cruise';
 import { getBatteryStatusByImei } from '../../lib/api/batteryStatus';
 
-// locales
 import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
 
-const locales = { vi, en };
+import { useManageDevicesData } from '../../hooks/manageDevices/useManageDevicesData';
+import { useDeviceDetail } from '../../hooks/manageDevices/useDeviceDetail';
+import { useLeafletDeviceMap } from '../../hooks/manageDevices/useLeafletDeviceMap';
+import { useDeviceCommandBar } from '../../hooks/manageDevices/useDeviceCommandBar';
 
-const { Title, Text } = Typography;
-const { Option } = Select;
+import { exportDevicesExcel } from '../../util/manageDevices/exportDevicesExcel';
+import { buildPendingFormValues, validatePhone, extractErrorMsg } from '../../util/manageDevices/deviceFormHandlers';
+
+import { useUndoDeleteToast } from '../../hooks/common/useUndoDeleteToast';
+
+import DeviceListView from '../../components/manageDevices/DeviceListView';
+import DeviceDetailView from '../../components/manageDevices/DeviceDetailView';
+import DeviceUpsertModal from '../../components/manageDevices/DeviceUpsertModal';
+import DeviceCommandBarModal from '../../components/manageDevices/DeviceCommandBarModal';
+
+const locales = { vi, en };
 
 export default function ManageDevicesPage() {
     const pathname = usePathname() || '/';
 
-    // ✅ đọc token/role ngay ở initial state để giảm “nháy trắng”
-    const [token] = useState(() => {
-        if (typeof window === 'undefined') return '';
-        return localStorage.getItem('accessToken') || '';
-    });
-    const [currentRole] = useState(() => {
-        if (typeof window === 'undefined') return '';
-        return localStorage.getItem('role') || '';
-    });
-
-    const [LMap, setLMap] = useState(null);
+    const [token] = useState(() => (typeof window === 'undefined' ? '' : localStorage.getItem('accessToken') || ''));
+    const [currentRole] = useState(() => (typeof window === 'undefined' ? '' : localStorage.getItem('role') || ''));
 
     const canEditDevice = currentRole === 'administrator' || currentRole === 'distributor';
     const canAddDevice = currentRole === 'administrator';
     const canDeleteDevice = currentRole === 'administrator';
 
-    const [isEn, setIsEn] = useState(false);
+    const isEn = useMemo(() => {
+        if (typeof window === 'undefined') return false;
 
-    // detect /en ở cuối path: /manage/devices/en
-    const isEnFromPath = useMemo(() => {
-        const segments = pathname.split('/').filter(Boolean);
-        const last = segments[segments.length - 1];
-        return last === 'en';
-    }, [pathname]);
-
-    // sync lang theo URL + localStorage (same pattern Navbar/StatusBar)
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-
-        if (isEnFromPath) {
-            setIsEn(true);
-            localStorage.setItem('iky_lang', 'en');
-        } else {
-            const saved = localStorage.getItem('iky_lang');
-            setIsEn(saved === 'en');
+        const segments = (pathname || '/').split('/').filter(Boolean);
+        const fromPath = segments[segments.length - 1] === 'en';
+        if (fromPath) {
+            // keep behavior: persist language if path is /en
+            try {
+                localStorage.setItem('iky_lang', 'en');
+            } catch {}
+            return true;
         }
-    }, [isEnFromPath]);
+
+        try {
+            return localStorage.getItem('iky_lang') === 'en';
+        } catch {
+            return false;
+        }
+    }, [pathname]);
 
     const t = isEn ? locales.en.manageDevices : locales.vi.manageDevices;
 
-    // FILTER STATE
-    const [filters, setFilters] = useState({
-        phone_number: '',
-        license_plate: '',
-        imei: '',
-        driver: '',
-    });
-
-    // VIEW MODE: 'list' | 'detail'
+    const [filters, setFilters] = useState({ phone_number: '', license_plate: '', imei: '', driver: '' });
     const [viewMode, setViewMode] = useState('list');
     const [selectedDevice, setSelectedDevice] = useState(null);
 
-    // MODAL STATE: 'add' | 'edit' | null
     const [modalMode, setModalMode] = useState(null);
+    const [pendingFormValues, setPendingFormValues] = useState(null);
     const [form] = Form.useForm();
 
-    // MAP REF
-    const mapRef = useRef(null);
-
-    // PAGINATION STATE
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
 
-    /* =========================
-        SWR: LIST DEVICES (pagination + filter)
-        - keepPreviousData: giữ list cũ khi đổi page/filter
-    ========================= */
-    const listParams = useMemo(
-        () => ({
-            page: currentPage,
-            limit: pageSize,
-            ...filters,
-        }),
-        [currentPage, pageSize, filters],
-    );
-
-    const devicesKey = ['devices', listParams];
-
-    const devicesFetcher = async ([, params]) => {
-        return getDevices(params);
-    };
-
     const {
-        data: devicesRes,
-        isLoading: devicesLoading,
-        isValidating: devicesValidating,
-        mutate: mutateDevices,
-    } = useSWR(devicesKey, devicesFetcher, {
-        keepPreviousData: true,
-        revalidateOnFocus: false,
-        dedupingInterval: 10_000,
-    });
-    const devices = devicesRes?.devices || [];
-    const total =
-        devicesRes?.total ??
-        devicesRes?.pagination?.total ??
-        (Array.isArray(devicesRes?.devices) ? devicesRes.devices.length : 0);
+        devices,
+        total,
+        devicesLoading,
+        devicesValidating,
+        mutateDevices,
 
-    /* =========================
-        SWR: OPTIONS
-        ✅ FIX:
-        - expose isLoading + mutate để prefetch khi mở modal
-        - user fetcher fallback: thử không token, fail thì thử có token (tránh 401 làm dropdown trống)
-    ========================= */
-    const {
-        data: dcRes,
-        isLoading: dcLoading,
-        mutate: mutateDC,
-    } = useSWR(token ? ['deviceCategories', token] : null, ([, tk]) => getDeviceCategories(tk, { limit: 1000 }), {
-        revalidateOnFocus: false,
-        dedupingInterval: 60_000,
+        deviceCategories,
+        vehicleCategories,
+        userOptions,
+        dcLoading,
+        vcLoading,
+        usersLoading,
+        prefetchOptions,
+    } = useManageDevicesData({
+        token,
+        currentPage,
+        pageSize,
+        filters,
+        getDevices,
+        getDeviceCategories,
+        getVehicleCategories,
+        getUserList,
+        modalMode,
     });
 
-    const {
-        data: vcRes,
-        isLoading: vcLoading,
-        mutate: mutateVC,
-    } = useSWR(token ? ['vehicleCategories', token] : null, ([, tk]) => getVehicleCategories(tk, { limit: 1000 }), {
-        revalidateOnFocus: false,
-        dedupingInterval: 60_000,
+    const { cruiseInfo, batteryInfo, getEngineStatusText, getVehicleStatusText } = useDeviceDetail({
+        token,
+        viewMode,
+        selectedDevice,
+        isEn,
+        getLastCruise,
+        getBatteryStatusByImei,
     });
 
-    const usersFetcher = async () => {
-        // Nếu API users của bạn không cần token: call 1 sẽ OK.
-        // Nếu cần token mà bạn quên truyền: call 1 fail -> call 2 thử truyền token.
-        try {
-            return await getUserList({ limit: 2000 });
-        } catch (e1) {
-            if (!token) throw e1;
-            return await getUserList(token, { limit: 2000 });
-        }
-    };
-
-    const {
-        data: usersRes,
-        isLoading: usersLoading,
-        mutate: mutateUsers,
-    } = useSWR(['users', token || 'no-token'], usersFetcher, {
-        revalidateOnFocus: false,
-        dedupingInterval: 60_000,
-    });
-
-    const deviceCategories = dcRes?.items || [];
-    const vehicleCategories = vcRes?.items || [];
-    const userOptions = usersRes?.items || [];
-
-    const prefetchOptions = () => {
-        // trigger revalidate; không cần await
-        try {
-            mutateDC?.();
-            mutateVC?.();
-            mutateUsers?.();
-        } catch (_) {}
-    };
-
-    // ✅ Prefetch mỗi khi mở modal để user bấm là có data ngay (khỏi F5)
-    useEffect(() => {
-        if (modalMode) prefetchOptions();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [modalMode]);
-
-    /* =========================
-        SWR: DETAIL (CRUISE + BATTERY)
-        - battery refresh interval (tuỳ bạn chỉnh)
-    ========================= */
-    const selectedImei = selectedDevice?.imei;
-
-    const { data: cruiseInfo } = useSWR(
-        token && viewMode === 'detail' && selectedImei ? ['lastCruise', token, selectedImei] : null,
-        ([, tk, imei]) => getLastCruise(tk, imei),
-        { revalidateOnFocus: false },
-    );
-
-    const { data: batteryRes } = useSWR(
-        token && viewMode === 'detail' && selectedImei ? ['battery', token, selectedImei] : null,
-        ([, tk, imei]) => getBatteryStatusByImei(tk, imei),
-        {
-            revalidateOnFocus: false,
-            refreshInterval: 30_000, // ⭐ pin refresh mỗi 30s (muốn tắt: xoá dòng này)
+    // ✅ PASS 4 ICONS VÀO MAP HOOK
+    const { destroyMap } = useLeafletDeviceMap({
+        enabled: viewMode === 'detail',
+        selectedDevice,
+        cruiseInfo,
+        batteryInfo,
+        markerAssets: {
+            stop: markerIconStop,
+            run: markerRun,
+            run50: markerRun50,
+            run80: markerRun80,
         },
-    );
+        t,
+        isEn,
+        getEngineStatusText,
+        getVehicleStatusText,
+    });
 
-    const batteryInfo = batteryRes?.batteryStatus || null;
-
-    /* =========================
-        ✅ STATUS HELPERS (ACC FIX + VEHICLE STATUS)
-        - Trạng thái máy:
-            acc === 1 => Tắt máy
-            acc null/undefined/không có => Mở máy
-        - Trạng thái xe:
-            acc === 1 => Đổ xe
-            có spd => Chạy xe X km/h
-            không có spd => Dừng xe
-    ========================= */
-    const isAccOff = (acc) => acc === 1;
-
-    const getEngineStatusText = (cruise) => {
-        return isAccOff(cruise?.acc) ? (isEn ? 'Engine off' : 'Tắt máy') : isEn ? 'Engine on' : 'Mở máy';
-    };
-
-    const getVehicleStatusText = (cruise) => {
-        // acc=1 => đổ xe
-        if (isAccOff(cruise?.acc)) return isEn ? 'Parked' : 'Đổ xe';
-
-        // có spd => chạy
-        if (cruise?.spd !== null && cruise?.spd !== undefined) {
-            return isEn ? `Moving ${cruise.spd} km/h` : `Chạy xe ${cruise.spd} km/h`;
-        }
-
-        // không spd => dừng
-        return isEn ? 'Stopped' : 'Dừng xe';
-    };
-
-    /* =========================
-        EXPORT EXCEL (dynamic import)
-    ========================= */
-    const exportExcel = async () => {
+    const onExportExcel = async () => {
         try {
-            if (!devices.length) {
-                return message.warning(t.noData);
-            }
-
-            const XLSX = await import('xlsx-js-style');
-            const { saveAs } = await import('file-saver');
-
-            const excelData = devices.map((d) => ({
-                IMEI: d.imei,
-                'Loại thiết bị': d.device_category_id?.name || '-',
-                'Số ĐT': d.phone_number || '-',
-                'Biển số': d.license_plate || '-',
-                KháchHàng: d.user_id?.email || 'Chưa gán',
-                ĐạiLý: d.distributor_id?.username || '-',
-                Active: d.active ? 'Có' : 'Không',
-                NgàyTạo: new Date(d.createdAt).toLocaleString('vi-VN'),
-                Driver: d.driver || '-',
-            }));
-
-            const ws = XLSX.utils.json_to_sheet(excelData, { origin: 'A2' });
-            const headers = Object.keys(excelData[0]);
-
-            const title = 'Báo cáo danh sách thiết bị';
-            ws['A1'] = { v: title, t: 's' };
-            ws['!merges'] = [
-                {
-                    s: { r: 0, c: 0 },
-                    e: { r: 0, c: headers.length - 1 },
-                },
-            ];
-
-            ws['A1'].s = {
-                font: { bold: true, sz: 18, color: { rgb: 'FFFFFF' } },
-                fill: { fgColor: { rgb: '4F81BD' } },
-                alignment: { horizontal: 'center', vertical: 'center' },
-            };
-
-            ws['!rows'] = [{ hpt: 28 }, { hpt: 22 }];
-
-            // HEADER ROW
-            headers.forEach((h, idx) => {
-                const cellRef = XLSX.utils.encode_cell({ r: 1, c: idx });
-                if (!ws[cellRef]) return;
-
-                ws[cellRef].s = {
-                    font: { bold: true, color: { rgb: 'FFFFFF' } },
-                    fill: { fgColor: { rgb: '4F81BD' } },
-                    alignment: { horizontal: 'center', vertical: 'center' },
-                    border: {
-                        top: { style: 'thin', color: { rgb: '000000' } },
-                        bottom: { style: 'thin', color: { rgb: '000000' } },
-                        left: { style: 'thin', color: { rgb: '000000' } },
-                        right: { style: 'thin', color: { rgb: '000000' } },
-                    },
-                };
-            });
-
-            const range = XLSX.utils.decode_range(ws['!ref']);
-            const activeCol = headers.indexOf('Active');
-            const khCol = headers.indexOf('KháchHàng');
-
-            for (let R = range.s.r; R <= range.e.r; R++) {
-                for (let C = range.s.c; C <= range.e.c; C++) {
-                    const ref = XLSX.utils.encode_cell({ r: R, c: C });
-                    const cell = ws[ref];
-                    if (!cell) continue;
-
-                    cell.s = cell.s || {};
-                    cell.s.alignment = { horizontal: 'center', vertical: 'center' };
-                    cell.s.border = {
-                        top: { style: 'thin', color: { rgb: '000000' } },
-                        bottom: { style: 'thin', color: { rgb: '000000' } },
-                        left: { style: 'thin', color: { rgb: '000000' } },
-                        right: { style: 'thin', color: { rgb: '000000' } },
-                    };
-
-                    if (R > 1) {
-                        if (R % 2 === 0) {
-                            cell.s.fill = cell.s.fill || {};
-                            cell.s.fill.fgColor = cell.s.fill.fgColor || { rgb: 'F9F9F9' };
-                        }
-
-                        if (C === activeCol && String(cell.v).trim() === 'Không') {
-                            cell.s.fill = { fgColor: { rgb: 'FFC7CE' } };
-                        }
-
-                        if (C === khCol && String(cell.v).trim() === 'Chưa gán') {
-                            cell.s.fill = { fgColor: { rgb: 'FFF2CC' } };
-                        }
-                    }
-                }
-            }
-
-            ws['!cols'] = headers.map((key) => {
-                const maxLen = Math.max(key.length, ...excelData.map((row) => String(row[key] || '').length));
-                return { wch: maxLen + 4 };
-            });
-
-            ws['!autofilter'] = {
-                ref: XLSX.utils.encode_range({
-                    s: { r: 1, c: 0 },
-                    e: { r: range.e.r, c: range.e.c },
-                }),
-            };
-
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'Devices');
-
-            const excelBuffer = XLSX.write(wb, {
-                bookType: 'xlsx',
-                type: 'array',
-                cellStyles: true,
-            });
-
-            saveAs(new Blob([excelBuffer]), `DanhSachThietBi_${getTodayForFileName()}.xlsx`);
-
+            const rs = await exportDevicesExcel({ getDevices, total, filters, t, isEn, getTodayForFileName });
+            if (!rs.ok && rs.reason === 'NO_DATA') return message.warning(t.noData);
             message.success(t.exportSuccess || (isEn ? 'Export Excel success' : 'Xuất Excel thành công'));
         } catch (err) {
             console.error(err);
@@ -396,67 +149,25 @@ export default function ManageDevicesPage() {
         }
     };
 
-    /* =========================
-        ADD
-    ========================= */
     const openAdd = () => {
         if (!canAddDevice) return message.warning(t.noPermissionAdd);
         prefetchOptions();
+        setSelectedDevice(null);
+        setPendingFormValues(null);
         setModalMode('add');
-        form.resetFields();
     };
 
-    /* =========================
-        EDIT
-    ========================= */
     const openEdit = (item) => {
         if (!canEditDevice) return message.warning(t.noPermissionEdit);
-
         prefetchOptions();
-        setModalMode('edit');
         setSelectedDevice(item);
-        form.setFieldsValue({
-            imei: item.imei,
-            phone_number: item.phone_number,
-            license_plate: item.license_plate,
-            driver: item.driver,
-            device_category_id: item.device_category_id?._id,
-            vehicle_category_id: item.vehicle_category_id?._id,
-            user_id: item.user_id?._id,
-            distributor_id: item.distributor_id?._id,
-        });
+        setPendingFormValues(buildPendingFormValues(item));
+        setModalMode('edit');
     };
 
-    /* =========================
-        API ERROR HANDLER
-    ========================= */
-    const extractErrorMsg = (err) => {
-        const data = err?.response?.data;
-
-        if (!data) return isEn ? 'Unknown error' : 'Lỗi không xác định';
-
-        if (Array.isArray(data.errors)) return data.errors.join(', ');
-        if (data.error) return data.error;
-        if (data.message) return data.message;
-
-        return isEn ? 'Unknown error' : 'Lỗi không xác định';
-    };
-
-    /* =========================
-        PHONE VALIDATION
-    ========================= */
-    const validatePhone = (phone) => {
-        if (!phone) return true;
-        return /^(0[2-9][0-9]{8,9})$/.test(phone);
-    };
-
-    /* =========================
-        SAVE (ADD / EDIT)
-    ========================= */
     const handleSave = async () => {
         try {
             const values = await form.validateFields();
-
             if (!validatePhone(values.phone_number)) {
                 return message.error(t.invalidPhone || (isEn ? 'Invalid phone number' : 'Số điện thoại không hợp lệ'));
             }
@@ -472,502 +183,179 @@ export default function ManageDevicesPage() {
                 distributor_id: values.distributor_id,
             };
 
-            if (modalMode === 'add') {
-                await createDevice(token, payload);
-                message.success(t.createSuccess);
-            } else if (modalMode === 'edit' && selectedDevice?._id) {
+            if (modalMode === 'edit') {
                 await updateDevice(token, selectedDevice._id, payload);
                 message.success(t.updateSuccess);
+            } else if (modalMode === 'add') {
+                await createDevice(token, payload);
+                message.success(t.createSuccess);
             }
 
             setModalMode(null);
-            // ✅ refresh list nhanh
+            setPendingFormValues(null);
             mutateDevices();
         } catch (err) {
-            message.error(extractErrorMsg(err));
+            message.error(extractErrorMsg(err, isEn));
         }
-    };
-
-    /* =========================
-        DELETE
-    ========================= */
-    const handleDelete = (id) => {
-        if (!canDeleteDevice) return message.warning(t.noPermissionDelete);
-
-        Modal.confirm({
-            title: t.deleteConfirm,
-            okType: 'danger',
-            onOk: async () => {
-                try {
-                    await deleteDevice(token, id);
-                    message.success(t.deleteSuccess);
-                    // ✅ refresh list nhanh
-                    mutateDevices();
-                } catch (err) {
-                    message.error(extractErrorMsg(err));
-                }
-            },
-        });
-    };
-
-    /* =========================
-        SELECT DEVICE (DETAIL)
-        - chỉ set state, SWR tự fetch cruise/battery theo key
-    ========================= */
-    const handleSelectDevice = (item) => {
-        setSelectedDevice(item);
-        setViewMode('detail');
     };
 
     const goBack = () => {
         setViewMode('list');
         setSelectedDevice(null);
+        destroyMap();
+    };
 
-        if (mapRef.current) {
-            mapRef.current.remove();
-            mapRef.current = null;
+    const handleSelectDevice = (item) => {
+        setSelectedDevice(item);
+        setViewMode('detail');
+    };
+
+    const { start: startUndoDelete } = useUndoDeleteToast();
+
+    const handleDelete = (item) => {
+        if (!canDeleteDevice) return message.warning(t.noPermissionDelete);
+
+        startUndoDelete({
+            id: item._id,
+            item,
+            ms: 5000,
+            renderTitle: (it) => (
+                <span>
+                    {isEn ? 'Deleting device ' : 'Đang xoá thiết bị'} <b>{it?.imei}</b>
+                </span>
+            ),
+            renderUndoText: () => (isEn ? 'Undo' : 'Hoàn tác'),
+            renderCountdownText: (remainMs) => (
+                <>
+                    {isEn ? 'Finalizing in ' : 'Xoá sau '}
+                    <b>{Math.ceil(remainMs / 1000)}</b>
+                    {isEn ? 's' : ' giây'}
+                </>
+            ),
+            optimisticRemove: () => {
+                mutateDevices(
+                    (prev) => {
+                        if (!prev?.devices) return prev;
+                        return { ...prev, devices: prev.devices.filter((d) => d._id !== item._id) };
+                    },
+                    { revalidate: false },
+                );
+            },
+            rollback: () => mutateDevices(),
+            apiDelete: () => deleteDevice(token, item._id),
+            onSuccess: () => {
+                message.success(t.deleteSuccess);
+                mutateDevices();
+            },
+            onError: (err) => message.error(extractErrorMsg(err, isEn)),
+        });
+    };
+
+    const popupInParent = (node) => node.parentElement;
+    const optionsLoading = dcLoading || vcLoading || usersLoading;
+
+    const onModalOpenChange = (open) => {
+        if (!open) return;
+
+        if (modalMode === 'add') {
+            form.resetFields();
+        } else if (modalMode === 'edit') {
+            form.resetFields();
+            if (pendingFormValues) form.setFieldsValue(pendingFormValues);
         }
     };
 
-    /* =========================
-        INIT MAP (lazy-load Leaflet)
-    ========================= */
-    useEffect(() => {
-        const initMap = async () => {
-            if (viewMode !== 'detail' || !selectedDevice) return;
-            if (!cruiseInfo) return;
-
-            let L = LMap;
-            if (!L) {
-                const leafletModule = await import('leaflet');
-                await import('leaflet/dist/leaflet.css');
-                L = leafletModule.default || leafletModule;
-                setLMap(L);
-            }
-
-            if (!L) return;
-
-            if (mapRef.current) {
-                mapRef.current.remove();
-                mapRef.current = null;
-            }
-
-            const lat = cruiseInfo.lat || 10.75;
-            const lon = cruiseInfo.lon || 106.6;
-
-            const map = L.map('iky-device-map', {
-                center: [lat, lon],
-                zoom: 16,
-                zoomControl: false,
-            });
-
-            mapRef.current = map;
-
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-            const mk = L.marker([lat, lon], {
-                icon: L.icon({
-                    iconUrl: markerIcon.src,
-                    iconSize: [40, 40],
-                    iconAnchor: [20, 40],
-                }),
-            }).addTo(map);
-
-            // ✅ FIX popup: trạng thái máy + trạng thái xe theo rule acc=1 là tắt máy/đổ xe
-            mk.bindPopup(
-                `
-            <b>${t.imei}:</b> ${selectedDevice.imei}<br/>
-            <b>${t.plate}:</b> ${selectedDevice.license_plate || '-'}<br/>
-            <b>${t.deviceType}:</b> ${selectedDevice.device_category_id?.name || '-'}<br/>
-            <b>${t.speed}:</b> ${cruiseInfo?.spd ?? 0} km/h<br/>
-            <b>${isEn ? 'Engine status' : 'Trạng thái máy'}:</b> ${getEngineStatusText(cruiseInfo)}<br/>
-            <b>${isEn ? 'Vehicle status' : 'Trạng thái xe'}:</b> ${getVehicleStatusText(cruiseInfo)}<br/>
-            <b>${t.battery}:</b> ${batteryInfo?.soc ?? '--'}%
-        `,
-            );
-
-            setTimeout(() => map.invalidateSize(), 200);
-        };
-
-        initMap();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [viewMode, selectedDevice, cruiseInfo, batteryInfo, isEn, t]);
-
-    /* =========================
-        TABLE COLUMNS (SORTER)
-    ========================= */
-    const columns = [
-        {
-            title: 'STT',
-            width: 60,
-            render: (_, __, index) => (currentPage - 1) * pageSize + index + 1,
-        },
-        {
-            title: 'IMEI',
-            dataIndex: 'imei',
-            sorter: (a, b) => (a.imei || '').localeCompare(b.imei || ''),
-            render: (text, record) => (
-                <Button type="link" onClick={() => handleSelectDevice(record)}>
-                    {text}
-                </Button>
-            ),
-        },
-        {
-            title: t.deviceType,
-            dataIndex: 'device_category_id',
-            sorter: (a, b) => (a.device_category_id?.name || '').localeCompare(b.device_category_id?.name || ''),
-            render: (d) => d?.name || '-',
-        },
-        {
-            title: t.phone,
-            dataIndex: 'phone_number',
-            sorter: (a, b) => (a.phone_number || '').localeCompare(b.phone_number || ''),
-        },
-        {
-            title: t.plate,
-            dataIndex: 'license_plate',
-            sorter: (a, b) => (a.license_plate || '').localeCompare(b.license_plate || ''),
-        },
-        {
-            title: t.driver,
-            dataIndex: 'driver',
-            sorter: (a, b) => (a.driver || '').localeCompare(b.driver || ''),
-        },
-        {
-            title: t.vehicleLine,
-            dataIndex: 'vehicle_category_id',
-            sorter: (a, b) => (a.vehicle_category_id?.name || '').localeCompare(b.vehicle_category_id?.name || ''),
-            render: (v) => v?.name || '-',
-        },
-
-        {
-            title: t.distributor,
-            dataIndex: 'distributor_id',
-            sorter: (a, b) => (a.distributor_id?.username || '').localeCompare(b.distributor_id?.username || ''),
-            render: (u) => u?.username || '-',
-        },
-        {
-            title: t.createdDate,
-            dataIndex: 'createdAt',
-            sorter: (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-            render: (v) => new Date(v).toLocaleString(isEn ? 'en-US' : 'vi-VN'),
-        },
-        {
-            title: t.view,
-            width: 60,
-            render: (_, r) => <Button size="small" icon={<EyeOutlined />} onClick={() => handleSelectDevice(r)} />,
-        },
-        {
-            title: `${t.edit}/${t.delete}`,
-            render: (_, r) => (
-                <Space>
-                    {canEditDevice && (
-                        <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>
-                            {t.edit}
-                        </Button>
-                    )}
-
-                    {canDeleteDevice && (
-                        <Button danger size="small" icon={<DeleteOutlined />} onClick={() => handleDelete(r._id)}>
-                            {t.delete}
-                        </Button>
-                    )}
-                </Space>
-            ),
-        },
-    ];
-
-    /* =========================
-        RENDER LIST MODE
-    ========================= */
-    const renderList = () => (
-        <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
-            <Row justify="space-between" align="middle">
-                <Col>
-                    <Title level={4}>{t.title}</Title>
-                </Col>
-                <Col>
-                    <Space>
-                        <Button icon={<DownloadOutlined />} onClick={exportExcel}>
-                            {t.exportExcel}
-                        </Button>
-
-                        {canAddDevice && (
-                            <Button type="primary" icon={<PlusOutlined />} onClick={openAdd}>
-                                {t.addDevice}
-                            </Button>
-                        )}
-                    </Space>
-                </Col>
-            </Row>
-
-            <Card>
-                <Row gutter={[12, 12]}>
-                    <Col xs={24} md={6}>
-                        <Input
-                            placeholder={t.filters.phone}
-                            value={filters.phone_number}
-                            onChange={(e) => setFilters((f) => ({ ...f, phone_number: e.target.value }))}
-                        />
-                    </Col>
-                    <Col xs={24} md={6}>
-                        <Input
-                            placeholder={t.filters.plate}
-                            value={filters.license_plate}
-                            onChange={(e) => setFilters((f) => ({ ...f, license_plate: e.target.value }))}
-                        />
-                    </Col>
-                    <Col xs={24} md={6}>
-                        <Input
-                            placeholder={t.filters.imei}
-                            value={filters.imei}
-                            onChange={(e) => setFilters((f) => ({ ...f, imei: e.target.value }))}
-                        />
-                    </Col>
-                    <Col xs={24} md={6}>
-                        <Input
-                            placeholder={t.filters.driver}
-                            value={filters.driver}
-                            onChange={(e) => setFilters((f) => ({ ...f, driver: e.target.value }))}
-                        />
-                    </Col>
-                </Row>
-
-                <Row justify="end" style={{ marginTop: 12 }}>
-                    <Button
-                        type="primary"
-                        icon={<SearchOutlined />}
-                        onClick={() => {
-                            // ✅ chỉ reset page, SWR tự fetch theo key
-                            setCurrentPage(1);
-                        }}
-                    >
-                        {t.search}
-                    </Button>
-                </Row>
-            </Card>
-
-            <Card>
-                <Text strong>
-                    {t.deviceList} ({total || devices.length})
-                </Text>
-
-                <Table
-                    dataSource={devices}
-                    columns={columns}
-                    rowKey="_id"
-                    // ✅ loading list = loading lần đầu hoặc đang revalidate
-                    loading={devicesLoading || devicesValidating}
-                    pagination={{
-                        current: currentPage,
-                        pageSize,
-                        total,
-                        showSizeChanger: true,
-                        onChange: (page, size) => {
-                            setCurrentPage(page);
-                            setPageSize(size || pageSize);
-                        },
-                    }}
-                    style={{ marginTop: 12 }}
-                    scroll={{ x: 900 }}
-                />
-            </Card>
-        </Space>
-    );
-
-    /* =========================
-        RENDER DETAIL MODE
-    ========================= */
-    const renderDetail = () => (
-        <Space direction="vertical" style={{ width: '100%' }} size="middle">
-            <Space wrap>
-                <Button icon={<ArrowLeftOutlined />} onClick={goBack}>
-                    {t.back}
-                </Button>
-                <Title level={4}>{t.detailTitle}</Title>
-            </Space>
-
-            <Row gutter={[16, 16]}>
-                <Col xs={24} md={12}>
-                    <Card title={t.deviceInfo}>
-                        <Descriptions column={1} bordered size="small">
-                            <Descriptions.Item label={t.imei}>{selectedDevice?.imei}</Descriptions.Item>
-                            <Descriptions.Item label={t.phone}>{selectedDevice?.phone_number || '-'}</Descriptions.Item>
-                            <Descriptions.Item label={t.plate}>
-                                {selectedDevice?.license_plate || '-'}
-                            </Descriptions.Item>
-                            <Descriptions.Item label={t.driver}>{selectedDevice?.driver || '-'}</Descriptions.Item>
-                            <Descriptions.Item label={t.deviceType}>
-                                {selectedDevice?.device_category_id?.name}
-                            </Descriptions.Item>
-                            <Descriptions.Item label={t.firmware}>{cruiseInfo?.fwr || '-'}</Descriptions.Item>
-                            <Descriptions.Item label={t.battery}>{batteryInfo?.soc ?? '--'}%</Descriptions.Item>
-
-                            <Descriptions.Item label={t.speed}>{cruiseInfo?.spd ?? 0} km/h</Descriptions.Item>
-
-                            {/* ✅ FIX: trạng thái máy theo rule acc=1 là tắt máy */}
-                            <Descriptions.Item label={isEn ? 'Engine status' : 'Trạng thái máy'}>
-                                {getEngineStatusText(cruiseInfo)}
-                            </Descriptions.Item>
-
-                            {/* ✅ ADD: trạng thái xe */}
-                            <Descriptions.Item label={isEn ? 'Vehicle status' : 'Trạng thái xe'}>
-                                {getVehicleStatusText(cruiseInfo)}
-                            </Descriptions.Item>
-
-                            <Descriptions.Item label={t.position}>
-                                {cruiseInfo?.lat}, {cruiseInfo?.lon}
-                            </Descriptions.Item>
-                        </Descriptions>
-                    </Card>
-                </Col>
-
-                <Col xs={24} md={12}>
-                    <Card title={t.ownerInfo}>
-                        <Descriptions column={1} bordered size="small">
-                            <Descriptions.Item label={t.customer}>
-                                {selectedDevice?.user_id ? selectedDevice.user_id.email : t.notAssigned}
-                            </Descriptions.Item>
-
-                            <Descriptions.Item label={t.distributor}>
-                                {selectedDevice?.distributor_id ? selectedDevice.distributor_id.username : '-'}
-                            </Descriptions.Item>
-                        </Descriptions>
-                    </Card>
-
-                    <Card style={{ marginTop: 16 }} title={t.mapTitle}>
-                        <div id="iky-device-map" style={{ height: 260 }} />
-                    </Card>
-                </Col>
-            </Row>
-        </Space>
-    );
-
-    // ✅ Fix dropdown trong Modal bị “click không ra”/bị che
-    const popupInParent = (triggerNode) => triggerNode.parentElement;
-
-    const optionsLoading = dcLoading || vcLoading || usersLoading;
+    const cmd = useDeviceCommandBar({
+        devices,
+        isEn,
+        canAddDevice,
+        viewMode,
+        selectedDevice,
+        onExportExcel,
+        onOpenAdd: openAdd,
+        onGoBack: goBack,
+    });
 
     return (
         <>
-            {viewMode === 'list' ? renderList() : renderDetail()}
+            {viewMode === 'list' ? (
+                <DeviceListView
+                    t={t}
+                    isEn={isEn}
+                    filters={filters}
+                    setFilters={setFilters}
+                    total={total}
+                    devices={devices}
+                    devicesLoading={devicesLoading}
+                    devicesValidating={devicesValidating}
+                    currentPage={currentPage}
+                    pageSize={pageSize}
+                    setCurrentPage={setCurrentPage}
+                    setPageSize={setPageSize}
+                    canAddDevice={canAddDevice}
+                    canEditDevice={canEditDevice}
+                    canDeleteDevice={canDeleteDevice}
+                    onOpenAdd={openAdd}
+                    onOpenEdit={openEdit}
+                    onDelete={handleDelete}
+                    onSelectDevice={handleSelectDevice}
+                    onExportExcel={onExportExcel}
+                    onOpenCommandBar={cmd.open}
+                />
+            ) : (
+                <DeviceDetailView
+                    t={t}
+                    isEn={isEn}
+                    selectedDevice={selectedDevice}
+                    cruiseInfo={cruiseInfo}
+                    batteryInfo={batteryInfo}
+                    getEngineStatusText={getEngineStatusText}
+                    getVehicleStatusText={getVehicleStatusText}
+                    onBack={goBack}
+                />
+            )}
 
-            <Modal
-                title={modalMode === 'add' ? t.modal.addTitle : t.modal.editTitle}
+            <DeviceCommandBarModal
+                open={cmd.cmdOpen}
+                onClose={cmd.close}
+                isEn={isEn}
+                t={t}
+                cmdQuery={cmd.cmdQuery}
+                setCmdQuery={cmd.setCmdQuery}
+                cmdLoading={cmd.cmdLoading}
+                cmdResults={cmd.cmdResults}
+                onRunAction={(a) => {
+                    cmd.close();
+                    a?.run?.();
+                }}
+                onSelectDevice={(d) => {
+                    cmd.close();
+                    handleSelectDevice(d);
+                }}
+            />
+
+            <DeviceUpsertModal
                 open={!!modalMode}
-                onCancel={() => setModalMode(null)}
+                title={modalMode === 'add' ? t.modal.addTitle : t.modal.editTitle}
+                t={t}
+                form={form}
+                onCancel={() => {
+                    setModalMode(null);
+                    setPendingFormValues(null);
+                }}
                 onOk={handleSave}
-                okText={t.save}
-                width={600}
-                confirmLoading={false}
-                destroyOnClose
-            >
-                <Form form={form} layout="vertical">
-                    <Form.Item name="imei" label="IMEI" rules={[{ required: true }]}>
-                        <Input />
-                    </Form.Item>
-
-                    <Form.Item name="phone_number" label={t.phone}>
-                        <Input />
-                    </Form.Item>
-
-                    <Form.Item name="license_plate" label={t.plate}>
-                        <Input />
-                    </Form.Item>
-
-                    <Form.Item name="driver" label={t.driver}>
-                        <Input />
-                    </Form.Item>
-
-                    <Form.Item name="device_category_id" label={t.deviceType} rules={[{ required: true }]}>
-                        <Select
-                            placeholder={t.modal.selectDeviceType}
-                            getPopupContainer={popupInParent}
-                            loading={dcLoading}
-                            disabled={dcLoading}
-                            notFoundContent={dcLoading ? <Spin size="small" /> : null}
-                            showSearch
-                            optionFilterProp="children"
-                        >
-                            {deviceCategories.map((d) => (
-                                <Option key={d._id} value={d._id}>
-                                    {d.name}
-                                </Option>
-                            ))}
-                        </Select>
-                    </Form.Item>
-
-                    <Form.Item name="vehicle_category_id" label={t.modal.selectVehicleType}>
-                        <Select
-                            placeholder={t.modal.selectVehicleType}
-                            getPopupContainer={popupInParent}
-                            loading={vcLoading}
-                            disabled={vcLoading}
-                            notFoundContent={vcLoading ? <Spin size="small" /> : null}
-                            allowClear
-                            showSearch
-                            optionFilterProp="children"
-                        >
-                            {vehicleCategories.map((v) => (
-                                <Option key={v._id} value={v._id}>
-                                    {v.name}
-                                </Option>
-                            ))}
-                        </Select>
-                    </Form.Item>
-
-                    <Form.Item name="user_id" label={t.customer}>
-                        <Select
-                            allowClear
-                            placeholder={t.modal.selectCustomer}
-                            getPopupContainer={popupInParent}
-                            loading={usersLoading}
-                            disabled={usersLoading}
-                            notFoundContent={usersLoading ? <Spin size="small" /> : null}
-                            showSearch
-                            optionFilterProp="children"
-                        >
-                            {userOptions
-                                .filter((u) => u.position === 'customer')
-                                .map((u) => (
-                                    <Option key={u._id} value={u._id}>
-                                        {u.email} ({u.username})
-                                    </Option>
-                                ))}
-                        </Select>
-                    </Form.Item>
-
-                    <Form.Item name="distributor_id" label={t.distributor}>
-                        <Select
-                            allowClear
-                            placeholder={t.modal.selectDistributor}
-                            getPopupContainer={popupInParent}
-                            loading={usersLoading}
-                            disabled={usersLoading}
-                            notFoundContent={usersLoading ? <Spin size="small" /> : null}
-                            showSearch
-                            optionFilterProp="children"
-                        >
-                            {userOptions
-                                .filter((u) => u.position === 'distributor')
-                                .map((u) => (
-                                    <Option key={u._id} value={u._id}>
-                                        {u.email} ({u.username})
-                                    </Option>
-                                ))}
-                        </Select>
-                    </Form.Item>
-
-                    {/* (Optional) nếu muốn user thấy “đang tải option” rõ ràng hơn */}
-                    {optionsLoading && (
-                        <div style={{ marginTop: 8 }}>
-                            <Text type="secondary">
-                                <Spin size="small" /> {isEn ? 'Loading options…' : 'Đang tải danh mục…'}
-                            </Text>
-                        </div>
-                    )}
-                </Form>
-            </Modal>
+                afterOpenChange={onModalOpenChange}
+                deviceCategories={deviceCategories}
+                vehicleCategories={vehicleCategories}
+                userOptions={userOptions}
+                dcLoading={dcLoading}
+                vcLoading={vcLoading}
+                usersLoading={usersLoading}
+                optionsLoading={optionsLoading}
+                popupInParent={popupInParent}
+                isEn={isEn}
+                currentRole={currentRole}
+            />
         </>
     );
 }

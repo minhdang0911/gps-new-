@@ -157,7 +157,7 @@
 
             "distributor_id": "Đại lý",
             "createdAt": "Tạo lúc",
-            "updatedAt": "Cập nhật DB",
+            "updatedAt": "Cập nhật từ hệ thống",
             "last_update": "Cập nhật từ thiết bị",
             "__v": "Phiên bản (__v)",
 
@@ -218,7 +218,7 @@
 
             "distributor_id": "Đại lý",
             "createdAt": "Tạo lúc",
-            "updatedAt": "Cập nhật DB",
+            "updatedAt": "Cập nhật từ hệ thống",
             "last_update": "Cập nhật từ thiết bị",
 
             "showTotal": "Tổng {total} bản ghi"
@@ -269,7 +269,7 @@
             "acc": "ACC",
             "vgp": "Tốc độ (GPS km/h)",
             "createdAt": "Tạo lúc",
-            "updatedAt": "Cập nhật DB",
+            "updatedAt": "Cập nhật từ hệ thống",
 
             "gpsNormal": "Bình thường",
             "gpsLost": "Mất GPS",

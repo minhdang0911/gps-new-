@@ -1,4 +1,3 @@
-// features/lastCruise/hooks/useLastCruiseData.js
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import useSWR from 'swr';
 import { API_SAFE_LIMIT } from '../constants';
@@ -17,23 +16,13 @@ function makeKey(userId, params) {
     return params ? ['lastCruiseList', userId || 'guest', stableStringify(params)] : null;
 }
 
-export function useLastCruiseData({
-    form,
-    getLastCruiseList,
-    imeiToPlate,
-    plateToImeis,
-    isEn,
-    t,
-    // loadingDeviceMap: giữ signature nếu nơi khác truyền vào, nhưng không dùng để block nữa
-    loadingDeviceMap,
-}) {
+export function useLastCruiseData({ form, getLastCruiseList, imeiToPlate, plateToImeis, isEn, t, loadingDeviceMap }) {
     const userId = useAuthStore((s) => s.user?._id) || 'guest';
 
     const [pagination, setPagination] = useState({ current: 1, pageSize: 10 });
     const [filterValues, _setFilterValues] = useState({});
     const [sortMode, _setSortMode] = useState('none');
 
-    // params chỉ để gọi API load list (vì BE không filter)
     const [queryParams, setQueryParams] = useState({ page: 1, limit: API_SAFE_LIMIT });
 
     const fetcher = useCallback(
@@ -44,7 +33,6 @@ export function useLastCruiseData({
         [getLastCruiseList],
     );
 
-    // ✅ không block theo loadingDeviceMap nữa
     const swr = useSWR(makeKey(userId, queryParams), fetcher, {
         revalidateOnFocus: false,
         revalidateOnReconnect: false,
@@ -54,12 +42,10 @@ export function useLastCruiseData({
         shouldRetryOnError: false,
     });
 
-    // ✅ loading chỉ theo network data
     const loading = swr.isLoading || swr.isValidating;
 
     const apiList = useMemo(() => swr.data?.data || swr.data || [], [swr.data]);
 
-    // ✅ attach plate lazy: map chưa sẵn thì trả list nguyên
     const rawData = useMemo(() => {
         try {
             if (!imeiToPlate || !(imeiToPlate instanceof Map) || imeiToPlate.size === 0) return apiList;
@@ -85,7 +71,6 @@ export function useLastCruiseData({
         _setSortMode(next);
     }, []);
 
-    // ✅ FE filter theo dev/plate + các field khác
     const processedData = useMemo(() => {
         const base = applyClientFilterSort({ rawData, filterValues, sortMode }) || [];
 
@@ -126,15 +111,18 @@ export function useLastCruiseData({
         setFilterValues(values);
     }, [form, setFilterValues]);
 
+    const refreshApi = useCallback(() => {
+        // ✅ force revalidate regardless of dedupe window
+        return swr.mutate(undefined, { revalidate: true });
+    }, [swr]);
+
     const onReset = useCallback(() => {
         form.resetFields();
         setFilterValues({});
         setSortMode('none');
         setPagination((p) => ({ ...p, current: 1 }));
-
-        // ✅ gọi lại API
-        swr.mutate(undefined, { revalidate: true });
-    }, [form, setFilterValues, setSortMode, swr]);
+        // (refetch sẽ làm ở page, để chạy song song với deviceMap)
+    }, [form, setFilterValues, setSortMode]);
 
     const handleTableChange = (pager) => {
         setPagination({ current: pager.current, pageSize: pager.pageSize });
@@ -156,5 +144,6 @@ export function useLastCruiseData({
         onReset,
         handleTableChange,
         mutate: swr.mutate,
+        refreshApi,
     };
 }

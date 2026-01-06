@@ -1,31 +1,54 @@
 // features/tripReport/hooks/useTripReportDeviceMap.js
 import useSWR from 'swr';
-import { useMemo } from 'react';
+import { useMemo, useEffect, useCallback } from 'react';
 import { getAuthToken } from '../utils';
 
-const MAP_CACHE_KEY = 'tripReportDeviceMap:v1';
+// ✅ bump version để bust cache cũ
+const MAP_CACHE_KEY = 'tripReportDeviceMap:v2';
+const OLD_KEYS = ['tripReportDeviceMap:v1'];
+const MAP_CACHE_TTL_MS = 2 * 60 * 1000; // ✅ 2 phút
 
-function reviveMaps(obj) {
-    return {
-        imeiToPlate: new Map(obj?.imeiToPlate || []),
-        plateToImeis: new Map(obj?.plateToImeis || []),
-    };
+function reviveMapsWithTTL(raw) {
+    try {
+        const obj = JSON.parse(raw);
+        if (!obj) return undefined;
+
+        const ts = obj?.ts;
+        if (!ts || Date.now() - ts > MAP_CACHE_TTL_MS) return undefined;
+
+        return {
+            imeiToPlate: new Map(obj?.imeiToPlate || []),
+            plateToImeis: new Map(obj?.plateToImeis || []),
+        };
+    } catch {
+        return undefined;
+    }
 }
 
-function serializeMaps({ imeiToPlate, plateToImeis }) {
+function serializeMapsWithTTL({ imeiToPlate, plateToImeis }) {
     return {
-        imeiToPlate: Array.from(imeiToPlate.entries()),
-        plateToImeis: Array.from(plateToImeis.entries()),
+        ts: Date.now(),
+        imeiToPlate: Array.from((imeiToPlate || new Map()).entries()),
+        plateToImeis: Array.from((plateToImeis || new Map()).entries()),
     };
 }
 
 export function useTripReportDeviceMap({ buildImeiToLicensePlateMap }) {
+    // ✅ xoá cache cũ 1 lần
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        try {
+            OLD_KEYS.forEach((k) => localStorage.removeItem(k));
+        } catch {}
+    }, []);
+
+    // ✅ đọc cache ngay (nếu còn hạn)
     const fallback = useMemo(() => {
         if (typeof window === 'undefined') return undefined;
         try {
             const raw = localStorage.getItem(MAP_CACHE_KEY);
             if (!raw) return undefined;
-            return reviveMaps(JSON.parse(raw));
+            return reviveMapsWithTTL(raw);
         } catch {
             return undefined;
         }
@@ -40,22 +63,28 @@ export function useTripReportDeviceMap({ buildImeiToLicensePlateMap }) {
         const plateToImeis = res?.plateToImeis || new Map();
 
         if (typeof window !== 'undefined') {
-            localStorage.setItem(MAP_CACHE_KEY, JSON.stringify(serializeMaps({ imeiToPlate, plateToImeis })));
+            localStorage.setItem(MAP_CACHE_KEY, JSON.stringify(serializeMapsWithTTL({ imeiToPlate, plateToImeis })));
         }
         return { imeiToPlate, plateToImeis };
     };
 
-    const { data, isLoading } = useSWR('tripReportDeviceMap', fetcher, {
+    const swr = useSWR('tripReportDeviceMap', fetcher, {
         fallbackData: fallback,
+        revalidateOnMount: true, // ✅ F5 vào vẫn fetch lại
         revalidateOnFocus: false,
         revalidateOnReconnect: false,
-        dedupingInterval: 60 * 60 * 1000,
+        dedupingInterval: 0, // ✅ tránh dính 1h
         shouldRetryOnError: false,
     });
 
+    const refreshDeviceMap = useCallback(() => {
+        return swr.mutate(undefined, { revalidate: true });
+    }, [swr]);
+
     return {
-        imeiToPlate: data?.imeiToPlate || new Map(),
-        plateToImeis: data?.plateToImeis || new Map(),
-        loadingDeviceMap: isLoading && !fallback,
+        imeiToPlate: swr.data?.imeiToPlate || new Map(),
+        plateToImeis: swr.data?.plateToImeis || new Map(),
+        loadingDeviceMap: swr.isLoading || swr.isValidating,
+        refreshDeviceMap, // ✅ NEW
     };
 }

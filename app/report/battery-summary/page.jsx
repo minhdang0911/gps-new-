@@ -100,8 +100,7 @@ const BatterySummaryReportPage = () => {
         setSelectedRows([]);
     }, []);
 
-    // device map
-    const { imeiToPlate } = useBatteryReportDeviceMap({ buildImeiToLicensePlateMap });
+    const { imeiToPlate, plateToImeis, loadingDeviceMap } = useBatteryReportDeviceMap({ buildImeiToLicensePlateMap });
 
     // data
     const {
@@ -130,6 +129,7 @@ const BatterySummaryReportPage = () => {
         getUserList,
         imeiToPlate,
         isEn,
+        plateToImeis,
         t,
     });
 
@@ -209,7 +209,10 @@ const BatterySummaryReportPage = () => {
                         <Form
                             form={form}
                             layout="vertical"
-                            onFinish={() => {
+                            onFinish={async () => {
+                                // ✅ option: ép refresh device map khi search (nếu bạn muốn chắc chắn hết dính cache)
+                                // await refreshDeviceMap();
+
                                 onSearch();
                                 clearSelection();
                             }}
@@ -253,17 +256,22 @@ const BatterySummaryReportPage = () => {
                                         type="primary"
                                         htmlType="submit"
                                         icon={<SearchOutlined />}
-                                        loading={loading}
+                                        loading={loading || loadingDeviceMap}
                                     >
                                         {t.filter.search}
                                     </Button>
                                     <Button
                                         icon={<ReloadOutlined />}
-                                        onClick={() => {
+                                        onClick={async () => {
+                                            // ✅ reset data + clear selection
                                             onReset();
                                             clearSelection();
+
+                                            // ✅ option: clear cache map + refresh lại map cho chắc
+                                            // clearDeviceMapCache();
+                                            // await refreshDeviceMap();
                                         }}
-                                        disabled={loading}
+                                        disabled={loading || loadingDeviceMap}
                                     >
                                         {t.filter.reset}
                                     </Button>
@@ -333,7 +341,7 @@ const BatterySummaryReportPage = () => {
                                 }
                                 columns={columns}
                                 dataSource={tableData}
-                                loading={loading}
+                                loading={loading || loadingDeviceMap}
                                 rowSelection={rowSelection}
                                 pagination={{
                                     current: pagination.current,

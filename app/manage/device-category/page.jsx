@@ -1,17 +1,9 @@
 'use client';
 
-import React, { useMemo, useState, useSyncExternalStore, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import useSWR from 'swr';
-import { Table, Button, Modal, Form, Input, Select, Space, Popconfirm, message, Card, Spin } from 'antd';
-import {
-    PlusOutlined,
-    EditOutlined,
-    DeleteOutlined,
-    ReloadOutlined,
-    SearchOutlined,
-    DownloadOutlined,
-} from '@ant-design/icons';
-
+import { Table, Button, Form, Space, Popconfirm, message, Card } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 
 import {
@@ -19,49 +11,24 @@ import {
     createDeviceCategory,
     updateDeviceCategory,
     deleteDeviceCategory,
-    getMadeInFromOptions,
 } from '../../lib/api/deviceCategory';
 
-import { MADE_IN_FROM_MAP } from '../../util/ConverMadeIn';
 import './DeviceCategoryPage.css';
-
-import { getTodayForFileName } from '../../util/FormatDate';
-
-// Excel style lib
-import * as XLSX from 'xlsx-js-style';
-import { saveAs } from 'file-saver';
 
 import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
 
+import { useLocalStorageValue } from '../../hooks/useLocalStorageValue';
+import { useMadeInFromOptions } from './hooks/useMadeInFromOptions';
+import DeviceCategoryFilters from './components/DeviceCategoryFilters';
+import DeviceCategoryModal from './components/DeviceCategoryModal';
+import { exportDeviceCategoryExcel, getMadeInFromLabel as getMifLabelUtil } from './utils/deviceCategoryUtils';
+
 const locales = { vi, en };
-const { Option } = Select;
 
-/** ✅ đọc localStorage “chuẩn React”, không cần useEffect + setState */
-function useLocalStorageValue(key, fallback = '') {
-    const subscribe = (callback) => {
-        if (typeof window === 'undefined') return () => {};
-        const handler = (e) => {
-            if (!e || e.key === key) callback();
-        };
-        window.addEventListener('storage', handler);
-        return () => window.removeEventListener('storage', handler);
-    };
-
-    const getSnapshot = () => {
-        if (typeof window === 'undefined') return fallback;
-        return localStorage.getItem(key) ?? fallback;
-    };
-
-    const getServerSnapshot = () => fallback;
-
-    return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-}
-
-const DeviceCategoryPage = () => {
+export default function DeviceCategoryPage() {
     const pathname = usePathname() || '/';
 
-    // ✅ token/role/lang đọc trực tiếp
     const token = useLocalStorageValue('accessToken', '');
     const role = useLocalStorageValue('role', '');
     const langFromStorage = useLocalStorageValue('iky_lang', 'vi');
@@ -84,19 +51,10 @@ const DeviceCategoryPage = () => {
     const canDelete = isAdmin;
 
     // FILTERS
-    const [filters, setFilters] = useState({
-        name: '',
-        code: '',
-        year: '',
-        model: '',
-        madeInFrom: '',
-    });
+    const [filters, setFilters] = useState({ name: '', code: '', year: '', model: '', madeInFrom: '' });
 
     // pagination
-    const [pagination, setPagination] = useState({
-        current: 1,
-        pageSize: 20,
-    });
+    const [pagination, setPagination] = useState({ current: 1, pageSize: 20 });
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
@@ -105,52 +63,15 @@ const DeviceCategoryPage = () => {
     // ✅ Fix dropdown trong Modal bị “click không ra”/bị che
     const popupInParent = (triggerNode) => triggerNode?.parentElement || document.body;
 
-    // helper label xuất xứ
-    const getMadeInFromLabel = (value, mifOptions = []) => {
-        if (!value && value !== 0) return '';
+    // madeInFrom options (hook)
+    const { mifOptions, mifLoading, mifValidating, mutateMIF } = useMadeInFromOptions({ token, t });
+    const showMifLoading = mifLoading || mifValidating;
 
-        const key = String(value);
-        const cfg = MADE_IN_FROM_MAP?.[key];
-
-        if (cfg) return isEn ? cfg.en : cfg.vi;
-
-        const found = mifOptions.find((opt) => String(opt.value) === key);
-        if (found?.label) return found.label;
-
-        return key;
-    };
+    const getMadeInFromLabel = (value) => getMifLabelUtil({ value, mifOptions, isEn });
 
     /* =========================
-        SWR: madeInFrom options
-        ✅ FIX:
-        - expose isLoading + mutate
-        - show loading UI for Select
-    ========================= */
-    const mifKey = token ? ['madeInFromOptions', token] : null;
-
-    const {
-        data: mifRes,
-        isLoading: mifLoading,
-        mutate: mutateMIF,
-        isValidating: mifValidating,
-    } = useSWR(mifKey, ([, tk]) => getMadeInFromOptions(tk), {
-        revalidateOnFocus: false,
-        dedupingInterval: 60_000,
-        onError: (err) => {
-            console.error('Load madeInFrom options error:', err);
-            // không spam message nếu không có token
-            if (token) message.error(t.loadError);
-        },
-    });
-
-    const mifOptions = useMemo(() => {
-        const res = mifRes || {};
-        return Object.entries(res).map(([value, label]) => ({ value, label }));
-    }, [mifRes]);
-
-    /* =========================
-        SWR: list device categories
-    ========================= */
+      SWR: list device categories
+  ========================= */
     const listParams = useMemo(() => {
         return {
             page: pagination.current,
@@ -188,21 +109,8 @@ const DeviceCategoryPage = () => {
     const data = listRes?.items || [];
     const apiTotal = listRes?.total ?? 0;
 
-    /* =========================
-        TABLE CHANGE
-    ========================= */
-    const handleTableChange = (pag) => {
-        setPagination({
-            current: pag.current,
-            pageSize: pag.pageSize,
-        });
-    };
+    const handleTableChange = (pag) => setPagination({ current: pag.current, pageSize: pag.pageSize });
 
-    /* =========================
-        MODAL
-        ✅ FIX:
-        - prefetch mifOptions khi mở modal để user không cần F5
-    ========================= */
     const prefetchMIF = () => {
         try {
             mutateMIF?.();
@@ -215,10 +123,7 @@ const DeviceCategoryPage = () => {
     }, [isModalOpen]);
 
     const openCreateModal = () => {
-        if (!isAdmin) {
-            message.warning(t.noPermissionCreate);
-            return;
-        }
+        if (!isAdmin) return message.warning(t.noPermissionCreate);
         prefetchMIF();
         setEditingItem(null);
         form.resetFields();
@@ -226,11 +131,7 @@ const DeviceCategoryPage = () => {
     };
 
     const openEditModal = (record) => {
-        if (!canEdit) {
-            message.warning(t.noPermissionEdit);
-            return;
-        }
-
+        if (!canEdit) return message.warning(t.noPermissionEdit);
         prefetchMIF();
         setEditingItem(record);
         form.setFieldsValue({
@@ -245,12 +146,8 @@ const DeviceCategoryPage = () => {
     };
 
     const handleDelete = async (record) => {
-        if (!isAdmin) {
-            message.warning(t.noPermissionDelete);
-            return;
-        }
+        if (!isAdmin) return message.warning(t.noPermissionDelete);
         if (!token) return;
-
         try {
             await deleteDeviceCategory(token, record._id);
             message.success(t.deleteSuccess);
@@ -262,10 +159,7 @@ const DeviceCategoryPage = () => {
     };
 
     const handleModalOk = async () => {
-        if (!canEdit) {
-            message.warning(t.noPermissionAction);
-            return;
-        }
+        if (!canEdit) return message.warning(t.noPermissionAction);
         if (!token) return;
 
         try {
@@ -294,7 +188,6 @@ const DeviceCategoryPage = () => {
             if (err?.errorFields) return;
 
             console.error('Save device category error:', err);
-
             const apiData = err?.response?.data;
             const msg =
                 apiData?.error ||
@@ -307,132 +200,12 @@ const DeviceCategoryPage = () => {
         }
     };
 
-    /* =========================
-        SEARCH / RESET
-    ========================= */
-    const handleSearch = () => {
-        setPagination((p) => ({ ...p, current: 1 }));
-    };
-
+    const handleSearch = () => setPagination((p) => ({ ...p, current: 1 }));
     const handleResetFilter = () => {
-        setFilters({
-            name: '',
-            code: '',
-            year: '',
-            model: '',
-            madeInFrom: '',
-        });
+        setFilters({ name: '', code: '', year: '', model: '', madeInFrom: '' });
         setPagination((p) => ({ ...p, current: 1 }));
     };
 
-    /* =========================
-        EXPORT EXCEL (xlsx-js-style)
-    ========================= */
-    const exportExcel = () => {
-        if (!data.length) {
-            message.warning(t.noDataToExport);
-            return;
-        }
-
-        try {
-            const excelData = data.map((item) => ({
-                [t.columns.code]: item.code || '',
-                [t.columns.name]: item.name || '',
-                Năm: item.year || '',
-                Model: item.model || '',
-                [t.columns.origin]: getMadeInFromLabel(item.madeInFrom, mifOptions),
-                [t.columns.description]: item.description || '',
-            }));
-
-            const ws = XLSX.utils.json_to_sheet(excelData, { origin: 'A2' });
-            const headers = Object.keys(excelData[0]);
-
-            const title = t.exportTitle;
-            ws['A1'] = { v: title, t: 's' };
-            ws['!merges'] = [
-                {
-                    s: { r: 0, c: 0 },
-                    e: { r: 0, c: headers.length - 1 },
-                },
-            ];
-            ws['A1'].s = {
-                font: { bold: true, sz: 18, color: { rgb: 'FFFFFF' } },
-                fill: { fgColor: { rgb: '4F81BD' } },
-                alignment: { horizontal: 'center', vertical: 'center' },
-            };
-            ws['!rows'] = [{ hpt: 28 }, { hpt: 22 }];
-
-            headers.forEach((h, idx) => {
-                const ref = XLSX.utils.encode_cell({ r: 1, c: idx });
-                if (!ws[ref]) return;
-                ws[ref].s = {
-                    font: { bold: true, color: { rgb: 'FFFFFF' } },
-                    fill: { fgColor: { rgb: '4F81BD' } },
-                    alignment: { horizontal: 'center', vertical: 'center' },
-                    border: {
-                        top: { style: 'thin', color: { rgb: '000000' } },
-                        bottom: { style: 'thin', color: { rgb: '000000' } },
-                        left: { style: 'thin', color: { rgb: '000000' } },
-                        right: { style: 'thin', color: { rgb: '000000' } },
-                    },
-                };
-            });
-
-            const range = XLSX.utils.decode_range(ws['!ref']);
-            for (let R = range.s.r; R <= range.e.r; R++) {
-                for (let C = range.s.c; C <= range.e.c; C++) {
-                    const ref = XLSX.utils.encode_cell({ r: R, c: C });
-                    const cell = ws[ref];
-                    if (!cell) continue;
-
-                    cell.s = cell.s || {};
-                    cell.s.alignment = { horizontal: 'center', vertical: 'center' };
-                    cell.s.border = {
-                        top: { style: 'thin', color: { rgb: '000000' } },
-                        bottom: { style: 'thin', color: { rgb: '000000' } },
-                        left: { style: 'thin', color: { rgb: '000000' } },
-                        right: { style: 'thin', color: { rgb: '000000' } },
-                    };
-
-                    if (R > 1 && R % 2 === 0) {
-                        cell.s.fill = cell.s.fill || {};
-                        cell.s.fill.fgColor = cell.s.fill.fgColor || { rgb: 'F9F9F9' };
-                    }
-                }
-            }
-
-            ws['!cols'] = headers.map((key) => {
-                const maxLen = Math.max(key.length, ...excelData.map((row) => String(row[key] || '').length));
-                return { wch: maxLen + 4 };
-            });
-
-            ws['!autofilter'] = {
-                ref: XLSX.utils.encode_range({
-                    s: { r: 1, c: 0 },
-                    e: { r: range.e.r, c: range.e.c },
-                }),
-            };
-
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, 'DeviceCategories');
-
-            const excelBuffer = XLSX.write(wb, {
-                bookType: 'xlsx',
-                type: 'array',
-                cellStyles: true,
-            });
-
-            saveAs(new Blob([excelBuffer]), `DanhSachDongThietBi_${getTodayForFileName()}.xlsx`);
-            message.success(t.exportSuccess);
-        } catch (err) {
-            console.error('Export excel error:', err);
-            message.error(t.exportFailed);
-        }
-    };
-
-    /* =========================
-        COLUMNS
-    ========================= */
     const columns = [
         {
             title: t.columns.code,
@@ -463,18 +236,10 @@ const DeviceCategoryPage = () => {
             title: t.columns.origin,
             dataIndex: 'madeInFrom',
             key: 'madeInFrom',
-            sorter: (a, b) =>
-                getMadeInFromLabel(a.madeInFrom, mifOptions).localeCompare(
-                    getMadeInFromLabel(b.madeInFrom, mifOptions),
-                ),
-            render: (value) => getMadeInFromLabel(value, mifOptions) || '-',
+            sorter: (a, b) => getMadeInFromLabel(a.madeInFrom).localeCompare(getMadeInFromLabel(b.madeInFrom)),
+            render: (value) => getMadeInFromLabel(value) || '-',
         },
-        {
-            title: t.columns.description,
-            dataIndex: 'description',
-            key: 'description',
-            ellipsis: true,
-        },
+        { title: t.columns.description, dataIndex: 'description', key: 'description', ellipsis: true },
         {
             title: t.columns.actions,
             key: 'actions',
@@ -485,7 +250,6 @@ const DeviceCategoryPage = () => {
                         <Button size="small" icon={<EditOutlined />} onClick={() => openEditModal(record)}>
                             {t.actions.edit}
                         </Button>
-
                         {canDelete && (
                             <Popconfirm
                                 title={t.actions.deleteConfirmTitle}
@@ -504,8 +268,7 @@ const DeviceCategoryPage = () => {
         },
     ];
 
-    // customer -> chặn luôn trang
-    if (isCustomer) {
+    if (isCustomer || !canView) {
         return (
             <div className="dc-page">
                 <Card className="dc-card" title={t.title}>
@@ -514,19 +277,6 @@ const DeviceCategoryPage = () => {
             </div>
         );
     }
-
-    // nếu không có quyền view thì chặn
-    if (!canView) {
-        return (
-            <div className="dc-page">
-                <Card className="dc-card" title={t.title}>
-                    <p style={{ color: '#ef4444', fontWeight: 500, margin: 0 }}>{t.noPermissionPage}</p>
-                </Card>
-            </div>
-        );
-    }
-
-    const showMifLoading = mifLoading || mifValidating;
 
     return (
         <div className="dc-page">
@@ -538,7 +288,11 @@ const DeviceCategoryPage = () => {
                         <Button icon={<ReloadOutlined />} onClick={() => mutateList()}>
                             {t.refresh}
                         </Button>
-                        <Button icon={<DownloadOutlined />} onClick={exportExcel} disabled={!data.length}>
+                        <Button
+                            icon={<DownloadOutlined />}
+                            onClick={() => exportDeviceCategoryExcel({ data, t, mifOptions, isEn })}
+                            disabled={!data.length}
+                        >
                             {t.exportExcel}
                         </Button>
                         {canCreate && (
@@ -549,63 +303,18 @@ const DeviceCategoryPage = () => {
                     </Space>
                 }
             >
-                {/* Bộ lọc */}
-                <div className="dc-filter">
-                    <Input
-                        allowClear
-                        prefix={<SearchOutlined />}
-                        placeholder={t.filters.name}
-                        value={filters.name}
-                        onChange={(e) => setFilters((prev) => ({ ...prev, name: e.target.value }))}
-                    />
-                    <Input
-                        allowClear
-                        placeholder={t.filters.code}
-                        value={filters.code}
-                        onChange={(e) => setFilters((prev) => ({ ...prev, code: e.target.value }))}
-                    />
-                    <Input
-                        allowClear
-                        placeholder={t.filters.year}
-                        value={filters.year}
-                        onChange={(e) => setFilters((prev) => ({ ...prev, year: e.target.value }))}
-                    />
-                    <Input
-                        allowClear
-                        placeholder={t.filters.model}
-                        value={filters.model}
-                        onChange={(e) => setFilters((prev) => ({ ...prev, model: e.target.value }))}
-                    />
+                <DeviceCategoryFilters
+                    t={t}
+                    filters={filters}
+                    setFilters={setFilters}
+                    onSearch={handleSearch}
+                    onReset={handleResetFilter}
+                    mifOptions={mifOptions}
+                    getMadeInFromLabel={getMadeInFromLabel}
+                    showMifLoading={showMifLoading}
+                    popupInParent={popupInParent}
+                />
 
-                    <Select
-                        allowClear
-                        placeholder={t.filters.origin}
-                        value={filters.madeInFrom || undefined}
-                        onChange={(value) => setFilters((prev) => ({ ...prev, madeInFrom: value || '' }))}
-                        style={{ minWidth: 180 }}
-                        getPopupContainer={popupInParent}
-                        loading={showMifLoading}
-                        disabled={showMifLoading}
-                        notFoundContent={showMifLoading ? <Spin size="small" /> : null}
-                        showSearch
-                        optionFilterProp="children"
-                    >
-                        {mifOptions.map((opt) => (
-                            <Option key={opt.value} value={opt.value}>
-                                {getMadeInFromLabel(opt.value, mifOptions)}
-                            </Option>
-                        ))}
-                    </Select>
-
-                    <Space className="dc-filter__actions">
-                        <Button type="primary" onClick={handleSearch}>
-                            {t.search}
-                        </Button>
-                        <Button onClick={handleResetFilter}>{t.resetFilter}</Button>
-                    </Space>
-                </div>
-
-                {/* Bảng */}
                 <Table
                     rowKey="_id"
                     loading={listLoading || listValidating}
@@ -624,82 +333,21 @@ const DeviceCategoryPage = () => {
                 />
             </Card>
 
-            {/* Modal thêm / sửa */}
-            <Modal
+            <DeviceCategoryModal
                 open={isModalOpen}
-                title={editingItem ? t.modal.editTitle : t.modal.createTitle}
                 onOk={handleModalOk}
                 onCancel={() => {
                     setIsModalOpen(false);
                     form.resetFields();
                 }}
-                okText={t.modal.okText}
-                cancelText={t.modal.cancelText}
-                wrapClassName="dc-modal"
-                destroyOnClose
-            >
-                <Form form={form} layout="vertical">
-                    <Form.Item
-                        label={t.form.codeLabel}
-                        name="code"
-                        rules={[{ required: true, message: t.form.codeRequired }]}
-                    >
-                        <Input />
-                    </Form.Item>
-
-                    <Form.Item
-                        label={t.form.nameLabel}
-                        name="name"
-                        rules={[{ required: true, message: t.form.nameRequired }]}
-                    >
-                        <Input />
-                    </Form.Item>
-
-                    <Form.Item
-                        label={t.form.yearLabel}
-                        name="year"
-                        rules={[{ required: true, message: t.form.yearRequired }]}
-                    >
-                        <Input />
-                    </Form.Item>
-
-                    <Form.Item
-                        label={t.form.modelLabel}
-                        name="model"
-                        rules={[{ required: true, message: t.form.modelRequired }]}
-                    >
-                        <Input />
-                    </Form.Item>
-
-                    <Form.Item
-                        label={t.form.originLabel}
-                        name="madeInFrom"
-                        rules={[{ required: true, message: t.form.originRequired }]}
-                    >
-                        <Select
-                            placeholder={t.form.originPlaceholder}
-                            getPopupContainer={popupInParent}
-                            loading={showMifLoading}
-                            disabled={showMifLoading}
-                            notFoundContent={showMifLoading ? <Spin size="small" /> : null}
-                            showSearch
-                            optionFilterProp="children"
-                        >
-                            {mifOptions.map((opt) => (
-                                <Option key={opt.value} value={opt.value}>
-                                    {getMadeInFromLabel(opt.value, mifOptions)}
-                                </Option>
-                            ))}
-                        </Select>
-                    </Form.Item>
-
-                    <Form.Item label={t.form.descLabel} name="description">
-                        <Input.TextArea rows={3} />
-                    </Form.Item>
-                </Form>
-            </Modal>
+                form={form}
+                t={t}
+                editingItem={editingItem}
+                mifOptions={mifOptions}
+                getMadeInFromLabel={getMadeInFromLabel}
+                showMifLoading={showMifLoading}
+                popupInParent={popupInParent}
+            />
         </div>
     );
-};
-
-export default DeviceCategoryPage;
+}

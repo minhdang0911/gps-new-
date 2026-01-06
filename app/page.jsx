@@ -7,7 +7,11 @@ import { getDevices, getDeviceInfo } from './lib/api/devices';
 import { getBatteryStatusByImei } from './lib/api/batteryStatus';
 import { getLastCruise } from './lib/api/cruise';
 
-import markerIcon from './assets/marker-red.png';
+import markerIconStop from './assets/marker-red.png';
+import markerRun from './assets/marker-run.png';
+import markerRun50 from './assets/marker-run50.png';
+import markerRun80 from './assets/marker-run80.png';
+
 import { useRouter, usePathname } from 'next/navigation';
 import { message, Modal, Skeleton } from 'antd';
 import { CheckCircleFilled, LockFilled } from '@ant-design/icons';
@@ -135,6 +139,11 @@ const MonitorPage = () => {
     const markerRef = useRef(null);
     const [markerScreenPos, setMarkerScreenPos] = useState(null);
 
+    // ✅ NEW: giữ hàm makeIcon + state mobile + asset hiện tại để resize / update icon
+    const makeIconRef = useRef(null);
+    const isMobileNowRef = useRef(() => false);
+    const currentMarkerAssetRef = useRef(markerIconStop);
+
     // lưu tọa độ cuối cùng đã dùng để gọi API địa chỉ
     const lastCoordsRef = useRef({ lat: null, lon: null });
 
@@ -150,6 +159,24 @@ const MonitorPage = () => {
     }, []);
 
     const router = useRouter();
+
+    // ===== Marker icon selector (4 icons) =====
+    // Stop: dừng xe + đỗ xe
+    // Run: chạy theo tốc độ
+    const getMarkerAssetByStatus = ({ accValNum, usedSpeed }) => {
+        // engine off (acc=1) => Đỗ xe
+        if (accValNum === 1) return markerIconStop;
+
+        const spd = Number(usedSpeed ?? 0);
+
+        // dừng xe (speed <=0) hoặc không có speed rõ ràng
+        if (!Number.isFinite(spd) || spd <= 0) return markerIconStop;
+
+        // chạy theo mức
+        if (spd >= 80) return markerRun80;
+        if (spd >= 50) return markerRun50;
+        return markerRun;
+    };
 
     useEffect(() => {
         if (!LMap) return;
@@ -171,19 +198,25 @@ const MonitorPage = () => {
 
         // ===== marker icon: desktop vs mobile =====
         const BASE_ANCHOR = [18, 36]; // như bạn đang dùng
-        const MOBILE_DELTA_Y = 10; // muốn xuống thêm bao nhiêu px trên mobile (tăng/giảm số này)
         const MOBILE_ANCHOR = [18, -15]; // anchor.y nhỏ hơn => marker xuống
-
-        const makeIcon = (isMobile) =>
-            LMap.icon({
-                iconUrl: markerIcon.src,
-                iconAnchor: isMobile ? MOBILE_ANCHOR : BASE_ANCHOR,
-            });
 
         const isMobileNow = () =>
             typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
 
-        const marker = LMap.marker([lat, lng], { icon: makeIcon(isMobileNow()) }).addTo(map);
+        isMobileNowRef.current = isMobileNow;
+
+        const makeIcon = (asset, isMobile) =>
+            LMap.icon({
+                iconUrl: asset?.src || asset, // next image -> .src
+                iconAnchor: isMobile ? MOBILE_ANCHOR : BASE_ANCHOR,
+            });
+
+        makeIconRef.current = makeIcon;
+
+        // mặc định: STOP
+        currentMarkerAssetRef.current = markerIconStop;
+
+        const marker = LMap.marker([lat, lng], { icon: makeIcon(markerIconStop, isMobileNow()) }).addTo(map);
         markerRef.current = marker;
 
         const updatePopupPosition = () => {
@@ -215,7 +248,10 @@ const MonitorPage = () => {
             const nowIsMobile = isMobileNow();
             if (nowIsMobile !== lastIsMobile) {
                 lastIsMobile = nowIsMobile;
-                markerRef.current?.setIcon(makeIcon(nowIsMobile));
+
+                // đổi anchor theo breakpoint, giữ nguyên asset hiện tại
+                const asset = currentMarkerAssetRef.current || markerIconStop;
+                markerRef.current?.setIcon(makeIcon(asset, nowIsMobile));
             }
         };
 
@@ -229,6 +265,35 @@ const MonitorPage = () => {
             map.remove();
         };
     }, [LMap, lat, lng]);
+
+    // ✅ NEW: tự update icon theo trạng thái (dừng/đỗ -> stop, chạy -> run/run50/run80)
+    useEffect(() => {
+        if (!LMap) return;
+        if (!markerRef.current) return;
+        if (!makeIconRef.current) return;
+
+        const ctx = { liveTelemetry, lastCruise, batteryStatus };
+
+        // ACC
+        const accValNum = toNumberOrNull(pickAcc(ctx, lastMqttAtRef));
+
+        // SPEED (giữ được 0)
+        const spdNum = toNumberOrNull(pickField('spd', ctx, lastMqttAtRef));
+        const vgpNum = toNumberOrNull(pickField('vgp', ctx, lastMqttAtRef));
+        const usedSpeed = spdNum ?? vgpNum;
+
+        const nextAsset = getMarkerAssetByStatus({ accValNum, usedSpeed });
+
+        const current = currentMarkerAssetRef.current;
+        const changed = (current?.src || current) !== (nextAsset?.src || nextAsset);
+
+        if (changed) {
+            currentMarkerAssetRef.current = nextAsset;
+            const isMobile = isMobileNowRef.current ? isMobileNowRef.current() : false;
+            markerRef.current.setIcon(makeIconRef.current(nextAsset, isMobile));
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [LMap, liveTelemetry, lastCruise, batteryStatus, selectedDevice?.imei]);
 
     useEffect(() => {
         const token = localStorage.getItem('accessToken');
@@ -348,9 +413,6 @@ const MonitorPage = () => {
                 lastCruiseInFlightRef.current = true;
                 lastCruiseCallAtRef.current = now;
 
-                // (optional) nếu bạn muốn show thanh loading refresh, bật cái này:
-                // setLoadingCruise(true);
-
                 const cruise = await getLastCruise(token, imei);
 
                 if (!cruise || cruise.error) return;
@@ -371,7 +433,6 @@ const MonitorPage = () => {
                 console.error('Refresh lastCruise error:', e);
             } finally {
                 lastCruiseInFlightRef.current = false;
-                // setLoadingCruise(false);
             }
         }, LAST_CRUISE_DEBOUNCE_MS);
     };
@@ -448,6 +509,13 @@ const MonitorPage = () => {
 
         // reset MQTT data khi đổi xe
         setLiveTelemetry(null);
+
+        // reset marker icon về STOP khi đổi xe (đỡ bị icon xe trước)
+        currentMarkerAssetRef.current = markerIconStop;
+        if (markerRef.current && makeIconRef.current) {
+            const isMobile = isMobileNowRef.current ? isMobileNowRef.current() : false;
+            markerRef.current.setIcon(makeIconRef.current(markerIconStop, isMobile));
+        }
 
         const token = localStorage.getItem('accessToken');
         if (!token || !device?.imei) {
@@ -627,20 +695,12 @@ const MonitorPage = () => {
                 if (data.acc == null) delete updated.acc; // ✅ quan trọng nhất
                 if (data.spd == null) delete updated.spd;
                 if (data.vgp == null) delete updated.vgp;
-                // optional (nếu muốn): telemetry thiếu lat/lon thì cũng xóa
-                // if (data.lat == null) delete updated.lat;
-                // if (data.lon == null) delete updated.lon;
             }
+
             // ⭐ ADD: nếu telemetry packet mà không có gps => xóa gps cũ (tránh giữ gps=1)
             if (isTelemetryPacket && data.gps == null) {
                 delete updated.gps;
             }
-
-            // (optional) nếu muốn “mất gps” thì cũng bỏ lat/lon cũ luôn khi thiếu:
-            // if (isTelemetryPacket && (data.lat == null || data.lon == null)) {
-            //     delete updated.lat;
-            //     delete updated.lon;
-            // }
 
             if (!isTelemetryPacket) {
                 if (!('sos' in data) && 'sos' in updated) {
@@ -894,8 +954,6 @@ const MonitorPage = () => {
                         <span>
                             {`${latVal}, ${lonVal}`}{' '}
                             {gpsValNum === 1 && <span style={{ color: 'red', fontWeight: 600 }}>(*)</span>}
-                            {/* optional debug nhỏ: */}
-                            {/* {mqttAlive ? <span style={{ marginLeft: 6 }}>(MQTT)</span> : <span style={{ marginLeft: 6 }}>(API)</span>} */}
                         </span>
                     ) : (
                         NA_TEXT

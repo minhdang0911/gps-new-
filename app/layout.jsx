@@ -4,6 +4,7 @@ import { AntdRegistry } from '@ant-design/nextjs-registry';
 import { Geist, Geist_Mono } from 'next/font/google';
 import LayoutWrapper from './components/LayoutWrapper';
 import SWRProvider from './providers/SWRProvider';
+import 'leaflet/dist/leaflet.css';
 
 const geistSans = Geist({
     variable: '--font-geist-sans',

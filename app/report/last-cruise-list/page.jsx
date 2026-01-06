@@ -13,7 +13,7 @@ import ColumnManagerModal from '../../components/report/ColumnManagerModal';
 import { useReportColumns } from '../../hooks/useReportColumns';
 import ReportSortSelect from '../../components/report/ReportSortSelect';
 
-// ✅ compare (component chung + insight riêng)
+// ✅ compare
 import ReportCompareModal from '../../components/report/ReportCompareModal';
 import { buildLastCruiseInsight } from '../../features/lastCruiseReport/compare/lastCruiseCompareInsight';
 
@@ -52,9 +52,7 @@ const LastCruiseReportPage = () => {
     const screens = useBreakpoint();
     const isMobile = !screens.lg;
 
-    // ✅ view mode
     const [viewMode, setViewMode] = useState('table');
-
     const [colModalOpen, setColModalOpen] = useState(false);
 
     // ✅ Compare states
@@ -67,8 +65,13 @@ const LastCruiseReportPage = () => {
         setSelectedRows([]);
     }, []);
 
-    // device map (dev ~= imei)
-    const { imeiToPlate, plateToImeis, loadingDeviceMap } = useLastCruiseDeviceMap({ buildImeiToLicensePlateMap });
+    // ✅ device map (imei -> plate) + có refresh
+    const {
+        imeiToPlate,
+        plateToImeis,
+        loadingDeviceMap,
+        refreshDeviceMap, // ✅ NEW
+    } = useLastCruiseDeviceMap({ buildImeiToLicensePlateMap });
 
     // data + FE filter/sort/paging
     const {
@@ -86,6 +89,8 @@ const LastCruiseReportPage = () => {
         onSearch,
         onReset,
         handleTableChange,
+
+        refreshApi, // ✅ NEW: refetch list
     } = useLastCruiseData({
         form,
         getLastCruiseList,
@@ -114,7 +119,6 @@ const LastCruiseReportPage = () => {
         lockedKeys: LOCKED_KEYS,
     });
 
-    // ✅ label map để compare-table ra đúng label VI/EN + lọc field đúng theo table
     const colLabelMap = useMemo(() => {
         const m = new Map();
         (allColsForModal || []).forEach((c) => m.set(c.key, c.label));
@@ -139,7 +143,6 @@ const LastCruiseReportPage = () => {
         [selectedRowKeys],
     );
 
-    // ✅ report config from processedData
     const reportConfig = useMemo(() => {
         return buildLastCruiseReportConfig({
             rows: processedData || [],
@@ -211,11 +214,15 @@ const LastCruiseReportPage = () => {
                                     >
                                         {t.filter.search}
                                     </Button>
+
+                                    {/* ✅ Reset = clear form + refetch MAP + refetch API */}
                                     <Button
                                         icon={<ReloadOutlined />}
-                                        onClick={() => {
+                                        onClick={async () => {
                                             onReset();
                                             clearSelection();
+                                            // ✅ force new data
+                                            await Promise.allSettled([refreshDeviceMap(), refreshApi()]);
                                         }}
                                         disabled={loading}
                                     >
@@ -235,7 +242,6 @@ const LastCruiseReportPage = () => {
                         title={t.table.title}
                         extra={
                             <Space wrap size={12}>
-                                {/* ✅ Toggle mode */}
                                 <ReportViewToggle value={viewMode} onChange={setViewMode} locale={isEn ? 'en' : 'vi'} />
 
                                 <ReportSortSelect
@@ -249,7 +255,6 @@ const LastCruiseReportPage = () => {
                                     disabled={viewMode !== 'table'}
                                 />
 
-                                {/* ✅ Compare */}
                                 <Button
                                     size="small"
                                     disabled={viewMode !== 'table' || selectedRows.length < 2}
@@ -315,7 +320,6 @@ const LastCruiseReportPage = () => {
                 </Col>
             </Row>
 
-            {/* ✅ Compare modal */}
             <ReportCompareModal
                 open={compareOpen}
                 onClose={() => setCompareOpen(false)}
@@ -326,7 +330,6 @@ const LastCruiseReportPage = () => {
                 buildInsight={buildLastCruiseInsight}
             />
 
-            {/* Column modal */}
             <ColumnManagerModal
                 open={colModalOpen}
                 onClose={() => setColModalOpen(false)}

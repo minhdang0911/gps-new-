@@ -69,7 +69,7 @@ const ChargingSessionReportPage = () => {
     const [feFilters, setFeFilters] = useState({ imeis: [], imeiText: '', plateText: '' });
 
     // ✅ device maps
-    const { imeiToPlate, plateToImeis, loadingDeviceMap } = useChargingDeviceMap({
+    const { imeiToPlate, plateToImeis, loadingDeviceMap, refreshDeviceMap } = useChargingDeviceMap({
         buildImeiToLicensePlateMap,
     });
 
@@ -189,12 +189,16 @@ const ChargingSessionReportPage = () => {
         else fetchPaged(1, pagination.pageSize, { force: true });
     };
 
-    const onReset = () => {
+    const onReset = async () => {
         form.resetFields();
         setFeFilters({ imeis: [], imeiText: '', plateText: '' });
         setSortMode('none');
         setPagination((p) => ({ ...p, current: 1 }));
-        fetchPaged(1, pagination.pageSize, { force: true });
+
+        // ✅ quan trọng: refetch map mới + refetch list mới
+        await Promise.allSettled([refreshDeviceMap(), fetchPaged(1, pagination.pageSize, { force: true })]);
+
+        clearSelection();
     };
 
     const handleTableChange = (pager) => {

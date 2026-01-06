@@ -1,32 +1,53 @@
-// features/tripSessionReport/hooks/useTripDeviceMap.js
 import useSWR from 'swr';
-import { useMemo } from 'react';
+import { useMemo, useCallback, useEffect } from 'react';
 import { getAuthToken } from '../utils';
 
-const MAP_CACHE_KEY = 'tripDeviceMap:v1';
+// ✅ bump version để bust cache cũ
+const MAP_CACHE_KEY = 'tripDeviceMap:v2';
+const OLD_KEYS = ['tripDeviceMap:v1']; // ✅ xoá key cũ nếu còn
+const MAP_CACHE_TTL_MS = 2 * 60 * 1000; // ✅ 2 phút (tuỳ chỉnh)
 
-function reviveMaps(obj) {
-    return {
-        imeiToPlate: new Map(obj?.imeiToPlate || []),
-        plateToImeis: new Map(obj?.plateToImeis || []),
-    };
+function reviveMapsWithTTL(raw) {
+    try {
+        const obj = JSON.parse(raw);
+        if (!obj) return undefined;
+
+        const ts = obj?.ts;
+        if (!ts || Date.now() - ts > MAP_CACHE_TTL_MS) return undefined;
+
+        return {
+            imeiToPlate: new Map(obj?.imeiToPlate || []),
+            plateToImeis: new Map(obj?.plateToImeis || []),
+        };
+    } catch {
+        return undefined;
+    }
 }
 
-function serializeMaps({ imeiToPlate, plateToImeis }) {
+function serializeMapsWithTTL({ imeiToPlate, plateToImeis }) {
     return {
-        imeiToPlate: Array.from(imeiToPlate.entries()),
-        plateToImeis: Array.from(plateToImeis.entries()),
+        ts: Date.now(),
+        imeiToPlate: Array.from((imeiToPlate || new Map()).entries()),
+        plateToImeis: Array.from((plateToImeis || new Map()).entries()),
     };
 }
 
 export function useTripDeviceMap({ buildImeiToLicensePlateMap }) {
-    // đọc cache localStorage ngay lập tức
+    // ✅ xoá cache version cũ 1 lần khi mount
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        try {
+            OLD_KEYS.forEach((k) => localStorage.removeItem(k));
+        } catch {}
+    }, []);
+
+    // ✅ đọc cache localStorage ngay lập tức (nếu còn hạn)
     const fallback = useMemo(() => {
         if (typeof window === 'undefined') return undefined;
         try {
             const raw = localStorage.getItem(MAP_CACHE_KEY);
             if (!raw) return undefined;
-            return reviveMaps(JSON.parse(raw));
+            return reviveMapsWithTTL(raw);
         } catch {
             return undefined;
         }
@@ -40,26 +61,31 @@ export function useTripDeviceMap({ buildImeiToLicensePlateMap }) {
         const imeiToPlate = res?.imeiToPlate || new Map();
         const plateToImeis = res?.plateToImeis || new Map();
 
-        // persist cache
         if (typeof window !== 'undefined') {
-            localStorage.setItem(MAP_CACHE_KEY, JSON.stringify(serializeMaps({ imeiToPlate, plateToImeis })));
+            localStorage.setItem(MAP_CACHE_KEY, JSON.stringify(serializeMapsWithTTL({ imeiToPlate, plateToImeis })));
         }
 
         return { imeiToPlate, plateToImeis };
     };
 
-    const { data, isLoading } = useSWR('tripDeviceMap', fetcher, {
-        fallbackData: fallback, // ✅ có map ngay nếu cache có
+    const swr = useSWR('tripDeviceMap', fetcher, {
+        fallbackData: fallback,
+        revalidateOnMount: true, // ✅ F5 vào vẫn fetch lại
         revalidateOnFocus: false,
         revalidateOnReconnect: false,
-        dedupingInterval: 60 * 60 * 1000, // 1h
+        dedupingInterval: 0, // ✅ tránh kẹt 1h
         shouldRetryOnError: false,
     });
 
+    const refreshDeviceMap = useCallback(() => {
+        // ✅ ép fetch mới + update localStorage
+        return swr.mutate(undefined, { revalidate: true });
+    }, [swr]);
+
     return {
-        imeiToPlate: data?.imeiToPlate || new Map(),
-        plateToImeis: data?.plateToImeis || new Map(),
-        // nếu có fallback thì coi như không loading
-        loadingDeviceMap: isLoading && !fallback,
+        imeiToPlate: swr.data?.imeiToPlate || new Map(),
+        plateToImeis: swr.data?.plateToImeis || new Map(),
+        loadingDeviceMap: swr.isLoading || swr.isValidating,
+        refreshDeviceMap, // ✅ NEW
     };
 }
