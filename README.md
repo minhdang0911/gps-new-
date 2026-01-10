@@ -1,58 +1,53 @@
-# GPS Tracking — Next.js
+# GPS Tracking — Frontend (Next.js)
 
-**Mô tả ngắn:**
-Dự án này là **hệ thống GPS Tracking** của công ty, phục vụ việc quản lý thiết bị định vị, giám sát hành trình xe theo thời gian thực, lưu lịch sử di chuyển, xử lý sự kiện từ MQTT (trạng thái thiết bị, khoá/mở khoá, SOS), và cung cấp giao diện quản trị cho nội bộ.
+## Mô tả
+Hệ thống **GPS Tracking** phục vụ quản lý thiết bị định vị và giám sát hành trình xe theo thời gian thực.  
+Ứng dụng hỗ trợ theo dõi vị trí, trạng thái thiết bị, pin, lịch sử di chuyển (playback), xử lý sự kiện realtime qua MQTT (SOS, khóa/mở khóa), báo cáo và giao diện quản trị nội bộ.
 
-Frontend được xây bằng **Next.js **, sử dụng Ant Design, kết nối tới các API nội bộ, Goong API (autocomplete địa chỉ), và MQTT broker.
-
----
-
-## Nội dung README này
-
--   Giới thiệu
--   Yêu cầu
--   Cài đặt
--   Biến môi trường (`.env`)
--   Chạy ở môi trường phát triển
--   Build & Deploy
--   Chạy test & lint
--   Kiến trúc thư mục
--   Tài nguyên & API liên quan (Goong, MQTT)
--   Xử lý lỗi & logging
+Frontend được xây dựng bằng **Next.js (App Router)**, sử dụng **Ant Design**, tích hợp **Goong API** cho tìm kiếm địa chỉ và **MQTT** cho dữ liệu realtime.
 
 ---
 
-## 1. Yêu cầu
+## Công nghệ sử dụng
+- Next.js (React)
+- Ant Design
+- MQTT (WebSocket)
+- Goong Map / Goong Autocomplete
+- i18n (EN / VI)
+- JWT Authentication & Role-based Access
 
--   Node.js >= 18
--   npm / pnpm / yarn (tuỳ bạn quen)
+---
 
-## 2. Cài đặt (lần đầu)
+## Yêu cầu môi trường
+- Node.js >= 18
+- npm / pnpm / yarn
 
-1. Clone repo:
+---
 
+## Cài đặt
+
+Clone repository:
 ```bash
 git clone <repo-url> gps
 cd gps
 ```
 
-2. Cài dependencies:
-
+Cài dependencies:
 ```bash
-# npm
 npm install
-# hoặc pnpm
+# hoặc
 pnpm install
-# hoặc yarn
-yarn
+# hoặc
+yarn install
 ```
 
-3. Tạo file `.env` từ mẫu `.env.example` (xem phần sau)
+---
 
-## 3. `.env`
+## Biến môi trường (.env)
+
+Tạo file `.env` từ `.env.example`:
 
 ```env
-# Next.js
 NEXT_PUBLIC_API_URL=
 NEXT_PUBLIC_GOONG_API_KEY=
 NEXT_PUBLIC_MQTT_URL=
@@ -60,11 +55,11 @@ NEXT_PUBLIC_MQTT_USERNAME=
 NEXT_PUBLIC_MQTT_PASSWORD=
 ```
 
-> Ghi chú: nếu deploy lên môi trường production (Vercel / Docker), đặt các biến môi trường tương ứng trên platform.
+> Lưu ý: Khi deploy production (Vercel/Docker), set các biến này trực tiếp trên platform.
 
-## 4. Chạy ở môi trường phát triển
+---
 
-Chạy Next.js server (hot-reload):
+## Chạy môi trường development
 
 ```bash
 npm run dev
@@ -74,59 +69,48 @@ pnpm dev
 yarn dev
 ```
 
-Mở `http://localhost:3000` để xem app. API route của Next.js (nếu có) nằm dưới `/app/lib/api` (app router)
+Truy cập:  
+http://localhost:3000
 
-## 5. Build & Production
+---
 
-Build cho production:
+## Build & Production
 
 ```bash
 npm run build
 npm run start
 ```
 
--   `npm run build` sẽ tạo `.next` (Next.js app router).
--   `npm run start` chạy Next.js server ở chế độ production.
+- `build`: build ứng dụng Next.js
+- `start`: chạy server production
 
-### Deploy gợi ý
+### Deploy đề xuất
+- **Vercel**: Connect repo GitHub/GitLab, cấu hình Environment Variables.
 
--   **Vercel:** push repo lên GitHub/GitLab và connect Vercel, set biến môi trường trên Vercel UI.
+---
 
-## 6. Test, lint, format
-
-Trong repo có sẵn các script (nếu không, thêm vào `package.json`):
-
+## Scripts
 ```json
 {
-    "scripts": {
-        "dev": "next dev",
-        "build": "next build",
-        "start": "next start",
-        "lint": "eslint . --ext .ts,.tsx,.js,.jsx",
-        "format": "prettier --write .",
-        "test": "jest --coverage"
-    }
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "jest --coverage"
+  }
 }
 ```
 
-Chạy:
+---
 
-```bash
-npm run lint
-npm run format
-npm run test
+## Cấu trúc thư mục
 ```
-
-## 7. Kiến trúc thư mục
-
-```
-├─ .next/
 ├─ app/
 │  ├─ (auth)/
 │  ├─ (main)/
-│  ├─ assets/
 │  ├─ components/
-│  ├─ cruise/
 │  ├─ hooks/
 │  ├─ lib/
 │  ├─ locales/
@@ -136,46 +120,50 @@ npm run test
 │  ├─ util/
 │  ├─ layout.jsx
 │  ├─ page.jsx
-│  ├─ globals.css
-│  └─ favicon.ico
-├─ lib/
+│  └─ globals.css
 ├─ public/
-├─ node_modules/
-├─ .env
-├─ .env.example
 ├─ middleware.ts
 ├─ next.config.ts
 ├─ package.json
-├─ package-lock.json
-└─ tsconfig.json
+├─ tsconfig.json
+└─ .env
 ```
 
-````
+---
 
+## MQTT
+- Nhận và xử lý dữ liệu realtime từ MQTT Broker.
+- Convention topic: `device/{imei}/#`
+- Ví dụ trạng thái:
+  - `sos = 1` → thiết bị khóa / SOS
+  - `sos = 0` hoặc không có → hoạt động bình thường
+- Client kết nối qua WebSocket MQTT.
 
+---
 
-### MQTT
-- Ứng dụng nhận/đẩy trạng thái thiết bị qua MQTT broker.
-- Tên topic tuỳ convention: `device/{imei}/`,
-- Xử lý case: khóa trả `sos = 1` = khóa, `sos = 0` hoặc không trả = mở/hoạt động.
-- Nếu dùng websocket -> kết nối từ client tới broker websocket endpoint.
-
-## 8. Xử lý lỗi & phản hồi API
-- Các API server phải trả chuẩn:
-
+## API & Error Handling
+Chuẩn response từ backend:
 ```json
 {
-   "status":200
-  "errors": ["username phải có ít nhất 5 ký tự"]
+  "status": 400,
+  "errors": ["Invalid device id"]
 }
-````
+```
 
--   Frontend cần show `message.error` hoặc `form.setFields` tương ứng. Format lỗi có thể là:
+Frontend xử lý:
+- `message.error()` cho lỗi chung
+- `form.setFields()` cho lỗi theo field
 
-    -   `errors: string[]` — list lỗi chung
-    -   `fields: { fieldName: string, message: string }[]` — lỗi từng field
+---
 
-## 9 Debug & logs
+## Debug & Logging
+- Dev: `console.log`
+- Production: khuyến nghị tích hợp Sentry / LogRocket
+- MQTT: bật debug log để trace message realtime
 
--   Dùng `console.log` cho dev, enable Sentry hoặc LogRocket ở production.
--   Với MQTT, bật debug log cho client lib để dễ trace message.
+---
+
+## Ghi chú
+- Đây là frontend cho hệ thống GPS nội bộ.
+- Backend, MQTT broker và database được triển khai riêng.
+- Tài liệu này phục vụ dev nội bộ & bàn giao dự án.
