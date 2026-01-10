@@ -16,6 +16,7 @@ import {
     Row,
     Col,
     Spin,
+    Tooltip,
 } from 'antd';
 import {
     PlusOutlined,
@@ -24,6 +25,7 @@ import {
     SearchOutlined,
     EyeOutlined,
     DownloadOutlined,
+    QuestionCircleOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 
@@ -37,6 +39,13 @@ import { getTodayForFileName } from '../../util/FormatDate';
 
 import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
+
+// ✅ Intro.js styles
+import 'intro.js/introjs.css';
+import '../../styles/intro-custom.css';
+
+// ✅ shared guided tour hook
+import { useGuidedTour } from '../../hooks/common/useGuidedTour';
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -201,8 +210,6 @@ export default function ManageUserPage() {
     /* =========================
         SWR: DISTRIBUTORS OPTIONS
         - chỉ load khi mở modal
-        ✅ FIX:
-        - expose mutate + validating + loading UI để dropdown ko “đơ”
     ========================= */
     const distributorsKey = userModalVisible ? ['distributors', isEn] : null;
 
@@ -234,7 +241,7 @@ export default function ManageUserPage() {
     const distributorOptions = distributorsRes || [];
     const distributorsBusy = loadingDistributors || validatingDistributors;
 
-    // ✅ Prefetch distributor list khi mở modal (đỡ phải F5 mới có options)
+    // ✅ Prefetch distributor list khi mở modal
     useEffect(() => {
         if (!userModalVisible) return;
         try {
@@ -278,7 +285,6 @@ export default function ManageUserPage() {
         userFormDataRef.current = init;
         setInitialFormData(init);
 
-        // ✅ prefetch options trước khi show modal (tránh dropdown “đơ”)
         try {
             mutateDistributors?.();
         } catch (_) {}
@@ -309,7 +315,6 @@ export default function ManageUserPage() {
         userFormDataRef.current = init;
         setInitialFormData(init);
 
-        // ✅ prefetch options trước khi show modal
         try {
             mutateDistributors?.();
         } catch (_) {}
@@ -389,7 +394,7 @@ export default function ManageUserPage() {
             }
 
             closeUserModal();
-            mutateUsers(); // ✅ refresh list
+            mutateUsers();
         } catch (err) {
             console.log('SAVE USER ERROR', err);
 
@@ -420,7 +425,7 @@ export default function ManageUserPage() {
                 try {
                     await deleteUser(record._id);
                     message.success(t.messages.deleteSuccess);
-                    mutateUsers(); // ✅ refresh list
+                    mutateUsers();
                 } catch (err) {
                     console.log('DELETE USER ERROR', err);
                     message.error(t.messages.deleteFailed);
@@ -580,12 +585,13 @@ export default function ManageUserPage() {
             fixed: 'right',
             width: 240,
             render: (_, record) => (
-                <Space>
+                <Space data-tour="rowActions">
                     <Button
                         size="small"
                         icon={<EditOutlined />}
                         onClick={() => handleOpenEditUser(record)}
                         disabled={!canEdit}
+                        data-tour="editBtn"
                     >
                         {t.actions.edit}
                     </Button>
@@ -596,6 +602,7 @@ export default function ManageUserPage() {
                         icon={<DeleteOutlined />}
                         onClick={() => handleDeleteUser(record)}
                         disabled={!canDelete}
+                        data-tour="deleteBtn"
                     >
                         {t.actions.delete}
                     </Button>
@@ -605,6 +612,7 @@ export default function ManageUserPage() {
                         icon={<EyeOutlined />}
                         onClick={() => handleViewUser(record)}
                         disabled={!canView}
+                        data-tour="viewBtn"
                     >
                         {t.actions.view}
                     </Button>
@@ -613,19 +621,90 @@ export default function ManageUserPage() {
         },
     ];
 
+    // ✅ TOUR STEPS (role-aware)
+    const tourSteps = useMemo(() => {
+        const steps = [
+            {
+                element: '[data-tour="searchBox"]',
+                intro: isEn
+                    ? 'Use these filters to quickly find users (debounced).'
+                    : 'Dùng các bộ lọc này để tìm người dùng nhanh  Gợi ý: Đây là bước review để tránh sửa/xoá nhầm.',
+            },
+            {
+                element: '[data-tour="roleFilter"]',
+                intro: isEn ? 'Filter users by role.' : 'Lọc người dùng theo vai trò.',
+            },
+            {
+                element: '[data-tour="table"]',
+                intro: isEn ? 'This table shows the user list.' : 'Bảng hiển thị danh sách người dùng.',
+            },
+        ];
+
+        if (canExport) {
+            steps.push({
+                element: '[data-tour="exportBtn"]',
+                intro: isEn ? 'Export the current list to Excel.' : 'Xuất danh sách hiện tại ra Excel.',
+            });
+        }
+
+        if (canCreate) {
+            steps.push({
+                element: '[data-tour="addBtn"]',
+                intro: isEn ? 'Admins can create a new user here.' : 'Admin có thể tạo người dùng mới ở đây.',
+            });
+        }
+
+        if (canEdit) {
+            steps.push({
+                element: '[data-tour="editBtn"]',
+                intro: isEn ? 'Edit a user from here.' : 'Sửa người dùng tại đây.',
+            });
+        }
+
+        if (canDelete) {
+            steps.push({
+                element: '[data-tour="deleteBtn"]',
+                intro: isEn ? 'Delete a user (admin only).' : 'Xoá người dùng (chỉ admin).',
+            });
+        }
+
+        if (canView) {
+            steps.push({
+                element: '[data-tour="viewBtn"]',
+                intro: isEn ? 'View user details here.' : 'Xem chi tiết người dùng tại đây.',
+            });
+        }
+
+        return steps;
+    }, [isEn, canExport, canCreate, canEdit, canDelete, canView]);
+
+    const tour = useGuidedTour({
+        isEn,
+        enabled: true,
+        steps: tourSteps,
+    });
+
     return (
         <div className="user-page">
             <Card className="user-page__card">
-                <div className="user-page__header">
-                    <Title level={4} className="user-page__title">
-                        {t.title}
-                    </Title>
+                <div className="user-page__header" data-tour="header">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <Title level={4} className="user-page__title" style={{ margin: 0 }}>
+                            {t.title}
+                        </Title>
+
+                        {/* ✅ Help (tour) */}
+                        <Tooltip title={isEn ? 'Guide' : 'Hướng dẫn'}>
+                            <Button shape="circle" icon={<QuestionCircleOutlined />} onClick={tour.start} />
+                        </Tooltip>
+                    </div>
 
                     <Space>
                         <Button
                             icon={<DownloadOutlined />}
                             onClick={exportExcel}
                             disabled={!canExport || !users.length}
+                            data-tour="exportBtn"
                         >
                             {t.buttons.export}
                         </Button>
@@ -636,13 +715,14 @@ export default function ManageUserPage() {
                             onClick={handleOpenAddUser}
                             className="user-page__add-btn"
                             disabled={!canCreate}
+                            data-tour="addBtn"
                         >
                             {t.buttons.add}
                         </Button>
                     </Space>
                 </div>
 
-                <div className="user-page__search" style={{ marginBottom: 16 }}>
+                <div className="user-page__search" style={{ marginBottom: 16 }} data-tour="searchBox">
                     <Row gutter={[16, 16]}>
                         <Col xs={24} sm={6}>
                             <Input
@@ -671,7 +751,7 @@ export default function ManageUserPage() {
                                 allowClear
                             />
                         </Col>
-                        <Col xs={24} sm={6}>
+                        <Col xs={24} sm={6} data-tour="roleFilter">
                             <Select
                                 placeholder={isEn ? 'Filter by role' : 'Lọc theo vai trò'}
                                 value={filterRole || undefined}
@@ -689,15 +769,17 @@ export default function ManageUserPage() {
                     </Row>
                 </div>
 
-                <Table
-                    rowKey="_id"
-                    columns={userColumns}
-                    loading={loadingUsers || validatingUsers}
-                    dataSource={users}
-                    className="user-page__table"
-                    scroll={{ x: 900 }}
-                    size="middle"
-                />
+                <div data-tour="table">
+                    <Table
+                        rowKey="_id"
+                        columns={userColumns}
+                        loading={loadingUsers || validatingUsers}
+                        dataSource={users}
+                        className="user-page__table"
+                        scroll={{ x: 900 }}
+                        size="middle"
+                    />
+                </div>
             </Card>
 
             <Modal
@@ -711,7 +793,6 @@ export default function ManageUserPage() {
                 destroyOnClose
                 okButtonProps={{ disabled: !canEdit }}
             >
-                {/* ✅ nếu distributor options chưa load thì show spinner để user khỏi bấm Select “đơ” */}
                 {distributorsBusy ? (
                     <div style={{ padding: 16 }}>
                         <Spin />
@@ -726,7 +807,6 @@ export default function ManageUserPage() {
                         onChange={(data) => {
                             userFormDataRef.current = data;
                         }}
-                        // (nếu UserForm có Select bên trong Modal)
                         getPopupContainer={popupInParent}
                     />
                 )}

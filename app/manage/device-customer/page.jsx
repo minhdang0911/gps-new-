@@ -2,8 +2,15 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import useSWR from 'swr';
-import { Card, Table, Button, Form, Select, Space, message, Tag, Typography, Popconfirm, Spin } from 'antd';
-import { PlusOutlined, ReloadOutlined, DeleteOutlined, UserOutlined, DownloadOutlined } from '@ant-design/icons';
+import { Card, Table, Button, Form, Select, Space, message, Tag, Typography, Popconfirm, Spin, Tooltip } from 'antd';
+import {
+    PlusOutlined,
+    ReloadOutlined,
+    DeleteOutlined,
+    UserOutlined,
+    DownloadOutlined,
+    QuestionCircleOutlined,
+} from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 
 import { getUserList } from '@/app/lib/api/user';
@@ -18,6 +25,13 @@ import en from '../../locales/en.json';
 import { useLocalStorageValue } from '@/app/hooks/useLocalStorageValue';
 import DeviceCustomerAddModal from './DeviceCustomerAddModal';
 import { exportCustomerDevicesExcel } from './deviceCustomer.exportExcel';
+
+// ✅ Intro.js styles
+import 'intro.js/introjs.css';
+import '../../styles/intro-custom.css';
+
+// ✅ shared guided tour hook
+import { useGuidedTour } from '../../hooks/common/useGuidedTour';
 
 const locales = { vi, en };
 const { Option } = Select;
@@ -236,20 +250,69 @@ export default function DeviceCustomerPage() {
             width: 120,
             render: (_, record) =>
                 canEdit ? (
-                    <Popconfirm
-                        title={t.actions.removeTitle}
-                        description={t.actions.removeDesc}
-                        onConfirm={() => handleRemoveDevice(record)}
-                        okText={t.actions.removeOk}
-                        cancelText={t.actions.removeCancel}
-                    >
-                        <Button size="small" danger icon={<DeleteOutlined />}>
-                            {t.actions.remove}
-                        </Button>
-                    </Popconfirm>
+                    <span data-tour="removeBtn">
+                        <Popconfirm
+                            title={t.actions.removeTitle}
+                            description={t.actions.removeDesc}
+                            onConfirm={() => handleRemoveDevice(record)}
+                            okText={t.actions.removeOk}
+                            cancelText={t.actions.removeCancel}
+                        >
+                            <Button size="small" danger icon={<DeleteOutlined />}>
+                                {t.actions.remove}
+                            </Button>
+                        </Popconfirm>
+                    </span>
                 ) : null,
         },
     ];
+
+    // ✅ TOUR STEPS (role-aware)
+    const tourSteps = useMemo(() => {
+        const steps = [
+            {
+                element: '[data-tour="customerSelect"]',
+                intro: isEn
+                    ? 'Select a customer to view assigned devices.'
+                    : 'Chọn khách hàng để xem danh sách thiết bị đã gán.',
+            },
+            {
+                element: '[data-tour="refreshBtn"]',
+                intro: isEn
+                    ? 'Refresh the device list for this customer.'
+                    : 'Tải lại danh sách thiết bị của khách hàng.',
+            },
+            {
+                element: '[data-tour="exportBtn"]',
+                intro: isEn ? 'Export the current list to Excel.' : 'Xuất danh sách hiện tại ra Excel.',
+            },
+            {
+                element: '[data-tour="tableWrap"]',
+                intro: isEn
+                    ? 'This table shows devices assigned to the customer.'
+                    : 'Bảng hiển thị các thiết bị thuộc khách hàng.',
+            },
+        ];
+
+        if (canEdit) {
+            steps.push({
+                element: '[data-tour="addBtn"]',
+                intro: isEn ? 'Add a device to this customer.' : 'Thêm thiết bị cho khách hàng này.',
+            });
+            steps.push({
+                element: '[data-tour="removeBtn"]',
+                intro: isEn ? 'Remove a device from this customer.' : 'Gỡ thiết bị khỏi khách hàng.',
+            });
+        }
+
+        return steps;
+    }, [isEn, canEdit]);
+
+    const tour = useGuidedTour({
+        isEn,
+        enabled: true,
+        steps: tourSteps,
+    });
 
     if (!canView) {
         return (
@@ -274,7 +337,12 @@ export default function DeviceCustomerPage() {
                 className="dcustomer-card"
                 title={t.title}
                 extra={
-                    <Space>
+                    <Space data-tour="actionsBar">
+                        {/* ✅ Help (tour) */}
+                        <Tooltip title={isEn ? 'Guide' : 'Hướng dẫn'}>
+                            <Button shape="circle" icon={<QuestionCircleOutlined />} onClick={tour.start} />
+                        </Tooltip>
+
                         <Select
                             className="dcustomer-customer-select"
                             placeholder={t.filter.selectCustomerPlaceholder}
@@ -291,6 +359,7 @@ export default function DeviceCustomerPage() {
                             disabled={customersBusy}
                             notFoundContent={customersBusy ? <Spin size="small" /> : null}
                             getPopupContainer={popupInParent}
+                            data-tour="customerSelect"
                         >
                             {customers.map((c) => (
                                 <Option key={c._id} value={c._id}>
@@ -299,7 +368,12 @@ export default function DeviceCustomerPage() {
                             ))}
                         </Select>
 
-                        <Button icon={<ReloadOutlined />} onClick={() => mutateDevices()} disabled={!currentCustomerId}>
+                        <Button
+                            icon={<ReloadOutlined />}
+                            onClick={() => mutateDevices()}
+                            disabled={!currentCustomerId}
+                            data-tour="refreshBtn"
+                        >
                             {t.buttons.refresh}
                         </Button>
 
@@ -307,6 +381,7 @@ export default function DeviceCustomerPage() {
                             icon={<DownloadOutlined />}
                             onClick={onExportExcel}
                             disabled={!currentCustomerId || !devices.length}
+                            data-tour="exportBtn"
                         >
                             {t.buttons.export}
                         </Button>
@@ -321,20 +396,23 @@ export default function DeviceCustomerPage() {
                                 setIsAddModalOpen(true);
                             }}
                             disabled={!currentCustomerId || !canEdit}
+                            data-tour="addBtn"
                         >
                             {t.buttons.addDevice}
                         </Button>
                     </Space>
                 }
             >
-                <Table
-                    rowKey="_id"
-                    loading={loadingDevices || validatingDevices}
-                    columns={columns}
-                    dataSource={devices}
-                    pagination={false}
-                    scroll={{ x: 800 }}
-                />
+                <div data-tour="tableWrap">
+                    <Table
+                        rowKey="_id"
+                        loading={loadingDevices || validatingDevices}
+                        columns={columns}
+                        dataSource={devices}
+                        pagination={false}
+                        scroll={{ x: 800 }}
+                    />
+                </div>
 
                 {!currentCustomerId && <div className="dcustomer-empty-tip">{t.emptyTip}</div>}
             </Card>

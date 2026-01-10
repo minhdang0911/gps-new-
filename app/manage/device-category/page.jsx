@@ -2,8 +2,15 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import useSWR from 'swr';
-import { Table, Button, Form, Space, Popconfirm, message, Card } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, DownloadOutlined } from '@ant-design/icons';
+import { Table, Button, Form, Space, Popconfirm, message, Card, Tooltip } from 'antd';
+import {
+    PlusOutlined,
+    EditOutlined,
+    DeleteOutlined,
+    ReloadOutlined,
+    DownloadOutlined,
+    QuestionCircleOutlined,
+} from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 
 import {
@@ -23,6 +30,13 @@ import { useMadeInFromOptions } from './hooks/useMadeInFromOptions';
 import DeviceCategoryFilters from './components/DeviceCategoryFilters';
 import DeviceCategoryModal from './components/DeviceCategoryModal';
 import { exportDeviceCategoryExcel, getMadeInFromLabel as getMifLabelUtil } from './utils/deviceCategoryUtils';
+
+// ✅ Intro.js styles
+import 'intro.js/introjs.css';
+import '../../styles/intro-custom.css';
+
+// ✅ shared guided tour hook
+import { useGuidedTour } from '../../hooks/common/useGuidedTour';
 
 const locales = { vi, en };
 
@@ -60,18 +74,13 @@ export default function DeviceCategoryPage() {
     const [editingItem, setEditingItem] = useState(null);
     const [form] = Form.useForm();
 
-    // ✅ Fix dropdown trong Modal bị “click không ra”/bị che
     const popupInParent = (triggerNode) => triggerNode?.parentElement || document.body;
 
-    // madeInFrom options (hook)
     const { mifOptions, mifLoading, mifValidating, mutateMIF } = useMadeInFromOptions({ token, t });
     const showMifLoading = mifLoading || mifValidating;
 
     const getMadeInFromLabel = (value) => getMifLabelUtil({ value, mifOptions, isEn });
 
-    /* =========================
-      SWR: list device categories
-  ========================= */
     const listParams = useMemo(() => {
         return {
             page: pagination.current,
@@ -246,7 +255,7 @@ export default function DeviceCategoryPage() {
             width: 150,
             render: (_, record) =>
                 canEdit ? (
-                    <Space>
+                    <Space data-tour="rowActions">
                         <Button size="small" icon={<EditOutlined />} onClick={() => openEditModal(record)}>
                             {t.actions.edit}
                         </Button>
@@ -268,6 +277,43 @@ export default function DeviceCategoryPage() {
         },
     ];
 
+    // ✅ TOUR STEPS (trỏ đúng element thật, role-aware)
+    const tourSteps = useMemo(() => {
+        const steps = [
+            {
+                element: '[data-tour="filtersWrap"]',
+                intro: isEn ? 'Use filters to find categories quickly.' : 'Dùng bộ lọc để tìm danh mục nhanh.',
+            },
+            {
+                element: '[data-tour="searchBtn"]',
+                intro: isEn ? 'Click to search with current filters.' : 'Bấm để tìm theo bộ lọc hiện tại.',
+            },
+            {
+                element: '[data-tour="tableWrap"]',
+                intro: isEn ? 'This is the device category list.' : 'Đây là danh sách danh mục thiết bị.',
+            },
+            {
+                element: '[data-tour="rowActions"]',
+                intro: isEn ? 'Edit/Delete actions (depending on your role).' : 'Nút Sửa/Xoá  .',
+            },
+        ];
+
+        if (canCreate) {
+            steps.push({
+                element: '[data-tour="addBtn"]',
+                intro: isEn ? 'Admins can add a new category here.' : 'Admin có thể thêm danh mục mới ở đây.',
+            });
+        }
+
+        return steps;
+    }, [isEn, canCreate]);
+
+    const tour = useGuidedTour({
+        isEn,
+        enabled: true,
+        steps: tourSteps,
+    });
+
     if (isCustomer || !canView) {
         return (
             <div className="dc-page">
@@ -285,9 +331,15 @@ export default function DeviceCategoryPage() {
                 title={t.title}
                 extra={
                     <Space className="dc-card__actions">
+                        {/* ✅ Tour button đặt chung với action, giống layout chuẩn */}
+                        <Tooltip title={isEn ? 'Guide' : 'Hướng dẫn'}>
+                            <Button shape="circle" icon={<QuestionCircleOutlined />} onClick={tour.start} />
+                        </Tooltip>
+
                         <Button icon={<ReloadOutlined />} onClick={() => mutateList()}>
                             {t.refresh}
                         </Button>
+
                         <Button
                             icon={<DownloadOutlined />}
                             onClick={() => exportDeviceCategoryExcel({ data, t, mifOptions, isEn })}
@@ -295,42 +347,49 @@ export default function DeviceCategoryPage() {
                         >
                             {t.exportExcel}
                         </Button>
+
                         {canCreate && (
-                            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
+                            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal} data-tour="addBtn">
                                 {t.addNew}
                             </Button>
                         )}
                     </Space>
                 }
             >
-                <DeviceCategoryFilters
-                    t={t}
-                    filters={filters}
-                    setFilters={setFilters}
-                    onSearch={handleSearch}
-                    onReset={handleResetFilter}
-                    mifOptions={mifOptions}
-                    getMadeInFromLabel={getMadeInFromLabel}
-                    showMifLoading={showMifLoading}
-                    popupInParent={popupInParent}
-                />
+                {/* ✅ Tour: filters wrapper */}
+                <div data-tour="filtersWrap">
+                    <DeviceCategoryFilters
+                        t={t}
+                        filters={filters}
+                        setFilters={setFilters}
+                        onSearch={handleSearch}
+                        onReset={handleResetFilter}
+                        mifOptions={mifOptions}
+                        getMadeInFromLabel={getMadeInFromLabel}
+                        showMifLoading={showMifLoading}
+                        popupInParent={popupInParent}
+                    />
+                </div>
 
-                <Table
-                    rowKey="_id"
-                    loading={listLoading || listValidating}
-                    columns={columns}
-                    dataSource={data}
-                    pagination={{
-                        current: pagination.current,
-                        pageSize: pagination.pageSize,
-                        total: apiTotal,
-                        showSizeChanger: true,
-                    }}
-                    onChange={handleTableChange}
-                    className="dc-table"
-                    scroll={{ x: 800 }}
-                    size="middle"
-                />
+                {/* ✅ Tour: table wrapper */}
+                <div data-tour="tableWrap">
+                    <Table
+                        rowKey="_id"
+                        loading={listLoading || listValidating}
+                        columns={columns}
+                        dataSource={data}
+                        pagination={{
+                            current: pagination.current,
+                            pageSize: pagination.pageSize,
+                            total: apiTotal,
+                            showSizeChanger: true,
+                        }}
+                        onChange={handleTableChange}
+                        className="dc-table"
+                        scroll={{ x: 800 }}
+                        size="middle"
+                    />
+                </div>
             </Card>
 
             <DeviceCategoryModal

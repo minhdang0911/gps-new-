@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import useSWR from 'swr';
-import { Table, Button, Modal, Form, Input, Select, Space, Popconfirm, message, Card, Spin } from 'antd';
+import { Table, Button, Form, Input, Select, Space, Popconfirm, message, Card, Spin, Tooltip } from 'antd';
 import {
     PlusOutlined,
     EditOutlined,
@@ -10,6 +10,7 @@ import {
     ReloadOutlined,
     SearchOutlined,
     DownloadOutlined,
+    QuestionCircleOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 
@@ -37,6 +38,13 @@ import {
 } from './vehicleCategory.utils';
 import { exportVehicleCategoriesExcel } from './vehicleCategory.exportExcel';
 import VehicleCategoryModal from './VehicleCategoryModal';
+
+// ✅ Intro.js styles
+import 'intro.js/introjs.css';
+import '../../styles/intro-custom.css';
+
+// ✅ shared guided tour hook
+import { useGuidedTour } from '../../hooks/common/useGuidedTour';
 
 const locales = { vi, en };
 const { Option } = Select;
@@ -91,7 +99,10 @@ const VehicleCategoryPage = () => {
         isLoading: manuLoading,
         isValidating: manuValidating,
         mutate: mutateManu,
-    } = useSWR(manuKey, ([, tk]) => getManufacturerOptions(tk), { revalidateOnFocus: false, dedupingInterval: 60_000 });
+    } = useSWR(manuKey, ([, tk]) => getManufacturerOptions(tk), {
+        revalidateOnFocus: false,
+        dedupingInterval: 60_000,
+    });
 
     const {
         data: dcRes,
@@ -320,7 +331,7 @@ const VehicleCategoryPage = () => {
             width: 160,
             render: (_, record) =>
                 canEdit ? (
-                    <Space>
+                    <Space data-tour="rowActions">
                         <Button size="small" icon={<EditOutlined />} onClick={() => openEditModal(record)}>
                             {t.actions.edit}
                         </Button>
@@ -343,6 +354,47 @@ const VehicleCategoryPage = () => {
         },
     ];
 
+    // ✅ TOUR STEPS (role-aware)
+    const tourSteps = useMemo(() => {
+        const steps = [
+            {
+                element: '[data-tour="filtersWrap"]',
+                intro: isEn ? 'Use filters to find vehicle categories.' : 'Dùng bộ lọc để tìm loại xe nhanh.',
+            },
+            {
+                element: '[data-tour="searchBtn"]',
+                intro: isEn ? 'Click to search with current filters.' : 'Bấm để tìm theo bộ lọc hiện tại.',
+            },
+            {
+                element: '[data-tour="resetBtn"]',
+                intro: isEn ? 'Reset all filters to default.' : 'Xoá toàn bộ bộ lọc.',
+            },
+            {
+                element: '[data-tour="tableWrap"]',
+                intro: isEn ? 'This is the vehicle category list.' : 'Đây là danh sách loại xe.',
+            },
+            {
+                element: '[data-tour="rowActions"]',
+                intro: isEn ? 'Edit/Delete actions (depending on your role).' : 'Nút Sửa/Xoá  ',
+            },
+        ];
+
+        if (canCreate) {
+            steps.push({
+                element: '[data-tour="addBtn"]',
+                intro: isEn ? 'Admins can add a new category here.' : 'Admin có thể thêm loại xe mới ở đây.',
+            });
+        }
+
+        return steps;
+    }, [isEn, canCreate]);
+
+    const tour = useGuidedTour({
+        isEn,
+        enabled: true,
+        steps: tourSteps,
+    });
+
     if (isCustomer || !canView) {
         return (
             <div className="vc-page">
@@ -359,7 +411,12 @@ const VehicleCategoryPage = () => {
                 className="vc-card"
                 title={t.title}
                 extra={
-                    <Space className="vc-card__actions">
+                    <Space className="vc-card__actions" data-tour="actionsBar">
+                        {/* ✅ Help (tour) */}
+                        <Tooltip title={isEn ? 'Guide' : 'Hướng dẫn'}>
+                            <Button shape="circle" icon={<QuestionCircleOutlined />} onClick={tour.start} />
+                        </Tooltip>
+
                         <Button icon={<ReloadOutlined />} onClick={() => mutateList()}>
                             {t.refresh}
                         </Button>
@@ -367,14 +424,15 @@ const VehicleCategoryPage = () => {
                             {t.exportExcel}
                         </Button>
                         {canCreate && (
-                            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
+                            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal} data-tour="addBtn">
                                 {t.addNew}
                             </Button>
                         )}
                     </Space>
                 }
             >
-                <div className="vc-filter">
+                {/* ✅ Tour: filters */}
+                <div className="vc-filter" data-tour="filtersWrap">
                     <Input
                         allowClear
                         prefix={<SearchOutlined />}
@@ -437,29 +495,34 @@ const VehicleCategoryPage = () => {
                     </Select>
 
                     <Space className="vc-filter__actions">
-                        <Button type="primary" onClick={handleSearch}>
+                        <Button type="primary" onClick={handleSearch} data-tour="searchBtn">
                             {t.search}
                         </Button>
-                        <Button onClick={handleResetFilter}>{t.resetFilter}</Button>
+                        <Button onClick={handleResetFilter} data-tour="resetBtn">
+                            {t.resetFilter}
+                        </Button>
                     </Space>
                 </div>
 
-                <Table
-                    rowKey="_id"
-                    loading={listLoading || listValidating}
-                    columns={columns}
-                    dataSource={data}
-                    pagination={{
-                        current: pagination.current,
-                        pageSize: pagination.pageSize,
-                        total: apiTotal,
-                        showSizeChanger: true,
-                    }}
-                    onChange={handleTableChange}
-                    className="vc-table"
-                    scroll={{ x: 900 }}
-                    size="middle"
-                />
+                {/* ✅ Tour: table */}
+                <div data-tour="tableWrap">
+                    <Table
+                        rowKey="_id"
+                        loading={listLoading || listValidating}
+                        columns={columns}
+                        dataSource={data}
+                        pagination={{
+                            current: pagination.current,
+                            pageSize: pagination.pageSize,
+                            total: apiTotal,
+                            showSizeChanger: true,
+                        }}
+                        onChange={handleTableChange}
+                        className="vc-table"
+                        scroll={{ x: 900 }}
+                        size="middle"
+                    />
+                </div>
             </Card>
 
             <VehicleCategoryModal

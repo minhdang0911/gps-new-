@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Card, Input, Button, Table, Space, Typography, Row, Col, Popconfirm } from 'antd';
+import { Card, Input, Button, Table, Space, Typography, Row, Col, Popconfirm, FloatButton } from 'antd';
 import {
     SearchOutlined,
     PlusOutlined,
@@ -9,6 +9,7 @@ import {
     DeleteOutlined,
     EyeOutlined,
     DownloadOutlined,
+    QuestionCircleOutlined,
 } from '@ant-design/icons';
 import CommandBarTrigger from '../../components/common/CommandBarTrigger';
 
@@ -36,6 +37,7 @@ export default function DeviceListView({
     onSelectDevice,
     onExportExcel,
     onOpenCommandBar,
+    onStartTour,
 }) {
     const columns = useMemo(
         () => [
@@ -130,7 +132,8 @@ export default function DeviceListView({
                 <Col>
                     <Title level={4}>{t.title}</Title>
 
-                    <div style={{ marginTop: 10 }}>
+                    {/* ✅ tour step: cmdk */}
+                    <div style={{ marginTop: 10 }} data-tour="cmdk">
                         <CommandBarTrigger
                             placeholder={isEn ? 'Search devices…' : 'Tìm thiết bị…'}
                             onOpen={onOpenCommandBar}
@@ -150,7 +153,7 @@ export default function DeviceListView({
                         </Button>
 
                         {canAddDevice && (
-                            <Button type="primary" icon={<PlusOutlined />} onClick={onOpenAdd}>
+                            <Button data-tour="addBtn" type="primary" icon={<PlusOutlined />} onClick={onOpenAdd}>
                                 {t.addDevice}
                             </Button>
                         )}
@@ -158,7 +161,8 @@ export default function DeviceListView({
                 </Col>
             </Row>
 
-            <Card>
+            {/* ✅ tour step: filters */}
+            <Card data-tour="filters">
                 <Row gutter={[12, 12]}>
                     <Col xs={24} md={6}>
                         <Input
@@ -191,7 +195,13 @@ export default function DeviceListView({
                 </Row>
 
                 <Row justify="end" style={{ marginTop: 12 }}>
-                    <Button type="primary" icon={<SearchOutlined />} onClick={() => setCurrentPage(1)}>
+                    {/* ✅ tour step: search */}
+                    <Button
+                        data-tour="searchBtn"
+                        type="primary"
+                        icon={<SearchOutlined />}
+                        onClick={() => setCurrentPage(1)}
+                    >
                         {t.search}
                     </Button>
                 </Row>
@@ -199,28 +209,38 @@ export default function DeviceListView({
 
             <Card>
                 <Text strong>
-                    {t.deviceList} ({total || devices.length})
+                    {t.deviceList} ({total || (devices || []).length})
                 </Text>
 
-                <Table
-                    dataSource={devices}
-                    columns={columns}
-                    rowKey="_id"
-                    loading={devicesLoading || devicesValidating}
-                    pagination={{
-                        current: currentPage,
-                        pageSize,
-                        total,
-                        showSizeChanger: true,
-                        onChange: (page, size) => {
-                            setCurrentPage(page);
-                            setPageSize(size || pageSize);
-                        },
-                    }}
-                    style={{ marginTop: 12 }}
-                    scroll={{ x: 900 }}
-                />
+                {/* ✅ tour step: table */}
+                <div data-tour="table">
+                    <Table
+                        dataSource={devices}
+                        columns={columns}
+                        rowKey="_id"
+                        loading={devicesLoading || devicesValidating}
+                        pagination={{
+                            current: currentPage,
+                            pageSize,
+                            total,
+                            showSizeChanger: true,
+                            onChange: (page, size) => {
+                                setCurrentPage(page);
+                                setPageSize(size || pageSize);
+                            },
+                        }}
+                        style={{ marginTop: 12 }}
+                        scroll={{ x: 900 }}
+                    />
+                </div>
             </Card>
+
+            {/* ✅ đẹp + không phá header: help floating */}
+            <FloatButton
+                icon={<QuestionCircleOutlined />}
+                tooltip={isEn ? 'Guide' : 'Hướng dẫn'}
+                onClick={onStartTour}
+            />
         </Space>
     );
 }

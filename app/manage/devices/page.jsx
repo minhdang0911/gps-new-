@@ -1,13 +1,10 @@
-// =========================
-// pages/manage-devices/page.jsx (hoặc file ManageDevicesPage bạn đang dùng)
-// =========================
 'use client';
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Form, message } from 'antd';
 import { usePathname } from 'next/navigation';
 
-// ✅ đổi sang 4 icon theo logic mới
+// map icons
 import markerIconStop from '../../assets/marker-red.png';
 import markerRun from '../../assets/marker-run.png';
 import markerRun50 from '../../assets/marker-run50.png';
@@ -39,6 +36,14 @@ import DeviceListView from '../../components/manageDevices/DeviceListView';
 import DeviceDetailView from '../../components/manageDevices/DeviceDetailView';
 import DeviceUpsertModal from '../../components/manageDevices/DeviceUpsertModal';
 import DeviceCommandBarModal from '../../components/manageDevices/DeviceCommandBarModal';
+import DeviceAuditModal from '../../components/manageDevices/DeviceAuditModal';
+
+// ✅ Intro.js
+import 'intro.js/introjs.css';
+import '../../styles/intro-custom.css';
+
+// ✅ NEW: shared guided tour hook
+import { useGuidedTour } from '../../hooks/common/useGuidedTour';
 
 const locales = { vi, en };
 
@@ -58,7 +63,6 @@ export default function ManageDevicesPage() {
         const segments = (pathname || '/').split('/').filter(Boolean);
         const fromPath = segments[segments.length - 1] === 'en';
         if (fromPath) {
-            // keep behavior: persist language if path is /en
             try {
                 localStorage.setItem('iky_lang', 'en');
             } catch {}
@@ -81,6 +85,11 @@ export default function ManageDevicesPage() {
     const [modalMode, setModalMode] = useState(null);
     const [pendingFormValues, setPendingFormValues] = useState(null);
     const [form] = Form.useForm();
+
+    // ✅ audit review state
+    const [auditOpen, setAuditOpen] = useState(false);
+    const [auditNextValues, setAuditNextValues] = useState(null);
+    const [auditSubmitting, setAuditSubmitting] = useState(false);
 
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
@@ -120,18 +129,12 @@ export default function ManageDevicesPage() {
         getBatteryStatusByImei,
     });
 
-    // ✅ PASS 4 ICONS VÀO MAP HOOK
     const { destroyMap } = useLeafletDeviceMap({
         enabled: viewMode === 'detail',
         selectedDevice,
         cruiseInfo,
         batteryInfo,
-        markerAssets: {
-            stop: markerIconStop,
-            run: markerRun,
-            run50: markerRun50,
-            run80: markerRun80,
-        },
+        markerAssets: { stop: markerIconStop, run: markerRun, run50: markerRun50, run80: markerRun80 },
         t,
         isEn,
         getEngineStatusText,
@@ -171,7 +174,18 @@ export default function ManageDevicesPage() {
             if (!validatePhone(values.phone_number)) {
                 return message.error(t.invalidPhone || (isEn ? 'Invalid phone number' : 'Số điện thoại không hợp lệ'));
             }
+            setAuditNextValues(values);
+            setAuditOpen(true);
+        } catch (err) {
+            message.error(extractErrorMsg(err, isEn));
+        }
+    };
 
+    const handleConfirmAudit = async () => {
+        try {
+            setAuditSubmitting(true);
+
+            const values = auditNextValues;
             const payload = {
                 imei: values.imei,
                 phone_number: values.phone_number,
@@ -191,11 +205,15 @@ export default function ManageDevicesPage() {
                 message.success(t.createSuccess);
             }
 
+            setAuditOpen(false);
+            setAuditNextValues(null);
             setModalMode(null);
             setPendingFormValues(null);
             mutateDevices();
         } catch (err) {
             message.error(extractErrorMsg(err, isEn));
+        } finally {
+            setAuditSubmitting(false);
         }
     };
 
@@ -276,6 +294,44 @@ export default function ManageDevicesPage() {
         onGoBack: goBack,
     });
 
+    // ✅ TOUR CONFIG (per-page)
+    const tourSteps = useMemo(() => {
+        const steps = [
+            {
+                element: '[data-tour="filters"]',
+                intro: isEn ? 'Use filters to quickly find devices.' : 'Dùng bộ lọc để tìm thiết bị nhanh.',
+            },
+            {
+                element: '[data-tour="searchBtn"]',
+                intro: isEn ? 'Click to search with current filters.' : 'Bấm để tìm theo bộ lọc hiện tại.',
+            },
+            {
+                element: '[data-tour="cmdk"]',
+                intro: isEn ? 'Press Ctrl+K to open Command Bar.' : 'Nhấn Ctrl+K để mở Command Bar.',
+            },
+            {
+                element: '[data-tour="table"]',
+                intro: isEn ? 'This is the device list.' : 'Đây là danh sách thiết bị.',
+            },
+        ];
+
+        if (canAddDevice) {
+            steps.push({
+                element: '[data-tour="addBtn"]',
+                intro: isEn ? 'Admins can add new devices here.' : 'Admin có thể thêm thiết bị ở đây.',
+            });
+        }
+
+        return steps;
+    }, [isEn, canAddDevice]);
+
+    // ✅ TOUR ENGINE (shared)
+    const tour = useGuidedTour({
+        isEn,
+        enabled: viewMode === 'list',
+        steps: tourSteps,
+    });
+
     return (
         <>
             {viewMode === 'list' ? (
@@ -301,6 +357,8 @@ export default function ManageDevicesPage() {
                     onSelectDevice={handleSelectDevice}
                     onExportExcel={onExportExcel}
                     onOpenCommandBar={cmd.open}
+                    // ✅ only start when clicking button
+                    onStartTour={tour.start}
                 />
             ) : (
                 <DeviceDetailView
@@ -332,6 +390,16 @@ export default function ManageDevicesPage() {
                     cmd.close();
                     handleSelectDevice(d);
                 }}
+                canEditDevice={canEditDevice}
+                canDeleteDevice={canDeleteDevice}
+                onEditDevice={(d) => {
+                    cmd.close();
+                    openEdit(d);
+                }}
+                onDeleteDevice={(d) => {
+                    cmd.close();
+                    handleDelete(d);
+                }}
             />
 
             <DeviceUpsertModal
@@ -355,6 +423,18 @@ export default function ManageDevicesPage() {
                 popupInParent={popupInParent}
                 isEn={isEn}
                 currentRole={currentRole}
+            />
+
+            <DeviceAuditModal
+                open={auditOpen}
+                onCancel={() => setAuditOpen(false)}
+                onOk={handleConfirmAudit}
+                isEn={isEn}
+                t={t}
+                mode={modalMode}
+                original={pendingFormValues}
+                nextValues={auditNextValues}
+                confirmLoading={auditSubmitting}
             />
         </>
     );

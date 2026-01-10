@@ -66,10 +66,12 @@ export default function DeviceCategoryFilters({
             </Select>
 
             <Space className="dc-filter__actions">
-                <Button type="primary" onClick={onSearch}>
+                <Button type="primary" onClick={onSearch} data-tour="searchBtn">
                     {t.search}
                 </Button>
-                <Button onClick={onReset}>{t.resetFilter}</Button>
+                <Button data-tour="resetBtn" onClick={onReset}>
+                    {t.resetFilter}
+                </Button>
             </Space>
         </div>
     );
