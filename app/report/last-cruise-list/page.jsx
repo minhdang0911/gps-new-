@@ -66,12 +66,9 @@ const LastCruiseReportPage = () => {
     }, []);
 
     // ✅ device map (imei -> plate) + có refresh
-    const {
-        imeiToPlate,
-        plateToImeis,
-        loadingDeviceMap,
-        refreshDeviceMap, // ✅ NEW
-    } = useLastCruiseDeviceMap({ buildImeiToLicensePlateMap });
+    const { imeiToPlate, plateToImeis, loadingDeviceMap, refreshDeviceMap } = useLastCruiseDeviceMap({
+        buildImeiToLicensePlateMap,
+    });
 
     // data + FE filter/sort/paging
     const {

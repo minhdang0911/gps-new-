@@ -40,7 +40,7 @@ const MonitorPage = () => {
     const mqttSilenceTimerRef = useRef(null);
     const MQTT_SILENCE_MS = 60_000;
 
-    // ✅ FIX: MQTT liveness + pick field theo rule
+    // ✅ MQTT liveness
     const isMqttAlive = (lastMqttAtRef) => {
         const last = lastMqttAtRef.current;
         return !!last && Date.now() - last < MQTT_SILENCE_MS;
@@ -48,15 +48,24 @@ const MonitorPage = () => {
 
     // Rule:
     // - MQTT alive  -> chỉ đọc liveTelemetry
-    // - MQTT dead   -> fallback lastCruise -> batteryStatus
+    // - MQTT dead   -> fallback lastCruise -> batteryStatus (cho các field chung)
     const pickField = (field, { liveTelemetry, lastCruise, batteryStatus }, lastMqttAtRef) => {
         if (isMqttAlive(lastMqttAtRef)) return liveTelemetry?.[field];
         return lastCruise?.[field] ?? batteryStatus?.[field];
     };
 
+    // ✅ ACC: chỉ MQTT hoặc lastCruise (KHÔNG batteryStatus)
     const pickAcc = ({ liveTelemetry, lastCruise }, lastMqttAtRef) => {
         if (isMqttAlive(lastMqttAtRef)) return liveTelemetry?.acc;
         return lastCruise?.acc;
+    };
+
+    // ✅ SPEED: chỉ MQTT hoặc lastCruise (ưu tiên spd rồi vgp) - KHÔNG batteryStatus
+    const pickSpeed = ({ liveTelemetry, lastCruise }, lastMqttAtRef) => {
+        if (isMqttAlive(lastMqttAtRef)) {
+            return liveTelemetry?.spd ?? liveTelemetry?.vgp;
+        }
+        return lastCruise?.spd ?? lastCruise?.vgp;
     };
 
     useEffect(() => {
@@ -123,8 +132,8 @@ const MonitorPage = () => {
     const lastCruiseTimeoutRef = useRef(null);
     const lastCruiseInFlightRef = useRef(false);
     const lastCruiseCallAtRef = useRef(0);
-    const LAST_CRUISE_DEBOUNCE_MS = 800; // gom nhiều packet trong 0.8s
-    const LAST_CRUISE_MIN_INTERVAL_MS = 15_000; // tối thiểu 15s mới gọi lại
+    const LAST_CRUISE_DEBOUNCE_MS = 800;
+    const LAST_CRUISE_MIN_INTERVAL_MS = 15_000;
 
     useEffect(() => {
         const loadLeaflet = async () => {
@@ -147,7 +156,6 @@ const MonitorPage = () => {
     // lưu tọa độ cuối cùng đã dùng để gọi API địa chỉ
     const lastCoordsRef = useRef({ lat: null, lon: null });
 
-    // ⭐ ADD: clear timer khi unmount (tránh gọi lạc)
     useEffect(() => {
         return () => {
             if (lastCruiseTimeoutRef.current) {
@@ -161,18 +169,14 @@ const MonitorPage = () => {
     const router = useRouter();
 
     // ===== Marker icon selector (4 icons) =====
-    // Stop: dừng xe + đỗ xe
-    // Run: chạy theo tốc độ
     const getMarkerAssetByStatus = ({ accValNum, usedSpeed }) => {
         // engine off (acc=1) => Đỗ xe
         if (accValNum === 1) return markerIconStop;
 
         const spd = Number(usedSpeed ?? 0);
 
-        // dừng xe (speed <=0) hoặc không có speed rõ ràng
         if (!Number.isFinite(spd) || spd <= 0) return markerIconStop;
 
-        // chạy theo mức
         if (spd >= 80) return markerRun80;
         if (spd >= 50) return markerRun50;
         return markerRun;
@@ -196,9 +200,8 @@ const MonitorPage = () => {
             maxZoom: 19,
         }).addTo(map);
 
-        // ===== marker icon: desktop vs mobile =====
-        const BASE_ANCHOR = [18, 36]; // như bạn đang dùng
-        const MOBILE_ANCHOR = [18, -15]; // anchor.y nhỏ hơn => marker xuống
+        const BASE_ANCHOR = [18, 36];
+        const MOBILE_ANCHOR = [18, -15];
 
         const isMobileNow = () =>
             typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
@@ -207,13 +210,12 @@ const MonitorPage = () => {
 
         const makeIcon = (asset, isMobile) =>
             LMap.icon({
-                iconUrl: asset?.src || asset, // next image -> .src
+                iconUrl: asset?.src || asset,
                 iconAnchor: isMobile ? MOBILE_ANCHOR : BASE_ANCHOR,
             });
 
         makeIconRef.current = makeIcon;
 
-        // mặc định: STOP
         currentMarkerAssetRef.current = markerIconStop;
 
         const marker = LMap.marker([lat, lng], { icon: makeIcon(markerIconStop, isMobileNow()) }).addTo(map);
@@ -230,7 +232,6 @@ const MonitorPage = () => {
         map.on('click', () => setShowPopup(false));
         map.on('move zoom', updatePopupPosition);
 
-        // sau khi zoom xong thì focus lại marker
         map.on('zoomend', () => {
             if (markerRef.current) {
                 const pos = markerRef.current.getLatLng();
@@ -238,7 +239,6 @@ const MonitorPage = () => {
             }
         });
 
-        // ===== resize: update map + popup + icon on breakpoint change =====
         let lastIsMobile = isMobileNow();
 
         const handleResize = () => {
@@ -249,7 +249,6 @@ const MonitorPage = () => {
             if (nowIsMobile !== lastIsMobile) {
                 lastIsMobile = nowIsMobile;
 
-                // đổi anchor theo breakpoint, giữ nguyên asset hiện tại
                 const asset = currentMarkerAssetRef.current || markerIconStop;
                 markerRef.current?.setIcon(makeIcon(asset, nowIsMobile));
             }
@@ -266,21 +265,15 @@ const MonitorPage = () => {
         };
     }, [LMap, lat, lng]);
 
-    // ✅ NEW: tự update icon theo trạng thái (dừng/đỗ -> stop, chạy -> run/run50/run80)
+    // ✅ NEW: tự update icon theo trạng thái (stop/run/50/80)
     useEffect(() => {
         if (!LMap) return;
         if (!markerRef.current) return;
         if (!makeIconRef.current) return;
 
-        const ctx = { liveTelemetry, lastCruise, batteryStatus };
-
-        // ACC
-        const accValNum = toNumberOrNull(pickAcc(ctx, lastMqttAtRef));
-
-        // SPEED (giữ được 0)
-        const spdNum = toNumberOrNull(pickField('spd', ctx, lastMqttAtRef));
-        const vgpNum = toNumberOrNull(pickField('vgp', ctx, lastMqttAtRef));
-        const usedSpeed = spdNum ?? vgpNum;
+        // ACC + SPEED theo rule mới
+        const accValNum = toNumberOrNull(pickAcc({ liveTelemetry, lastCruise }, lastMqttAtRef));
+        const usedSpeed = toNumberOrNull(pickSpeed({ liveTelemetry, lastCruise }, lastMqttAtRef));
 
         const nextAsset = getMarkerAssetByStatus({ accValNum, usedSpeed });
 
@@ -293,7 +286,7 @@ const MonitorPage = () => {
             markerRef.current.setIcon(makeIconRef.current(nextAsset, isMobile));
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [LMap, liveTelemetry, lastCruise, batteryStatus, selectedDevice?.imei]);
+    }, [LMap, liveTelemetry, lastCruise, selectedDevice?.imei]);
 
     useEffect(() => {
         const token = localStorage.getItem('accessToken');
@@ -385,11 +378,10 @@ const MonitorPage = () => {
         }
     };
 
-    // ⭐ ADD: schedule gọi API last-cruise khi MQTT thiếu gps (tránh spam)
+    // ⭐ schedule gọi API last-cruise khi MQTT thiếu gps
     const scheduleRefreshLastCruise = () => {
         if (!selectedDevice?.imei) return;
 
-        // debounce
         if (lastCruiseTimeoutRef.current) {
             clearTimeout(lastCruiseTimeoutRef.current);
             lastCruiseTimeoutRef.current = null;
@@ -398,10 +390,7 @@ const MonitorPage = () => {
         lastCruiseTimeoutRef.current = setTimeout(async () => {
             const now = Date.now();
 
-            // rate-limit
             if (now - lastCruiseCallAtRef.current < LAST_CRUISE_MIN_INTERVAL_MS) return;
-
-            // tránh gọi chồng
             if (lastCruiseInFlightRef.current) return;
 
             const token = localStorage.getItem('accessToken');
@@ -420,7 +409,6 @@ const MonitorPage = () => {
                 setLastCruise(cruise);
                 setCruiseError(null);
 
-                // update map + address theo cruise mới
                 if (mapRef.current && markerRef.current && cruise.lat && cruise.lon && LMap) {
                     const newLatLng = LMap.latLng(cruise.lat, cruise.lon);
                     markerRef.current.setLatLng(newLatLng);
@@ -499,7 +487,6 @@ const MonitorPage = () => {
         setSelectedDevice(device);
         setShowPopup(true);
 
-        // ⭐ ADD: đổi xe thì clear timer + reset anti-spam để khỏi gọi lạc xe
         if (lastCruiseTimeoutRef.current) {
             clearTimeout(lastCruiseTimeoutRef.current);
             lastCruiseTimeoutRef.current = null;
@@ -507,10 +494,8 @@ const MonitorPage = () => {
         lastCruiseInFlightRef.current = false;
         lastCruiseCallAtRef.current = 0;
 
-        // reset MQTT data khi đổi xe
         setLiveTelemetry(null);
 
-        // reset marker icon về STOP khi đổi xe (đỡ bị icon xe trước)
         currentMarkerAssetRef.current = markerIconStop;
         if (markerRef.current && makeIconRef.current) {
             const isMobile = isMobileNowRef.current ? isMobileNowRef.current() : false;
@@ -526,7 +511,6 @@ const MonitorPage = () => {
             return;
         }
 
-        // reset để hiển thị skeleton
         setBatteryStatus(null);
         setDeviceInfo(null);
         setLastCruise(null);
@@ -636,28 +620,23 @@ const MonitorPage = () => {
     useEffect(() => {
         if (!selectedDevice?.imei) return;
 
-        // clear timer cũ
         if (mqttSilenceTimerRef.current) {
             clearInterval(mqttSilenceTimerRef.current);
             mqttSilenceTimerRef.current = null;
         }
 
-        // reset timestamp khi đổi xe
         lastMqttAtRef.current = 0;
 
         mqttSilenceTimerRef.current = setInterval(() => {
             const last = lastMqttAtRef.current;
-            if (!last) return; // chưa từng nhận mqtt
+            if (!last) return;
 
             const silent = Date.now() - last >= MQTT_SILENCE_MS;
             if (silent) {
-                // 1) clear liveTelemetry để không giữ gps=1 dấu (*)
                 setLiveTelemetry(null);
-
-                // 2) gọi lastCruise để lấy gps/lat/lon mới nhất (có rate limit bên trong)
                 scheduleRefreshLastCruise();
             }
-        }, 5_000); // check mỗi 5s
+        }, 5_000);
 
         return () => {
             if (mqttSilenceTimerRef.current) {
@@ -677,39 +656,30 @@ const MonitorPage = () => {
 
         if (!data || typeof data !== 'object') return;
 
-        // ⭐ ADD: mark thời điểm nhận MQTT (để watchdog biết còn sống)
         lastMqttAtRef.current = Date.now();
 
-        // ⭐ CHANGE: nếu MQTT có message nhưng thiếu gps -> schedule gọi last-cruise
         if (data.gps == null) {
             scheduleRefreshLastCruise();
         }
 
         setLiveTelemetry((prev) => {
             const updated = { ...(prev || {}), ...data };
-
             const isTelemetryPacket = 'ev' in data;
 
             if (isTelemetryPacket) {
                 if (data.gps == null) delete updated.gps;
-                if (data.acc == null) delete updated.acc; // ✅ quan trọng nhất
+                if (data.acc == null) delete updated.acc;
                 if (data.spd == null) delete updated.spd;
                 if (data.vgp == null) delete updated.vgp;
             }
 
-            // ⭐ ADD: nếu telemetry packet mà không có gps => xóa gps cũ (tránh giữ gps=1)
             if (isTelemetryPacket && data.gps == null) {
                 delete updated.gps;
             }
 
             if (!isTelemetryPacket) {
-                if (!('sos' in data) && 'sos' in updated) {
-                    delete updated.sos;
-                }
-
-                if (!('acc' in data) && 'acc' in updated) {
-                    delete updated.acc;
-                }
+                if (!('sos' in data) && 'sos' in updated) delete updated.sos;
+                if (!('acc' in data) && 'acc' in updated) delete updated.acc;
             }
 
             return updated;
@@ -743,8 +713,6 @@ const MonitorPage = () => {
             }
         }
     };
-
-    const BATTERY_FIELDS = ['soc', 'soh', 'tavg', 'tmax', 'tmin', 'vavg', 'vmax', 'vmin', 'cur', 'ckw', 'ckwh', 'an1'];
 
     // RENDER BATTERY
     const renderBatteryInfo = () => {
@@ -822,12 +790,16 @@ const MonitorPage = () => {
         );
     };
 
+    // ✅ Log ACC theo đúng rule (không dính batteryStatus)
     useEffect(() => {
-        const src = liveTelemetry || lastCruise || {};
-        const mqttSrc = liveTelemetry || {};
-        const accValNum = toNumberOrNull(mqttSrc.acc ?? src.acc ?? batteryStatus?.acc);
-        console.log('[ACC] accValNum=', accValNum, { mqtt: mqttSrc.acc, src: src.acc, bs: batteryStatus?.acc });
-    }, [liveTelemetry, lastCruise, batteryStatus]);
+        const accValNum = toNumberOrNull(pickAcc({ liveTelemetry, lastCruise }, lastMqttAtRef));
+        console.log('[ACC] accValNum=', accValNum, {
+            mqtt: liveTelemetry?.acc,
+            cruise: lastCruise?.acc,
+            mqttAlive: isMqttAlive(lastMqttAtRef),
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [liveTelemetry, lastCruise, selectedDevice?.imei]);
 
     // RENDER STATUS
     const renderStatusInfo = () => {
@@ -835,9 +807,7 @@ const MonitorPage = () => {
 
         const info = deviceInfo || selectedDevice;
 
-        // ✅ FIX: chỉ fallback khi MQTT chết
         const ctx = { liveTelemetry, lastCruise, batteryStatus };
-        const mqttAlive = isMqttAlive(lastMqttAtRef);
 
         // ===== ODO / DISTANCE / TIME / FWR / COORD =====
         const odo = pickField('mil', ctx, lastMqttAtRef);
@@ -851,19 +821,15 @@ const MonitorPage = () => {
         const latVal = pickField('lat', ctx, lastMqttAtRef);
         const lonVal = pickField('lon', ctx, lastMqttAtRef);
 
-        // ===== ACC =====
-        const accValNum = toNumberOrNull(pickAcc(ctx, lastMqttAtRef));
-
-        // ===== SPEED (GIỮ ĐƯỢC 0) =====
-        const spdNum = toNumberOrNull(pickField('spd', ctx, lastMqttAtRef));
-        const vgpNum = toNumberOrNull(pickField('vgp', ctx, lastMqttAtRef));
-        const usedSpeed = spdNum ?? vgpNum;
+        // ✅ ACC + SPEED theo rule mới
+        const accValNum = toNumberOrNull(pickAcc({ liveTelemetry, lastCruise }, lastMqttAtRef));
+        const usedSpeed = toNumberOrNull(pickSpeed({ liveTelemetry, lastCruise }, lastMqttAtRef));
 
         // ===== GPS FLAG =====
         const gpsValNum = toNumberOrNull(pickField('gps', ctx, lastMqttAtRef));
 
         // ===== ENGINE STATUS (DEFAULT = ON, chỉ acc=1 mới OFF) =====
-        const isEngineOff = accValNum === 1; // ✅ chỉ 1 là tắt máy
+        const isEngineOff = accValNum === 1;
         const machineStatus = isEngineOff ? t.statusInfo.engineOff : t.statusInfo.engineOn;
 
         // ===== VEHICLE STATUS =====
@@ -911,7 +877,6 @@ const MonitorPage = () => {
                     {t.statusInfo.vehicleStatus} {vehicleStatus}
                 </div>
 
-                {/* SPEED: >0 là hiện */}
                 {usedSpeed != null && usedSpeed > 0 && (
                     <div>
                         {t.statusInfo.speed} {usedSpeed} km/h
@@ -1011,7 +976,6 @@ const MonitorPage = () => {
         }
     };
 
-    const curStatus = selectedDevice?.status;
     const isLocked = liveTelemetry?.sos === 1 || liveTelemetry?.sos === '1';
     const deviceStatusText = isLocked ? t.control.statusActivated : t.control.statusNotActivated;
     const deviceStatusClass = isLocked ? 'iky-monitor__tag-red' : 'iky-monitor__tag-green';
@@ -1250,7 +1214,6 @@ const MonitorPage = () => {
                                         </button>
                                     </div>
 
-                                    {/* Thanh nhỏ báo đang cập nhật */}
                                     {isRefreshing && <div className="iky-monitor__refreshing-bar"></div>}
 
                                     <div className="iky-monitor__popup-body">
@@ -1284,6 +1247,7 @@ const MonitorPage = () => {
                                                         </span>
                                                     </div>
                                                 </div>
+
                                                 <div className="iky-monitor__control-row">
                                                     <span>{t.control.emergencyStop}</span>
 

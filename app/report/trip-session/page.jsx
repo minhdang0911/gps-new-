@@ -334,19 +334,14 @@ const TripSessionReportPage = () => {
 
     // ✅ summary totals (tổng theo kết quả đã lọc)
     const totalKm = useMemo(() => {
-        const toNum = (v) => {
-            if (v == null) return 0;
-            if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
-            const s = String(v).trim().replace(/,/g, '');
-            const n = Number(s);
-            return Number.isFinite(n) ? n : 0;
-        };
-
-        // ⚠️ đổi key nếu data của trip session không phải mileageToday
-        return (processedData || []).reduce(
-            (sum, r) => sum + toNum(r?.mileageToday ?? r?.distanceKm ?? r?.distance),
-            0,
-        );
+        return (processedData || []).reduce((sum, r) => {
+            const km = r?.distanceKm;
+            if (typeof km !== 'number') return sum;
+            if (!Number.isFinite(km)) return sum;
+            if (km < 0) return sum; // bỏ record lỗi
+            if (km > 100_000) return sum; // optional: chặn outlier vô lý
+            return sum + km;
+        }, 0);
     }, [processedData]);
 
     const totalTrips = useMemo(() => processedData?.length || 0, [processedData]);

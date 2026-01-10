@@ -263,13 +263,29 @@ const TripReportPage = () => {
 
     const totalKm = useMemo(() => {
         const toNum = (v) => {
-            if (v == null) return 0;
-            if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+            if (v == null) return null;
+            if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+
+            // nếu BE trả string
             const s = String(v).trim().replace(/,/g, '');
             const n = Number(s);
-            return Number.isFinite(n) ? n : 0;
+            return Number.isFinite(n) ? n : null;
         };
-        return (processedData || []).reduce((sum, r) => sum + toNum(r?.mileageToday), 0);
+
+        const MAX_KM = 100000;
+
+        return (processedData || []).reduce((sum, r) => {
+            const km = toNum(r?.mileageToday);
+
+            // loại null/NaN
+            if (km == null) return sum;
+
+            // ✅ loại lỗi GPS: âm hoặc quá lớn
+            if (km < 0) return sum;
+            if (km > MAX_KM) return sum;
+
+            return sum + km;
+        }, 0);
     }, [processedData]);
 
     const totalTrips = useMemo(() => {
