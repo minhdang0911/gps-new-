@@ -1,7 +1,10 @@
+/* =========================
+   FILE 2: components/manageDevices/DeviceListView.jsx
+   ========================= */
 'use client';
 
 import React, { useMemo } from 'react';
-import { Card, Input, Button, Table, Space, Typography, Row, Col, Popconfirm, FloatButton } from 'antd';
+import { Card, Input, Button, Table, Space, Typography, Row, Col, Popconfirm, FloatButton, Tooltip } from 'antd';
 import {
     SearchOutlined,
     PlusOutlined,
@@ -10,7 +13,10 @@ import {
     EyeOutlined,
     DownloadOutlined,
     QuestionCircleOutlined,
+    PlayCircleOutlined,
+    ToolOutlined,
 } from '@ant-design/icons';
+
 import CommandBarTrigger from '../../components/common/CommandBarTrigger';
 
 const { Title, Text } = Typography;
@@ -39,13 +45,10 @@ export default function DeviceListView({
     onOpenCommandBar,
     onStartTour,
 
-    // ✅ NEW props
-    checkedRowKeys,
-    onCheckedChange,
-    onStartMaintenance,
-    onConfirmMaintenance,
+    // ✅ NEW row actions
+    onActivateDevice,
+    onMaintainDevice,
     startingMaint,
-    confirmingMaint,
 }) {
     const columns = useMemo(
         () => [
@@ -105,14 +108,30 @@ export default function DeviceListView({
                 render: (_, r) => <Button size="small" icon={<EyeOutlined />} onClick={() => onSelectDevice(r)} />,
             },
             {
-                title: `${t.edit}/${t.delete}`,
+                title: t.actions || (isEn ? 'Actions' : 'Thao tác'),
                 render: (_, r) => (
-                    <Space>
+                    <Space wrap>
+                        {/* ✅ NEW: đặt cạnh sửa/xoá, không cần tick */}
+                        <Button
+                            size="small"
+                            type="primary"
+                            icon={<PlayCircleOutlined />}
+                            loading={!!startingMaint}
+                            onClick={() => onActivateDevice?.(r)}
+                        >
+                            {isEn ? 'Activate' : 'Kích hoạt'}
+                        </Button>
+
+                        <Button size="small" icon={<ToolOutlined />} onClick={() => onMaintainDevice?.(r)}>
+                            {isEn ? 'Maintenance' : 'Bảo dưỡng'}
+                        </Button>
+
                         {canEditDevice && (
                             <Button size="small" icon={<EditOutlined />} onClick={() => onOpenEdit(r)}>
                                 {t.edit}
                             </Button>
                         )}
+
                         {canDeleteDevice && (
                             <Popconfirm
                                 title={t.deleteConfirm}
@@ -131,17 +150,21 @@ export default function DeviceListView({
                 ),
             },
         ],
-        [t, isEn, currentPage, pageSize, canEditDevice, canDeleteDevice, onOpenEdit, onDelete, onSelectDevice],
+        [
+            t,
+            isEn,
+            currentPage,
+            pageSize,
+            canEditDevice,
+            canDeleteDevice,
+            onOpenEdit,
+            onDelete,
+            onSelectDevice,
+            onActivateDevice,
+            onMaintainDevice,
+            startingMaint,
+        ],
     );
-
-    // ✅ NEW: rowSelection để tick 1 dòng -> bật 2 nút
-    const rowSelection = {
-        type: 'radio',
-        selectedRowKeys: checkedRowKeys || [],
-        onChange: (keys, rows) => onCheckedChange?.(keys, rows),
-    };
-
-    const hasChecked = (checkedRowKeys || []).length > 0;
 
     return (
         <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
@@ -165,20 +188,6 @@ export default function DeviceListView({
 
                 <Col>
                     <Space>
-                        {/* ✅ NEW: 2 nút theo yêu cầu */}
-                        <Button
-                            type="primary"
-                            disabled={!hasChecked}
-                            loading={!!startingMaint}
-                            onClick={onStartMaintenance}
-                        >
-                            {isEn ? 'Activate device' : 'Kích hoạt thiết bị'}
-                        </Button>
-
-                        <Button disabled={!hasChecked} loading={!!confirmingMaint} onClick={onConfirmMaintenance}>
-                            {isEn ? 'Confirm maintenance' : 'Bảo dưỡng thiết bị'}
-                        </Button>
-
                         <Button icon={<DownloadOutlined />} onClick={onExportExcel}>
                             {t.exportExcel}
                         </Button>
@@ -250,7 +259,6 @@ export default function DeviceListView({
                         columns={columns}
                         rowKey="_id"
                         loading={devicesLoading || devicesValidating}
-                        rowSelection={rowSelection}
                         pagination={{
                             current: currentPage,
                             pageSize,
@@ -262,7 +270,7 @@ export default function DeviceListView({
                             },
                         }}
                         style={{ marginTop: 12 }}
-                        scroll={{ x: 900 }}
+                        scroll={{ x: 1100 }}
                     />
                 </div>
             </Card>

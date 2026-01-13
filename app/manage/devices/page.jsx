@@ -1,3 +1,6 @@
+/* =========================
+   FILE 1: ManageDevicesPage.jsx
+   ========================= */
 'use client';
 
 import React, { useMemo, useState } from 'react';
@@ -20,7 +23,7 @@ import { getUserList } from '../../lib/api/user';
 import { getLastCruise } from '../../lib/api/cruise';
 import { getBatteryStatusByImei } from '../../lib/api/batteryStatus';
 
-// ✅ NEW: maintain APIs
+// ✅ maintain APIs
 import { startMaintenance, confirmMaintenance } from '../../lib/api/maintain';
 
 import vi from '../../locales/vi.json';
@@ -46,13 +49,12 @@ import DeviceAuditModal from '../../components/manageDevices/DeviceAuditModal';
 import 'intro.js/introjs.css';
 import '../../styles/intro-custom.css';
 
-// ✅ NEW: shared guided tour hook
+// ✅ guided tour
 import { useGuidedTour } from '../../hooks/common/useGuidedTour';
 
 const { TextArea } = Input;
 const locales = { vi, en };
 
-// ✅ helper lấy confirmedBy giống trang maintain
 function getConfirmedByFromLocalStorage() {
     if (typeof window === 'undefined') return '';
     const raw = localStorage.getItem('userid');
@@ -334,10 +336,7 @@ export default function ManageDevicesPage() {
                 element: '[data-tour="cmdk"]',
                 intro: isEn ? 'Press Ctrl+K to open Command Bar.' : 'Nhấn Ctrl+K để mở Command Bar.',
             },
-            {
-                element: '[data-tour="table"]',
-                intro: isEn ? 'This is the device list.' : 'Đây là danh sách thiết bị.',
-            },
+            { element: '[data-tour="table"]', intro: isEn ? 'This is the device list.' : 'Đây là danh sách thiết bị.' },
         ];
 
         if (canAddDevice) {
@@ -346,11 +345,9 @@ export default function ManageDevicesPage() {
                 intro: isEn ? 'Admins can add new devices here.' : 'Admin có thể thêm thiết bị ở đây.',
             });
         }
-
         return steps;
     }, [isEn, canAddDevice]);
 
-    // ✅ TOUR ENGINE (shared)
     const tour = useGuidedTour({
         isEn,
         enabled: viewMode === 'list',
@@ -358,25 +355,16 @@ export default function ManageDevicesPage() {
     });
 
     // =========================
-    // ✅ NEW: tick row + 2 nút
+    // ✅ NEW: 2 actions per-row
     // =========================
-    const [checkedRowKeys, setCheckedRowKeys] = useState([]);
-    const [checkedDevice, setCheckedDevice] = useState(null);
-
-    const onCheckedChange = (keys, rows) => {
-        setCheckedRowKeys(keys);
-        setCheckedDevice(rows?.[0] || null);
-    };
-
     const [startingMaint, setStartingMaint] = useState(false);
 
-    const handleStartMaintFromChecked = async () => {
-        if (!checkedDevice?._id)
-            return message.warning(isEn ? 'Please select a device.' : 'Vui lòng tick chọn 1 thiết bị.');
+    const handleActivateDevice = async (device) => {
+        if (!device?._id) return message.warning(isEn ? 'Invalid device.' : 'Thiết bị không hợp lệ.');
         try {
             setStartingMaint(true);
-            await startMaintenance({ device_id: checkedDevice._id });
-            message.success(isEn ? 'Started maintenance.' : 'Kích hoạt thiết bị thành công.');
+            await startMaintenance({ device_id: device._id });
+            message.success(isEn ? 'Activated device.' : 'Kích hoạt thiết bị thành công.');
         } catch (err) {
             console.error(err);
             const backendMsg = err?.response?.data?.message || '';
@@ -384,28 +372,27 @@ export default function ManageDevicesPage() {
                 message.info(isEn ? 'Maintenance already started.' : 'Thiết bị đã được kích hoạt trước đó.');
                 return;
             }
-            message.error(isEn ? 'Start maintenance failed.' : 'Kích hoạt thiết bị thất bại.');
+            message.error(isEn ? 'Activate failed.' : 'Kích hoạt thiết bị thất bại.');
         } finally {
             setStartingMaint(false);
         }
     };
 
-    // ✅ Confirm maintenance modal
     const confirmedBy = useMemo(() => getConfirmedByFromLocalStorage(), []);
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [confirming, setConfirming] = useState(false);
     const [confirmForm] = Form.useForm();
+    const [deviceToMaintain, setDeviceToMaintain] = useState(null);
 
-    const openConfirmFromChecked = () => {
-        if (!checkedDevice) return message.warning(isEn ? 'Please select a device.' : 'Vui lòng tick chọn 1 thiết bị.');
+    const openMaintainModal = (device) => {
+        if (!device) return;
         if (!confirmedBy)
             return message.error(
                 isEn ? 'Missing user info. Please login again.' : 'Không tìm thấy tài khoản. Vui lòng đăng nhập lại.',
             );
+        if (!device?.imei) return message.error(isEn ? 'Missing IMEI.' : 'Thiếu IMEI để xác nhận.');
 
-        // cần imei để confirm
-        if (!checkedDevice?.imei) return message.error(isEn ? 'Missing IMEI.' : 'Thiếu IMEI để xác nhận.');
-
+        setDeviceToMaintain(device);
         setConfirmOpen(true);
         confirmForm.setFieldsValue({
             maintenanceDate: dayjs(),
@@ -414,7 +401,7 @@ export default function ManageDevicesPage() {
     };
 
     const handleConfirmMaintenance = async () => {
-        if (!checkedDevice?.imei) return message.error(isEn ? 'Missing IMEI.' : 'Thiếu IMEI để xác nhận.');
+        if (!deviceToMaintain?.imei) return message.error(isEn ? 'Missing IMEI.' : 'Thiếu IMEI để xác nhận.');
         if (!confirmedBy) return message.error(isEn ? 'Missing user info.' : 'Không tìm thấy tài khoản.');
 
         try {
@@ -425,24 +412,24 @@ export default function ManageDevicesPage() {
             const maintenanceDate = dateValue ? dayjs(dateValue).format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD');
             const note = values?.note?.trim();
 
-            const payload = { imei: checkedDevice.imei, confirmedBy, maintenanceDate };
+            const payload = { imei: deviceToMaintain.imei, confirmedBy, maintenanceDate };
             if (note) payload.note = note;
 
             await confirmMaintenance(payload);
 
             message.success(isEn ? 'Confirmed maintenance.' : 'Xác nhận bảo dưỡng thành công.');
             setConfirmOpen(false);
+            setDeviceToMaintain(null);
             confirmForm.resetFields();
         } catch (err) {
             console.error(err);
             const backendMsg = err?.response?.data?.message || '';
             if (backendMsg.includes('E11000') && backendMsg.includes('imei')) {
                 message.info(
-                    isEn
-                        ? 'This maintenance was already confirmed.'
-                        : 'Lịch bảo dưỡng của thiết bị này đã được xác nhận trước đó.',
+                    isEn ? 'This maintenance was already confirmed.' : 'Thiết bị chưa đủ điều kiện để bảo dưỡng.',
                 );
                 setConfirmOpen(false);
+                setDeviceToMaintain(null);
                 confirmForm.resetFields();
                 return;
             }
@@ -478,13 +465,10 @@ export default function ManageDevicesPage() {
                     onExportExcel={onExportExcel}
                     onOpenCommandBar={cmd.open}
                     onStartTour={tour.start}
-                    // ✅ NEW props
-                    checkedRowKeys={checkedRowKeys}
-                    onCheckedChange={onCheckedChange}
-                    onStartMaintenance={handleStartMaintFromChecked}
-                    onConfirmMaintenance={openConfirmFromChecked}
+                    // ✅ NEW row actions
+                    onActivateDevice={handleActivateDevice}
+                    onMaintainDevice={openMaintainModal}
                     startingMaint={startingMaint}
-                    confirmingMaint={confirming}
                 />
             ) : (
                 <DeviceDetailView
@@ -569,6 +553,7 @@ export default function ManageDevicesPage() {
                 open={confirmOpen}
                 onCancel={() => {
                     setConfirmOpen(false);
+                    setDeviceToMaintain(null);
                     confirmForm.resetFields();
                 }}
                 okText={isEn ? 'Confirm' : 'Xác nhận'}
@@ -577,6 +562,13 @@ export default function ManageDevicesPage() {
                 confirmLoading={confirming}
                 destroyOnClose
             >
+                <div style={{ marginBottom: 12 }}>
+                    <b>{isEn ? 'Device:' : 'Thiết bị:'}</b>{' '}
+                    {deviceToMaintain?.license_plate || deviceToMaintain?.imei || '-'}
+                    <br />
+                    <b>IMEI:</b> {deviceToMaintain?.imei || '-'}
+                </div>
+
                 <Form layout="vertical" form={confirmForm}>
                     <Form.Item label={isEn ? 'Maintenance date' : 'Ngày bảo dưỡng'} name="maintenanceDate">
                         <DatePicker format="YYYY-MM-DD" allowClear style={{ width: '100%' }} />
