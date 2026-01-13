@@ -38,6 +38,14 @@ export default function DeviceListView({
     onExportExcel,
     onOpenCommandBar,
     onStartTour,
+
+    // ✅ NEW props
+    checkedRowKeys,
+    onCheckedChange,
+    onStartMaintenance,
+    onConfirmMaintenance,
+    startingMaint,
+    confirmingMaint,
 }) {
     const columns = useMemo(
         () => [
@@ -126,6 +134,15 @@ export default function DeviceListView({
         [t, isEn, currentPage, pageSize, canEditDevice, canDeleteDevice, onOpenEdit, onDelete, onSelectDevice],
     );
 
+    // ✅ NEW: rowSelection để tick 1 dòng -> bật 2 nút
+    const rowSelection = {
+        type: 'radio',
+        selectedRowKeys: checkedRowKeys || [],
+        onChange: (keys, rows) => onCheckedChange?.(keys, rows),
+    };
+
+    const hasChecked = (checkedRowKeys || []).length > 0;
+
     return (
         <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
             <Row justify="space-between" align="middle">
@@ -148,6 +165,20 @@ export default function DeviceListView({
 
                 <Col>
                     <Space>
+                        {/* ✅ NEW: 2 nút theo yêu cầu */}
+                        <Button
+                            type="primary"
+                            disabled={!hasChecked}
+                            loading={!!startingMaint}
+                            onClick={onStartMaintenance}
+                        >
+                            {isEn ? 'Activate device' : 'Kích hoạt thiết bị'}
+                        </Button>
+
+                        <Button disabled={!hasChecked} loading={!!confirmingMaint} onClick={onConfirmMaintenance}>
+                            {isEn ? 'Confirm maintenance' : 'Bảo dưỡng thiết bị'}
+                        </Button>
+
                         <Button icon={<DownloadOutlined />} onClick={onExportExcel}>
                             {t.exportExcel}
                         </Button>
@@ -219,6 +250,7 @@ export default function DeviceListView({
                         columns={columns}
                         rowKey="_id"
                         loading={devicesLoading || devicesValidating}
+                        rowSelection={rowSelection}
                         pagination={{
                             current: currentPage,
                             pageSize,
@@ -235,7 +267,6 @@ export default function DeviceListView({
                 </div>
             </Card>
 
-            {/* ✅ đẹp + không phá header: help floating */}
             <FloatButton
                 icon={<QuestionCircleOutlined />}
                 tooltip={isEn ? 'Guide' : 'Hướng dẫn'}
