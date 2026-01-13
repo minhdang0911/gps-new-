@@ -19,7 +19,9 @@ import {
     DatePicker,
     Input,
 } from 'antd';
+
 import { startMaintenance, confirmMaintenance, getMaintenanceDue } from '../lib/api/maintain';
+import { getDevices } from '../lib/api/devices'; // ✅ chỉnh path cho đúng project
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -79,12 +81,20 @@ function getConfirmedByFromLocalStorage() {
 }
 
 export default function MaintenanceActivatePage() {
-    const [devices, setDevices] = useState([]);
-    const [loadingDevices, setLoadingDevices] = useState(false);
+    // ✅ Table data: từ getMaintenanceDue
+    const [tableDevices, setTableDevices] = useState([]);
+    const [loadingTable, setLoadingTable] = useState(false);
+
+    // ✅ Select data: từ getDevices
+    const [selectDevices, setSelectDevices] = useState([]);
+    const [loadingSelect, setLoadingSelect] = useState(false);
 
     const [startedMap, setStartedMap] = useState({});
     const [selectedDeviceId, setSelectedDeviceId] = useState('');
-    const selectedDevice = useMemo(() => devices.find((d) => d._id === selectedDeviceId), [devices, selectedDeviceId]);
+    const selectedDevice = useMemo(
+        () => selectDevices.find((d) => d._id === selectedDeviceId),
+        [selectDevices, selectedDeviceId],
+    );
 
     const [starting, setStarting] = useState(false);
 
@@ -92,17 +102,43 @@ export default function MaintenanceActivatePage() {
     const [searchPlate, setSearchPlate] = useState('');
     const [searchImei, setSearchImei] = useState('');
 
-    // ====== Confirm modal state (giống code cũ) ======
+    // ====== Confirm modal state ======
     const confirmedBy = useMemo(() => getConfirmedByFromLocalStorage(), []);
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [confirming, setConfirming] = useState(false);
     const [confirmForm] = Form.useForm();
     const [rowToConfirm, setRowToConfirm] = useState(null);
 
-    // ✅ CHỈ ĐỔI API: getMaintenanceDue thay cho getDevices
-    const loadDevices = async ({ license_plate = '', imei = '' } = {}) => {
+    /** ✅ Load SELECT devices: getDevices */
+    const loadSelectDevices = async ({ license_plate = '', imei = '' } = {}) => {
         try {
-            setLoadingDevices(true);
+            setLoadingSelect(true);
+
+            const res = await getDevices({
+                page: 1,
+                limit: 200000,
+                ...(license_plate ? { license_plate } : {}),
+                ...(imei ? { imei } : {}),
+            });
+
+            const list = res?.devices || res?.data || res?.items || [];
+            setSelectDevices(list);
+
+            // startedMap vẫn dựa trên _id thiết bị
+            const map = ensureRandomStarted(list);
+            setStartedMap(map);
+        } catch (e) {
+            console.error(e);
+            message.error('Không tải được danh sách thiết bị (Select)');
+        } finally {
+            setLoadingSelect(false);
+        }
+    };
+
+    /** ✅ Load TABLE devices: getMaintenanceDue */
+    const loadTableDevices = async ({ license_plate = '', imei = '' } = {}) => {
+        try {
+            setLoadingTable(true);
 
             const res = await getMaintenanceDue({
                 page: 1,
@@ -111,29 +147,27 @@ export default function MaintenanceActivatePage() {
                 ...(imei ? { imei } : {}),
             });
 
-            // tuỳ backend trả về key gì: devices / data / items
             const list = res?.devices || res?.data || res?.items || [];
-            setDevices(list);
-
-            const map = ensureRandomStarted(list);
-            setStartedMap(map);
+            setTableDevices(list);
         } catch (e) {
             console.error(e);
-            message.error('Không tải được danh sách thiết bị');
+            message.error('Không tải được danh sách xe đến kì bảo dưỡng (Table)');
         } finally {
-            setLoadingDevices(false);
+            setLoadingTable(false);
         }
     };
 
     useEffect(() => {
-        loadDevices({ license_plate: '', imei: '' });
+        // Load lần đầu
+        loadSelectDevices({ license_plate: '', imei: '' });
+        loadTableDevices({ license_plate: '', imei: '' });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     /** thiết bị chưa start -> mới được chọn trong Select */
     const selectableDevices = useMemo(() => {
-        return devices.filter((d) => d?._id && !startedMap[d._id]);
-    }, [devices, startedMap]);
+        return selectDevices.filter((d) => d?._id && !startedMap[d._id]);
+    }, [selectDevices, startedMap]);
 
     /** Start (chỉ 1 nút Kích hoạt) */
     const handleStart = async () => {
@@ -149,7 +183,7 @@ export default function MaintenanceActivatePage() {
             setStartedMap(next);
             writeStartedMap(next);
 
-            message.success('Kích hoạt bảo dưỡng thành công');
+            message.success('Kích hoạt thành công');
             setSelectedDeviceId('');
         } catch (e) {
             console.error(e);
@@ -234,15 +268,27 @@ export default function MaintenanceActivatePage() {
     };
 
     const doSearch = async () => {
-        await loadDevices({ license_plate: searchPlate.trim(), imei: searchImei.trim() });
+        const license_plate = searchPlate.trim();
+        const imei = searchImei.trim();
+
+        // Table search theo Due
+        await loadTableDevices({ license_plate, imei });
+
+        // Select search theo Devices (có thể bạn muốn luôn sync theo search)
+        await loadSelectDevices({ license_plate, imei });
+
         setSelectedDeviceId('');
     };
 
     const doReload = async () => {
-        await loadDevices({ license_plate: searchPlate.trim(), imei: searchImei.trim() });
+        const license_plate = searchPlate.trim();
+        const imei = searchImei.trim();
+
+        await loadTableDevices({ license_plate, imei });
+        await loadSelectDevices({ license_plate, imei });
     };
 
-    // ✅ BỎ CỘT TRẠNG THÁI
+    // ✅ Table columns (giữ nguyên)
     const columns = [
         {
             title: 'Tên thiết bị',
@@ -281,6 +327,8 @@ export default function MaintenanceActivatePage() {
         },
     ];
 
+    const loadingAny = loadingTable || loadingSelect;
+
     return (
         <div style={{ padding: 16 }}>
             <Title level={3} style={{ marginBottom: 4 }}>
@@ -296,7 +344,7 @@ export default function MaintenanceActivatePage() {
 
                             <Select
                                 style={{ width: '100%' }}
-                                loading={loadingDevices}
+                                loading={loadingSelect}
                                 value={selectedDeviceId || undefined}
                                 onChange={setSelectedDeviceId}
                                 showSearch
@@ -328,7 +376,7 @@ export default function MaintenanceActivatePage() {
                 </Row>
             </Card>
 
-            {/* Search trên table: chỉ 2 ô + 2 nút (Tìm + Tải lại). Tải lại nằm kế Tìm */}
+            {/* Search trên table: chỉ 2 ô + 2 nút (Tìm + Tải lại). */}
             <Card style={{ marginBottom: 12 }}>
                 <Row gutter={[12, 12]} align="middle">
                     <Col xs={24} lg={8}>
@@ -353,10 +401,10 @@ export default function MaintenanceActivatePage() {
 
                     <Col xs={24} lg={8}>
                         <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-                            <Button onClick={doSearch} loading={loadingDevices}>
+                            <Button onClick={doSearch} loading={loadingAny}>
                                 Tìm
                             </Button>
-                            <Button onClick={doReload} loading={loadingDevices}>
+                            <Button onClick={doReload} loading={loadingAny}>
                                 Tải lại
                             </Button>
                         </Space>
@@ -366,36 +414,29 @@ export default function MaintenanceActivatePage() {
 
             <Card
                 title={
-                    <div
-                        style={{
-                            fontSize: '1.5rem',
-                            fontWeight: 600,
-                            textAlign: 'center',
-                            width: '100%',
-                        }}
-                    >
+                    <div style={{ fontSize: '1.5rem', fontWeight: 600, textAlign: 'center', width: '100%' }}>
                         Danh sách xe đến kì bảo dưỡng
                     </div>
                 }
             >
-                {loadingDevices ? (
+                {loadingTable ? (
                     <div style={{ textAlign: 'center', padding: 24 }}>
                         <Spin />
                     </div>
-                ) : devices.length === 0 ? (
+                ) : tableDevices.length === 0 ? (
                     <Empty description="Không có thiết bị" />
                 ) : (
                     <Table
                         rowKey={(row) => row?._id}
                         columns={columns}
-                        dataSource={devices}
+                        dataSource={tableDevices}
                         scroll={{ x: 1200 }}
                         pagination={{ pageSize: 10, showSizeChanger: false }}
                     />
                 )}
             </Card>
 
-            {/* ✅ CONFIRM MODAL giống code cũ */}
+            {/* ✅ CONFIRM MODAL */}
             <Modal
                 title="Xác nhận bảo dưỡng"
                 open={confirmOpen}
