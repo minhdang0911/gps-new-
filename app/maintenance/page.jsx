@@ -343,7 +343,7 @@ export default function MaintenanceActivatePage() {
                             <Text strong>Chọn thiết bị</Text>
 
                             <Select
-                                style={{ width: '100%' }}
+                                style={{ width: 420, maxWidth: '100%' }}
                                 loading={loadingSelect}
                                 value={selectedDeviceId || undefined}
                                 onChange={setSelectedDeviceId}
