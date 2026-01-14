@@ -571,7 +571,12 @@ export default function ManageDevicesPage() {
 
                 <Form layout="vertical" form={confirmForm}>
                     <Form.Item label={isEn ? 'Maintenance date' : 'Ngày bảo dưỡng'} name="maintenanceDate">
-                        <DatePicker format="YYYY-MM-DD" allowClear style={{ width: '100%' }} />
+                        <DatePicker
+                            format="YYYY-MM-DD"
+                            allowClear
+                            style={{ width: '100%' }}
+                            getPopupContainer={(trigger) => trigger.parentElement}
+                        />
                     </Form.Item>
 
                     <Form.Item label={isEn ? 'Note (optional)' : 'Ghi chú (không bắt buộc)'} name="note">
