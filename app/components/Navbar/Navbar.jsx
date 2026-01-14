@@ -14,8 +14,8 @@ import hotro from '../../assets/hotro.png';
 import logo from '../../assets/logo-iky.webp';
 import maintaince from '../../assets/maintaince.png';
 
-import flagVi from '../../assets/flag-vi.png';
-import flagEn from '../../assets/flag-en.png';
+import flagVi from '../../assets/flag-vi.webp';
+import flagEn from '../../assets/flag-en.webp';
 import { useAuthStore } from '../../stores/authStore';
 
 import { logoutApi } from '../../lib/api/auth';
@@ -25,7 +25,7 @@ import Link from 'next/link';
 const navItems = [
     { key: 'monitor', labelVi: 'Giám Sát', labelEn: 'Monitor', img: giamsat, path: '/' },
     { key: 'route', labelVi: 'Hành Trình', labelEn: 'Cruise', img: hanhtrinh, path: '/cruise' },
-    { key: 'maintenance', labelVi: 'Bảo dưỡng', labelEn: 'Maintenance', img: maintaince, path: '/maintenance' },
+    // { key: 'maintenance', labelVi: 'Bảo dưỡng', labelEn: 'Maintenance', img: maintaince, path: '/maintenance' },
     { key: 'report', labelVi: 'Báo cáo', labelEn: 'Report', img: baocao, path: '/report' },
     { key: 'manage', labelVi: 'Quản Lý', labelEn: 'Manage', img: quanly, path: '/manage' },
     { key: 'support', labelVi: 'Hỗ Trợ', labelEn: 'Support', img: hotro, path: '/support' },
