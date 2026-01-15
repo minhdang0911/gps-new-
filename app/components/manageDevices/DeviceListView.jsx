@@ -48,7 +48,9 @@ export default function DeviceListView({
     // ✅ NEW row actions
     onActivateDevice,
     onMaintainDevice,
-    startingMaint,
+
+    // ✅ FIX: only 1 row loading
+    activatingId,
 }) {
     const columns = useMemo(
         () => [
@@ -109,45 +111,48 @@ export default function DeviceListView({
             },
             {
                 title: t.actions || (isEn ? 'Actions' : 'Thao tác'),
-                render: (_, r) => (
-                    <Space wrap>
-                        {/* ✅ NEW: đặt cạnh sửa/xoá, không cần tick */}
-                        <Button
-                            size="small"
-                            type="primary"
-                            icon={<PlayCircleOutlined />}
-                            loading={!!startingMaint}
-                            onClick={() => onActivateDevice?.(r)}
-                        >
-                            {isEn ? 'Activate' : 'Kích hoạt'}
-                        </Button>
+                render: (_, r) => {
+                    const isActivating = activatingId === r._id;
 
-                        <Button size="small" icon={<ToolOutlined />} onClick={() => onMaintainDevice?.(r)}>
-                            {isEn ? 'Maintenance' : 'Bảo dưỡng'}
-                        </Button>
-
-                        {canEditDevice && (
-                            <Button size="small" icon={<EditOutlined />} onClick={() => onOpenEdit(r)}>
-                                {t.edit}
-                            </Button>
-                        )}
-
-                        {canDeleteDevice && (
-                            <Popconfirm
-                                title={t.deleteConfirm}
-                                description={isEn ? 'Are you sure you want to delete?' : 'Bạn chắc chắn muốn xoá?'}
-                                okText={isEn ? 'Delete' : 'Xoá'}
-                                cancelText={isEn ? 'Cancel' : 'Huỷ'}
-                                okButtonProps={{ danger: true }}
-                                onConfirm={() => onDelete(r)}
+                    return (
+                        <Space wrap>
+                            <Button
+                                size="small"
+                                type="primary"
+                                icon={<PlayCircleOutlined />}
+                                loading={isActivating}
+                                onClick={() => onActivateDevice?.(r)}
                             >
-                                <Button danger size="small" icon={<DeleteOutlined />}>
-                                    {t.delete}
+                                {isEn ? 'Activate' : 'Kích hoạt'}
+                            </Button>
+
+                            <Button size="small" icon={<ToolOutlined />} onClick={() => onMaintainDevice?.(r)}>
+                                {isEn ? 'Maintenance' : 'Bảo dưỡng'}
+                            </Button>
+
+                            {canEditDevice && (
+                                <Button size="small" icon={<EditOutlined />} onClick={() => onOpenEdit(r)}>
+                                    {t.edit}
                                 </Button>
-                            </Popconfirm>
-                        )}
-                    </Space>
-                ),
+                            )}
+
+                            {canDeleteDevice && (
+                                <Popconfirm
+                                    title={t.deleteConfirm}
+                                    description={isEn ? 'Are you sure you want to delete?' : 'Bạn chắc chắn muốn xoá?'}
+                                    okText={isEn ? 'Delete' : 'Xoá'}
+                                    cancelText={isEn ? 'Cancel' : 'Huỷ'}
+                                    okButtonProps={{ danger: true }}
+                                    onConfirm={() => onDelete(r)}
+                                >
+                                    <Button danger size="small" icon={<DeleteOutlined />}>
+                                        {t.delete}
+                                    </Button>
+                                </Popconfirm>
+                            )}
+                        </Space>
+                    );
+                },
             },
         ],
         [
@@ -162,7 +167,7 @@ export default function DeviceListView({
             onSelectDevice,
             onActivateDevice,
             onMaintainDevice,
-            startingMaint,
+            activatingId,
         ],
     );
 

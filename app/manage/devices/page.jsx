@@ -355,14 +355,14 @@ export default function ManageDevicesPage() {
     });
 
     // =========================
-    // ✅ NEW: 2 actions per-row
+    // ✅ FIX: loading per-row (activate)
     // =========================
-    const [startingMaint, setStartingMaint] = useState(false);
+    const [activatingId, setActivatingId] = useState(null);
 
     const handleActivateDevice = async (device) => {
         if (!device?._id) return message.warning(isEn ? 'Invalid device.' : 'Thiết bị không hợp lệ.');
         try {
-            setStartingMaint(true);
+            setActivatingId(device._id);
             await startMaintenance({ device_id: device._id });
             message.success(isEn ? 'Activated device.' : 'Kích hoạt thiết bị thành công.');
         } catch (err) {
@@ -374,7 +374,7 @@ export default function ManageDevicesPage() {
             }
             message.error(isEn ? 'Activate failed.' : 'Kích hoạt thiết bị thất bại.');
         } finally {
-            setStartingMaint(false);
+            setActivatingId(null);
         }
     };
 
@@ -468,7 +468,7 @@ export default function ManageDevicesPage() {
                     // ✅ NEW row actions
                     onActivateDevice={handleActivateDevice}
                     onMaintainDevice={openMaintainModal}
-                    startingMaint={startingMaint}
+                    activatingId={activatingId}
                 />
             ) : (
                 <DeviceDetailView

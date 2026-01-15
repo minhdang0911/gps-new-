@@ -35,7 +35,6 @@ const Navbar = () => {
     const router = useRouter();
     const pathname = usePathname() || '/';
 
-    // ✅ FIX: ref phải là object từ useRef()
     const dropdownRef = useRef(null);
 
     const [openDropdown, setOpenDropdown] = useState(false);
@@ -122,6 +121,12 @@ const Navbar = () => {
         }
 
         router.push(targetPath);
+    };
+
+    // ✅ Hàm mở file PDF hướng dẫn
+    const handleOpenGuide = () => {
+        setOpenDropdown(false);
+        window.open('/TÀI%20LIỆU%20HƯỚNG%20DẪN%20SỬ%20DỤNG%20WEBSITE%20GPS.pdf', '_blank');
     };
 
     const handleLogout = async () => {
@@ -236,6 +241,11 @@ const Navbar = () => {
                     {openDropdown && (
                         <div className="iky-nav__dropdown" onClick={(e) => e.stopPropagation()}>
                             <button className="iky-nav__dropdown-item">{isEn ? 'Profile' : 'Cá nhân'}</button>
+
+                            {/* ✅ THÊM MỤC HƯỚNG DẪN SỬ DỤNG */}
+                            <button className="iky-nav__dropdown-item" onClick={handleOpenGuide}>
+                                {isEn ? 'User Guide' : 'Hướng dẫn sử dụng'}
+                            </button>
 
                             <button className="iky-nav__dropdown-item" onClick={handleLogout} disabled={isLoggingOut}>
                                 {isLoggingOut
