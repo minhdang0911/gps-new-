@@ -758,3 +758,78 @@
         transform: rotate(360deg);
     }
 }
+
+/* ===== Battery badge (list) ===== */
+.iky-monitor__plate-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+/* wrapper */
+.iky-battery-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+.iky-battery-badge--compact .iky-battery__text {
+    font-size: 12px;
+}
+
+/* battery body */
+.iky-battery {
+    position: relative;
+    width: 26px;
+    height: 12px;
+    border: 1.6px solid #2c2c2c;
+    border-radius: 3px;
+    overflow: hidden;
+    background: #fff;
+}
+.iky-battery::after {
+    content: '';
+    position: absolute;
+    right: -3px;
+    top: 3px;
+    width: 2px;
+    height: 6px;
+    background: #2c2c2c;
+    border-radius: 1px;
+}
+
+.iky-battery__fill {
+    height: 100%;
+    width: 0%;
+    transition: width 0.35s ease;
+    background: #22c55e; /* ok */
+}
+
+/* level colors */
+.iky-battery.mid .iky-battery__fill {
+    background: #f59e0b;
+}
+.iky-battery.low .iky-battery__fill {
+    background: #ef4444;
+}
+.iky-battery.na .iky-battery__fill {
+    background: transparent;
+}
+
+.iky-battery__text {
+    font-weight: 600;
+    font-size: 12px;
+    line-height: 1;
+    color: #111;
+}
+.iky-battery__text.mid {
+    color: #b45309;
+}
+.iky-battery__text.low {
+    color: #b91c1c;
+}
+.iky-battery__text.na {
+    color: #6b7280;
+    font-weight: 500;
+}
