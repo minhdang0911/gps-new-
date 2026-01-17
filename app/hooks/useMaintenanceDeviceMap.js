@@ -24,16 +24,26 @@ async function buildImeiPlateMap() {
     const token = getAuthToken();
     if (!token) return { imeiToPlate: new Map(), plateToImeis: new Map() };
 
-    // Nếu getDevices tự gắn token (axios interceptor) thì khỏi cần truyền token.
     const res = await getDevices({ page: 1, limit: 2000 });
     const list = res?.devices || [];
 
     const imeiToPlate = new Map();
     const plateToImeis = new Map();
 
+    // ✅ Thêm hàm normalize (giống với component)
+    const normalizePlate = (s) =>
+        (s || '')
+            .toString()
+            .trim()
+            .toUpperCase()
+            .replace(/\s+/g, '')
+            .replace(/[.\-_]+/g, '-')
+            .replace(/--+/g, '-');
+
     for (const d of list) {
         const imei = String(d?.imei || '').trim();
-        const plate = String(d?.license_plate || '').trim();
+        const plateRaw = String(d?.license_plate || '').trim();
+        const plate = normalizePlate(plateRaw); // ✅ Normalize trước khi lưu
 
         if (imei) imeiToPlate.set(imei, plate || '');
 

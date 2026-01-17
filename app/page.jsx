@@ -7,10 +7,10 @@ import { getDevices, getDeviceInfo } from './lib/api/devices';
 import { getBatteryStatusByImei } from './lib/api/batteryStatus';
 import { getLastCruise } from './lib/api/cruise';
 
-import markerIconStop from './assets/marker-red.png';
-import markerRun from './assets/marker-run.png';
-import markerRun50 from './assets/marker-run50.png';
-import markerRun80 from './assets/marker-run80.png';
+import markerIconStop from './assets/marker-red.webp';
+import markerRun from './assets/marker-run.webp';
+import markerRun50 from './assets/marker-run50.webp';
+import markerRun80 from './assets/marker-run80.webp';
 
 import { useRouter, usePathname } from 'next/navigation';
 import { message, Modal, Skeleton } from 'antd';
@@ -28,6 +28,30 @@ import en from './locales/en.json';
 
 const locales = { vi, en };
 const { confirm } = Modal;
+
+/** =========================
+ *  Battery UI (Cách 2)
+ *  - 1 icon + CSS fill
+ *  ========================= */
+const clampSoc = (soc) => {
+    const n = toNumberOrNull(soc);
+    if (n == null) return null;
+    return Math.max(0, Math.min(100, Math.round(n)));
+};
+
+const BatteryBadge = ({ soc, showText = true, title, compact = true }) => {
+    const s = clampSoc(soc);
+    const level = s == null ? 'na' : s < 20 ? 'low' : s < 40 ? 'mid' : 'ok';
+
+    return (
+        <div className={`iky-battery-badge ${compact ? 'iky-battery-badge--compact' : ''}`} title={title || ''}>
+            <div className={`iky-battery ${level}`}>
+                <div className="iky-battery__fill" style={{ width: s == null ? '0%' : `${s}%` }} />
+            </div>
+            {showText && <span className={`iky-battery__text ${level}`}>{s == null ? '--' : `${s}%`}</span>}
+        </div>
+    );
+};
 
 const MonitorPage = () => {
     // ----- LANG -----
@@ -127,6 +151,19 @@ const MonitorPage = () => {
     const [lng] = useState(106.6170202);
     const [liveTelemetry, setLiveTelemetry] = useState(null);
     const mqttClientRef = useRef(null);
+
+    const [socByImei, setSocByImei] = useState({});
+
+    const upsertSoc = (imei, socVal) => {
+        if (!imei) return;
+        const next = clampSoc(socVal);
+        if (next == null) return;
+
+        setSocByImei((prev) => {
+            if (prev[imei] === next) return prev;
+            return { ...prev, [imei]: next };
+        });
+    };
 
     // ⭐ ADD: anti-spam gọi last-cruise khi MQTT thiếu gps
     const lastCruiseTimeoutRef = useRef(null);
@@ -522,7 +559,11 @@ const MonitorPage = () => {
         try {
             setLoadingBattery(true);
             const res = await getBatteryStatusByImei(token, device.imei);
-            setBatteryStatus(res?.batteryStatus || null);
+            const bs = res?.batteryStatus || null;
+            setBatteryStatus(bs);
+
+            // ✅ cache SOC cho list
+            if (bs?.soc != null) upsertSoc(device.imei, bs.soc);
         } catch {
             setBatteryStatus(null);
         } finally {
@@ -657,6 +698,11 @@ const MonitorPage = () => {
         if (!data || typeof data !== 'object') return;
 
         lastMqttAtRef.current = Date.now();
+
+        // ✅ update SOC cho list realtime
+        if (data.soc != null) {
+            upsertSoc(selectedDevice.imei, data.soc);
+        }
 
         if (data.gps == null) {
             scheduleRefreshLastCruise();
@@ -1068,6 +1114,8 @@ const MonitorPage = () => {
                                             filteredDevices.map((d, idx) => {
                                                 const isActive = selectedDevice?._id === d._id;
 
+                                                const socForItem = socByImei[d.imei]; // có thể undefined nếu chưa cache
+
                                                 return (
                                                     <div
                                                         key={d._id}
@@ -1081,8 +1129,26 @@ const MonitorPage = () => {
                                                             <span className="iky-monitor__stt-badge">{idx + 1}</span>
 
                                                             <div className="iky-monitor__device-main">
-                                                                <div className="plate">
-                                                                    {d.license_plate || t.list.unknownPlate}
+                                                                <div className="iky-monitor__plate-row">
+                                                                    <div className="plate">
+                                                                        {d.license_plate || t.list.unknownPlate}
+                                                                    </div>
+
+                                                                    {/* ✅ Battery on list */}
+                                                                    <BatteryBadge
+                                                                        soc={socForItem}
+                                                                        showText
+                                                                        compact
+                                                                        title={
+                                                                            socForItem == null
+                                                                                ? isEn
+                                                                                    ? 'No battery data yet'
+                                                                                    : 'Chưa có dữ liệu pin'
+                                                                                : isEn
+                                                                                ? `Battery: ${socForItem}%`
+                                                                                : `Pin: ${socForItem}%`
+                                                                        }
+                                                                    />
                                                                 </div>
 
                                                                 <div className="iky-monitor__meta">
