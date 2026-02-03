@@ -43,7 +43,7 @@ import DeviceListView from '../../components/manageDevices/DeviceListView';
 import DeviceDetailView from '../../components/manageDevices/DeviceDetailView';
 import DeviceUpsertModal from '../../components/manageDevices/DeviceUpsertModal';
 import DeviceCommandBarModal from '../../components/manageDevices/DeviceCommandBarModal';
-import DeviceAuditModal from '../../components/manageDevices/DeviceAuditModal';
+// import DeviceAuditModal from '../../components/manageDevices/DeviceAuditModal';
 
 // ✅ Intro.js
 import 'intro.js/introjs.css';
@@ -114,9 +114,9 @@ export default function ManageDevicesPage() {
     const [form] = Form.useForm();
 
     // ✅ audit review state
-    const [auditOpen, setAuditOpen] = useState(false);
-    const [auditNextValues, setAuditNextValues] = useState(null);
-    const [auditSubmitting, setAuditSubmitting] = useState(false);
+    // const [auditOpen, setAuditOpen] = useState(false);
+    // const [auditNextValues, setAuditNextValues] = useState(null);
+    // const [auditSubmitting, setAuditSubmitting] = useState(false);
 
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(10);
@@ -201,18 +201,7 @@ export default function ManageDevicesPage() {
             if (!validatePhone(values.phone_number)) {
                 return message.error(t.invalidPhone || (isEn ? 'Invalid phone number' : 'Số điện thoại không hợp lệ'));
             }
-            setAuditNextValues(values);
-            setAuditOpen(true);
-        } catch (err) {
-            message.error(extractErrorMsg(err, isEn));
-        }
-    };
 
-    const handleConfirmAudit = async () => {
-        try {
-            setAuditSubmitting(true);
-
-            const values = auditNextValues;
             const payload = {
                 imei: values.imei,
                 phone_number: values.phone_number,
@@ -232,15 +221,11 @@ export default function ManageDevicesPage() {
                 message.success(t.createSuccess);
             }
 
-            setAuditOpen(false);
-            setAuditNextValues(null);
             setModalMode(null);
             setPendingFormValues(null);
             mutateDevices();
         } catch (err) {
             message.error(extractErrorMsg(err, isEn));
-        } finally {
-            setAuditSubmitting(false);
         }
     };
 
@@ -535,7 +520,7 @@ export default function ManageDevicesPage() {
                 currentRole={currentRole}
             />
 
-            <DeviceAuditModal
+            {/* <DeviceAuditModal
                 open={auditOpen}
                 onCancel={() => setAuditOpen(false)}
                 onOk={handleConfirmAudit}
@@ -545,7 +530,7 @@ export default function ManageDevicesPage() {
                 original={pendingFormValues}
                 nextValues={auditNextValues}
                 confirmLoading={auditSubmitting}
-            />
+            /> */}
 
             {/* ✅ NEW: Confirm maintenance modal */}
             <Modal
@@ -560,7 +545,7 @@ export default function ManageDevicesPage() {
                 cancelText={isEn ? 'Cancel' : 'Hủy'}
                 onOk={handleConfirmMaintenance}
                 confirmLoading={confirming}
-                destroyOnClose
+                destroyOnHidden
             >
                 <div style={{ marginBottom: 12 }}>
                     <b>{isEn ? 'Device:' : 'Thiết bị:'}</b>{' '}

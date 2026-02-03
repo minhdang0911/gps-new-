@@ -19,6 +19,7 @@ import {
 } from 'antd';
 import { SearchOutlined, ReloadOutlined, FileExcelOutlined } from '@ant-design/icons';
 
+import { usePathname } from 'next/navigation'; // ✅ add
 import { useMaintenanceDeviceMap } from '../../hooks/useMaintenanceDeviceMap';
 import { getMaintenanceHistory } from '../../lib/api/maintain';
 import { getUserList } from '../../lib/api/user';
@@ -171,26 +172,35 @@ function applySort({ rows, sorterState, imeiToPlate, userMap }) {
 }
 
 /* -------------------------- excel export --------------------------- */
-function buildWorkbook({ rows, filters, imeiToPlate, userMap }) {
-    const header = ['Thời gian tạo', 'IMEI', 'Biển số', 'Km bảo trì', 'Ngày bảo trì', 'Xác nhận bởi', 'Ghi chú'];
+function buildWorkbook({ rows, filters, imeiToPlate, userMap, t }) {
+    const header = [
+        t.excel.createdAt,
+        t.excel.imei,
+        t.excel.plate,
+        t.excel.km,
+        t.excel.maintenanceDate,
+        t.excel.confirmedBy,
+        t.excel.note,
+    ];
 
     const cond = [];
-    if (normStr(filters?.imei)) cond.push(`IMEI: ${normStr(filters.imei)}`);
-    if (normStr(filters?.license_plate)) cond.push(`Biển số: ${normalizePlate(filters.license_plate)}`);
+    if (normStr(filters?.imei)) cond.push(`${t.excel.condImei}: ${normStr(filters.imei)}`);
+    if (normStr(filters?.license_plate)) cond.push(`${t.excel.condPlate}: ${normalizePlate(filters.license_plate)}`);
     if (filters?.maintenanceRange?.[0] && filters?.maintenanceRange?.[1]) {
         cond.push(
-            `Ngày bảo trì: ${dayjs(filters.maintenanceRange[0]).format('DD-MM-YYYY')} đến ${dayjs(
+            `${t.excel.condDate}: ${dayjs(filters.maintenanceRange[0]).format('DD-MM-YYYY')} ${t.excel.to} ${dayjs(
                 filters.maintenanceRange[1],
             ).format('DD-MM-YYYY')}`,
         );
     }
 
-    // ✅ FIX: conditionLine đúng biến
-    const conditionLine = cond.length ? `Điều kiện: ${cond.join(' | ')}` : 'Điều kiện: (Không)';
-    const timeLine = `Thời điểm xuất: ${dayjs().format('DD-MM-YYYY HH:mm')}`;
+    const conditionLine = cond.length
+        ? `${t.excel.conditions}: ${cond.join(' | ')}`
+        : `${t.excel.conditions}: (${t.excel.none})`;
+    const timeLine = `${t.excel.exportedAt}: ${dayjs().format('DD-MM-YYYY HH:mm')}`;
 
     const data = [];
-    data.push(['BÁO CÁO LỊCH SỬ BẢO TRÌ']);
+    data.push([t.excel.title]);
     data.push([conditionLine]);
     data.push([timeLine]);
     data.push([]);
@@ -280,6 +290,123 @@ function downloadWorkbook(wb, filename) {
 
 /* ------------------------------ page ------------------------------ */
 export default function MaintenanceHistoryReportPage() {
+    const pathname = usePathname() || '/'; // ✅ add
+
+    // ✅ detect EN giống Navbar
+    const { isEnFromPath } = useMemo(() => {
+        const segments = pathname.split('/').filter(Boolean);
+        const last = segments[segments.length - 1];
+        return { isEnFromPath: last === 'en' };
+    }, [pathname]);
+
+    const [isEn, setIsEn] = useState(false);
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+
+        if (isEnFromPath) {
+            setIsEn(true);
+            localStorage.setItem('iky_lang', 'en');
+        } else {
+            const saved = localStorage.getItem('iky_lang');
+            setIsEn(saved === 'en');
+        }
+    }, [isEnFromPath, pathname]);
+
+    // ✅ dictionary
+    const t = useMemo(() => {
+        return isEn
+            ? {
+                  pageTitle: 'Maintenance History Report',
+                  pageHint: 'Enter search conditions then click ',
+                  pageHintBtn: 'Search',
+                  pageHintTail: '. Click column headers to sort.',
+                  export: 'Export report',
+                  exportFiltered: 'Export report based on current filtered/search results',
+                  exportAll: 'Export full list',
+                  imei: 'IMEI',
+                  plate: 'License plate',
+                  range: 'Maintenance date range',
+                  from: 'From',
+                  to: 'To',
+                  search: 'Search',
+                  clear: 'Clear filters',
+                  reload: 'Reload',
+                  empty: 'No maintenance history yet',
+                  loadFail: 'Failed to load maintenance history',
+                  exportOk: 'Report exported',
+                  exportFail: 'Export failed',
+                  // table columns
+                  colCreatedAt: 'Created time',
+                  colKm: 'Maintenance km',
+                  colMaintDate: 'Maintenance date',
+                  colConfirmedBy: 'Confirmed by',
+                  colNote: 'Note',
+                  // excel strings
+                  excel: {
+                      title: 'MAINTENANCE HISTORY REPORT',
+                      conditions: 'Conditions',
+                      none: 'None',
+                      exportedAt: 'Exported at',
+                      createdAt: 'Created time',
+                      imei: 'IMEI',
+                      plate: 'License plate',
+                      km: 'Maintenance km',
+                      maintenanceDate: 'Maintenance date',
+                      confirmedBy: 'Confirmed by',
+                      note: 'Note',
+                      condImei: 'IMEI',
+                      condPlate: 'License plate',
+                      condDate: 'Maintenance date',
+                      to: 'to',
+                  },
+              }
+            : {
+                  pageTitle: 'Báo cáo lịch sử bảo trì',
+                  pageHint: 'Nhập điều kiện tìm kiếm rồi bấm ',
+                  pageHintBtn: 'Tìm',
+                  pageHintTail: '. Bấm tiêu đề cột để sắp xếp.',
+                  export: 'Xuất báo cáo',
+                  exportFiltered: 'Xuất báo cáo theo kết quả đang lọc/tìm',
+                  exportAll: 'Xuất toàn bộ danh sách',
+                  imei: 'IMEI',
+                  plate: 'Biển số',
+                  range: 'Khoảng ngày bảo trì',
+                  from: 'Từ ngày',
+                  to: 'Đến ngày',
+                  search: 'Tìm',
+                  clear: 'Xóa điều kiện',
+                  reload: 'Tải lại',
+                  empty: 'Chưa có lịch sử bảo trì',
+                  loadFail: 'Không tải được lịch sử bảo trì',
+                  exportOk: 'Đã xuất báo cáo',
+                  exportFail: 'Xuất báo cáo thất bại',
+                  // table columns
+                  colCreatedAt: 'Thời gian tạo',
+                  colKm: 'Km bảo trì',
+                  colMaintDate: 'Ngày bảo trì',
+                  colConfirmedBy: 'Xác nhận bởi',
+                  colNote: 'Ghi chú',
+                  // excel strings
+                  excel: {
+                      title: 'BÁO CÁO LỊCH SỬ BẢO TRÌ',
+                      conditions: 'Điều kiện',
+                      none: 'Không',
+                      exportedAt: 'Thời điểm xuất',
+                      createdAt: 'Thời gian tạo',
+                      imei: 'IMEI',
+                      plate: 'Biển số',
+                      km: 'Km bảo trì',
+                      maintenanceDate: 'Ngày bảo trì',
+                      confirmedBy: 'Xác nhận bởi',
+                      note: 'Ghi chú',
+                      condImei: 'IMEI',
+                      condPlate: 'Biển số',
+                      condDate: 'Ngày bảo trì',
+                      to: 'đến',
+                  },
+              };
+    }, [isEn]);
+
     const deviceMap = useMaintenanceDeviceMap();
     const imeiToPlate = deviceMap?.imeiToPlate || new Map();
     const plateToImeis = deviceMap?.plateToImeis;
@@ -293,7 +420,7 @@ export default function MaintenanceHistoryReportPage() {
     // data sources
     const [rawData, setRawData] = useState([]);
     const [allData, setAllData] = useState([]);
-    const [searchMode, setSearchMode] = useState(false); // fetch all + FE filter/sort/paging
+    const [searchMode, setSearchMode] = useState(false);
 
     const [tableLoading, setTableLoading] = useState(false);
     const [exportLoading, setExportLoading] = useState(false);
@@ -316,11 +443,9 @@ export default function MaintenanceHistoryReportPage() {
     }, [user]);
     const hideConfirmedByCol = role === 'distributor' || role === 'customer';
 
-    // ✅ FIX: nếu có điều kiện lọc (kể cả chưa bấm Tìm) thì total/paging phải theo FE
     const isFiltering = hasAnySearchCondition(filters);
     const pagingOnClient = searchMode || isFiltering;
 
-    // load users name map
     useEffect(() => {
         const loadUsers = async () => {
             try {
@@ -345,7 +470,6 @@ export default function MaintenanceHistoryReportPage() {
         loadUsers();
     }, []);
 
-    // fetch 1 page from server
     const loadServerPage = useCallback(
         async ({ p = 1 } = {}) => {
             try {
@@ -356,15 +480,14 @@ export default function MaintenanceHistoryReportPage() {
                 setTotal(total);
             } catch (e) {
                 console.error(e);
-                message.error('Không tải được lịch sử bảo trì');
+                message.error(t.loadFail); // ✅ i18n
             } finally {
                 setTableLoading(false);
             }
         },
-        [PAGE_SIZE],
+        [PAGE_SIZE, t.loadFail],
     );
 
-    // fetch many pages (for search/export)
     const fetchAllPages = useCallback(async () => {
         const LIMIT = 300;
         const MAX_PAGES = 500;
@@ -384,17 +507,14 @@ export default function MaintenanceHistoryReportPage() {
         return all;
     }, []);
 
-    // first load
     useEffect(() => {
         setPage(1);
         loadServerPage({ p: 1 });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    /* -------------------------- base rows -------------------------- */
     const baseRows = useMemo(() => (searchMode ? allData : rawData), [searchMode, allData, rawData]);
 
-    /* -------------------------- FE filter + sort -------------------------- */
     const processedData = useMemo(() => {
         return applyFilters({ rows: baseRows, filters, plateToImeis, imeiToPlate });
     }, [baseRows, filters, plateToImeis, imeiToPlate]);
@@ -414,14 +534,13 @@ export default function MaintenanceHistoryReportPage() {
         setSorterState({ field: s.field || s.columnKey, order: s.order });
     };
 
-    /* ------------------------------ Pagination ------------------------------ */
     const totalForPaging = useMemo(() => {
-        if (pagingOnClient) return sortedData.length; // ✅ total khớp data sau lọc
-        return total; // server paging
+        if (pagingOnClient) return sortedData.length;
+        return total;
     }, [pagingOnClient, sortedData.length, total]);
 
     const pagedData = useMemo(() => {
-        if (!pagingOnClient) return sortedData; // server paging: sortedData đã là 1 page
+        if (!pagingOnClient) return sortedData;
         const start = (page - 1) * PAGE_SIZE;
         return sortedData.slice(start, start + PAGE_SIZE);
     }, [pagingOnClient, sortedData, page, PAGE_SIZE]);
@@ -432,7 +551,6 @@ export default function MaintenanceHistoryReportPage() {
         if (page > maxPage) setPage(1);
     }, [pagingOnClient, sortedData.length, page, PAGE_SIZE]);
 
-    /* ----------------------------- actions ----------------------------- */
     const onSearch = async () => {
         setPage(1);
 
@@ -503,26 +621,28 @@ export default function MaintenanceHistoryReportPage() {
                 filters: hasCond ? filters : { imei: '', license_plate: '', maintenanceRange: null },
                 imeiToPlate,
                 userMap,
+                t, // ✅ pass i18n
             });
 
             const dateText = dayjs().format('DD-MM-YYYY');
-            const fileName = `Bao_cao_lich_su_bao_tri_${dateText}.xlsx`;
+            const fileName = isEn
+                ? `Maintenance_history_report_${dateText}.xlsx`
+                : `Bao_cao_lich_su_bao_tri_${dateText}.xlsx`;
 
             downloadWorkbook(wb, fileName);
-            message.success('Đã xuất báo cáo');
+            message.success(t.exportOk);
         } catch (e) {
             console.error(e);
-            message.error('Xuất báo cáo thất bại');
+            message.error(t.exportFail);
         } finally {
             setExportLoading(false);
         }
     };
 
-    /* ----------------------------- columns ----------------------------- */
     const columns = useMemo(() => {
         const cols = [
             {
-                title: 'Thời gian tạo',
+                title: t.colCreatedAt,
                 dataIndex: 'createdAt',
                 key: 'createdAt',
                 width: 170,
@@ -539,7 +659,7 @@ export default function MaintenanceHistoryReportPage() {
                 render: (_, row) => getRowImei(row) || '-',
             },
             {
-                title: 'Biển số',
+                title: t.plate,
                 key: 'license_plate',
                 width: 150,
                 sorter: true,
@@ -552,7 +672,7 @@ export default function MaintenanceHistoryReportPage() {
                 },
             },
             {
-                title: 'Km bảo trì',
+                title: t.colKm,
                 dataIndex: 'maintenanceKm',
                 key: 'maintenanceKm',
                 width: 120,
@@ -561,7 +681,7 @@ export default function MaintenanceHistoryReportPage() {
                 render: (v) => (v === null || v === undefined ? '-' : `${v}`),
             },
             {
-                title: 'Ngày bảo trì',
+                title: t.colMaintDate,
                 dataIndex: 'maintenanceDate',
                 key: 'maintenanceDate',
                 width: 130,
@@ -570,7 +690,7 @@ export default function MaintenanceHistoryReportPage() {
                 render: (v) => (v && dayjs(v).isValid() ? dayjs(v).format('YYYY-MM-DD') : '-'),
             },
             {
-                title: 'Xác nhận bởi',
+                title: t.colConfirmedBy,
                 dataIndex: 'confirmedBy',
                 key: 'confirmedBy',
                 width: 170,
@@ -584,7 +704,7 @@ export default function MaintenanceHistoryReportPage() {
                 },
             },
             {
-                title: 'Ghi chú',
+                title: t.colNote,
                 dataIndex: 'note',
                 key: 'note',
                 ellipsis: true,
@@ -593,21 +713,21 @@ export default function MaintenanceHistoryReportPage() {
         ];
 
         return hideConfirmedByCol ? cols.filter((c) => c.key !== 'confirmedBy') : cols;
-    }, [hideConfirmedByCol, imeiToPlate, sorterState, userMap]);
+    }, [hideConfirmedByCol, imeiToPlate, sorterState, userMap, t]);
 
-    const exportTooltip = hasAnySearchCondition(filters)
-        ? 'Xuất báo cáo theo kết quả đang lọc/tìm'
-        : 'Xuất toàn bộ danh sách';
+    const exportTooltip = hasAnySearchCondition(filters) ? t.exportFiltered : t.exportAll;
 
     return (
         <div style={{ padding: 16 }}>
             <Row justify="space-between" align="middle">
                 <Col>
                     <Title level={3} style={{ marginBottom: 4 }}>
-                        Báo cáo lịch sử bảo trì
+                        {t.pageTitle}
                     </Title>
                     <Text type="secondary">
-                        Nhập điều kiện tìm kiếm rồi bấm <b>Tìm</b>. Bấm tiêu đề cột để sắp xếp.
+                        {t.pageHint}
+                        <b>{t.pageHintBtn}</b>
+                        {t.pageHintTail}
                     </Text>
                 </Col>
 
@@ -619,7 +739,7 @@ export default function MaintenanceHistoryReportPage() {
                             loading={exportLoading}
                             disabled={tableLoading}
                         >
-                            Xuất báo cáo
+                            {t.export}
                         </Button>
                     </Tooltip>
                 </Col>
@@ -628,10 +748,10 @@ export default function MaintenanceHistoryReportPage() {
             <Card style={{ marginTop: 12 }} size="small">
                 <Row gutter={[12, 12]} align="middle">
                     <Col xs={24} md={6}>
-                        <Text strong>IMEI</Text>
+                        <Text strong>{t.imei}</Text>
                         <Input
                             value={filters.imei}
-                            placeholder="Nhập IMEI..."
+                            placeholder={isEn ? 'Enter IMEI...' : 'Nhập IMEI...'}
                             allowClear
                             onChange={(e) => setFilters((p) => ({ ...p, imei: e.target.value }))}
                             onPressEnter={onSearch}
@@ -639,10 +759,10 @@ export default function MaintenanceHistoryReportPage() {
                     </Col>
 
                     <Col xs={24} md={6}>
-                        <Text strong>Biển số</Text>
+                        <Text strong>{t.plate}</Text>
                         <Input
                             value={filters.license_plate}
-                            placeholder="Nhập biển số..."
+                            placeholder={isEn ? 'Enter license plate...' : 'Nhập biển số...'}
                             allowClear
                             onChange={(e) => setFilters((p) => ({ ...p, license_plate: e.target.value }))}
                             onPressEnter={onSearch}
@@ -650,11 +770,11 @@ export default function MaintenanceHistoryReportPage() {
                     </Col>
 
                     <Col xs={24} md={8}>
-                        <Text strong>Khoảng ngày bảo trì</Text>
+                        <Text strong>{t.range}</Text>
                         <RangePicker
                             style={{ width: '100%' }}
                             format="YYYY-MM-DD"
-                            placeholder={['Từ ngày', 'Đến ngày']}
+                            placeholder={[t.from, t.to]}
                             value={filters.maintenanceRange}
                             onChange={(v) => setFilters((p) => ({ ...p, maintenanceRange: v }))}
                             allowClear
@@ -664,13 +784,13 @@ export default function MaintenanceHistoryReportPage() {
                     <Col xs={24} md={4}>
                         <Space wrap style={{ marginTop: 22 }}>
                             <Button type="primary" icon={<SearchOutlined />} onClick={onSearch} loading={tableLoading}>
-                                Tìm
+                                {t.search}
                             </Button>
                             <Button icon={<ReloadOutlined />} onClick={onClear} disabled={tableLoading}>
-                                Xóa điều kiện
+                                {t.clear}
                             </Button>
                             <Button onClick={onReload} disabled={tableLoading}>
-                                Tải lại
+                                {t.reload}
                             </Button>
                         </Space>
                     </Col>
@@ -683,7 +803,7 @@ export default function MaintenanceHistoryReportPage() {
                         <Spin />
                     </div>
                 ) : pagedData.length === 0 ? (
-                    <Empty description="Chưa có lịch sử bảo trì" />
+                    <Empty description={t.empty} />
                 ) : (
                     <Table
                         rowKey={(row) =>
@@ -700,7 +820,6 @@ export default function MaintenanceHistoryReportPage() {
                             showSizeChanger: false,
                             onChange: async (p) => {
                                 setPage(p);
-                                // ✅ nếu paging FE (searchMode hoặc đang filter) thì KHÔNG gọi server
                                 if (pagingOnClient) return;
                                 await loadServerPage({ p });
                             },

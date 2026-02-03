@@ -92,6 +92,13 @@ const MonitorPage = () => {
         return lastCruise?.spd ?? lastCruise?.vgp;
     };
 
+    // ✅ NEW: driver name helper (lấy từ API field `driver`)
+    const getDriverName = (d) => {
+        const raw = d?.driver;
+        const s = typeof raw === 'string' ? raw.trim() : '';
+        return s || '';
+    };
+
     useEffect(() => {
         if (typeof window === 'undefined') return;
         const r = localStorage.getItem('role') || '';
@@ -500,6 +507,7 @@ const MonitorPage = () => {
         }
     };
 
+    // ✅ SEARCH: thêm driver vào điều kiện search
     const filteredDevices = useMemo(() => {
         const keyword = searchText.trim().toLowerCase();
 
@@ -507,9 +515,14 @@ const MonitorPage = () => {
             const plate = (d.license_plate || '').toLowerCase();
             const imei = (d.imei || '').toLowerCase();
             const phone = (d.phone_number || '').toLowerCase();
+            const driver = (getDriverName(d) || '').toLowerCase();
 
             const matchSearch =
-                !keyword || plate.includes(keyword) || imei.includes(keyword) || phone.includes(keyword);
+                !keyword ||
+                plate.includes(keyword) ||
+                imei.includes(keyword) ||
+                phone.includes(keyword) ||
+                driver.includes(keyword);
 
             const isOnline = d.status === 10;
             let matchStatus = true;
@@ -802,8 +815,8 @@ const MonitorPage = () => {
         const updatedAt = src.tim
             ? parseTimToDate(src.tim)?.toLocaleString()
             : bs.updatedAt
-            ? new Date(bs.updatedAt).toLocaleString()
-            : NA_TEXT;
+              ? new Date(bs.updatedAt).toLocaleString()
+              : NA_TEXT;
 
         return (
             <>
@@ -893,10 +906,17 @@ const MonitorPage = () => {
 
         const unknownPlateText = (t.list && t.list.unknownPlate) || (isEn ? 'No plate number' : 'Chưa có biển số');
 
+        const driverName = getDriverName(info);
+
         return (
             <>
                 <div>
                     {t.statusInfo.plate} {info.license_plate || unknownPlateText}
+                </div>
+
+                {/* ✅ NEW: Tên tài xế ở cột Trạng thái */}
+                <div>
+                    {isEn ? 'Driver' : 'Tài xế'}: {driverName || NA_TEXT}
                 </div>
 
                 <div>
@@ -945,8 +965,8 @@ const MonitorPage = () => {
                                 ? 'Resolving address...'
                                 : 'Đang xác định vị trí...'
                             : addressError
-                            ? addressError
-                            : address || (isEn ? 'No location data' : 'Chưa có dữ liệu vị trí')}
+                              ? addressError
+                              : address || (isEn ? 'No location data' : 'Chưa có dữ liệu vị trí')}
                     </span>
                 </div>
 
@@ -1115,6 +1135,7 @@ const MonitorPage = () => {
                                                 const isActive = selectedDevice?._id === d._id;
 
                                                 const socForItem = socByImei[d.imei]; // có thể undefined nếu chưa cache
+                                                const driverName = getDriverName(d);
 
                                                 return (
                                                     <div
@@ -1145,18 +1166,27 @@ const MonitorPage = () => {
                                                                                     ? 'No battery data yet'
                                                                                     : 'Chưa có dữ liệu pin'
                                                                                 : isEn
-                                                                                ? `Battery: ${socForItem}%`
-                                                                                : `Pin: ${socForItem}%`
+                                                                                  ? `Battery: ${socForItem}%`
+                                                                                  : `Pin: ${socForItem}%`
                                                                         }
                                                                     />
                                                                 </div>
 
-                                                                <div className="iky-monitor__meta">
+                                                                {/* ✅ NEW: hiển thị tên tài xế trong danh sách xe */}
+                                                                <div
+                                                                    className="iky-monitor__meta"
+                                                                    style={{ marginTop: 2 }}
+                                                                >
                                                                     <span className="imei">IMEI: {d.imei}</span>
                                                                     <span className="dot">•</span>
                                                                     <span className="phone">
                                                                         {t.list.phoneLabel}{' '}
                                                                         {d.phone_number || 'Chưa gán'}
+                                                                    </span>
+                                                                    <span className="dot">•</span>
+                                                                    <span className="driver">
+                                                                        {isEn ? 'Driver' : 'Tài xế'}:{' '}
+                                                                        {driverName || NA_TEXT}
                                                                     </span>
                                                                 </div>
                                                             </div>
@@ -1182,6 +1212,9 @@ const MonitorPage = () => {
                                         {deviceList.map((d, idx) => (
                                             <option key={d._id} value={d._id}>
                                                 {idx + 1}. {(d.license_plate || d.imei || t.history.unknown).trim()}
+                                                {getDriverName(d)
+                                                    ? ` - ${isEn ? 'Driver' : 'Tài xế'}: ${getDriverName(d)}`
+                                                    : ''}
                                                 {d.phone_number ? ` - ${d.phone_number}` : ''}
                                             </option>
                                         ))}
