@@ -4,7 +4,8 @@
     position: relative;
     min-height: 100vh;
     padding: 32px 0 48px;
-    background: radial-gradient(circle at top left, #e6f4ff 0, transparent 55%),
+    background:
+        radial-gradient(circle at top left, #e6f4ff 0, transparent 55%),
         radial-gradient(circle at bottom right, #f6ffed 0, transparent 55%), #f5f5f5;
 }
 
@@ -12,7 +13,8 @@
     position: fixed;
     inset: 0;
     pointer-events: none;
-    background: radial-gradient(circle at 10% 0, rgba(24, 144, 255, 0.12), transparent 60%),
+    background:
+        radial-gradient(circle at 10% 0, rgba(24, 144, 255, 0.12), transparent 60%),
         radial-gradient(circle at 90% 100%, rgba(82, 196, 26, 0.12), transparent 60%);
     opacity: 0.9;
     z-index: -1;
@@ -327,7 +329,7 @@
     }
 }
 
-/* ===== RESPONSIVE ===== */
+/* ===== RESPONSIVE (cũ) ===== */
 
 @media (max-width: 768px) {
     .supportPage {
@@ -344,5 +346,97 @@
 
     .mapShell {
         height: 300px;
+    }
+}
+
+/* ===== LAYOUT: SIDEBAR + MAIN ===== */
+
+.supportLayout {
+    position: relative;
+    display: flex;
+    gap: 20px; /* nới ra chút cho thoáng */
+    max-width: 1240px; /* cho rộng nhẹ, đỡ “bí” */
+    margin: 0 auto;
+    padding: 20px 16px 40px;
+}
+
+/* Sidebar */
+.supportSidebar {
+    width: 320px; /* ✅ theo ý bạn: 300-320 đẹp */
+    flex: 0 0 320px; /* ✅ đồng bộ width/flex */
+    position: sticky;
+    top: 16px;
+    align-self: flex-start;
+
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: 14px;
+    padding: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+    backdrop-filter: blur(10px);
+}
+
+.sidebarTitle {
+    font-weight: 700;
+    font-size: 14px;
+    margin: 6px 8px 10px;
+    opacity: 0.85;
+}
+
+.sidebarMenu {
+    border: 0 !important;
+    background: transparent !important;
+}
+
+/* Main content */
+.supportMain {
+    flex: 1;
+    min-width: 0;
+}
+
+/* ===== ACCEPTANCE PAGE ===== */
+
+.acceptanceHeader {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.acceptanceLogo {
+    width: 56px; /* ✅ hợp lý hơn 200px */
+    height: 56px;
+    object-fit: contain;
+}
+
+.acceptanceTitle {
+    margin: 0 !important;
+}
+
+.checkList {
+    list-style: none;
+    padding-left: 0;
+    margin: 0;
+}
+
+.checkList li {
+    padding: 6px 0;
+}
+
+.acceptanceBlock {
+    margin-top: 8px;
+}
+
+/* ===== RESPONSIVE (sidebar) ===== */
+
+@media (max-width: 992px) {
+    .supportLayout {
+        flex-direction: column;
+    }
+
+    .supportSidebar {
+        width: 100%;
+        flex: 0 0 auto;
+        position: relative;
+        top: auto;
     }
 }
