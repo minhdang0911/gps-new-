@@ -103,7 +103,7 @@ export default function MaintenanceReportFilters({ onSearch, onClear, onReload }
                         value={plateSelected || undefined}
                         options={plateOptions}
                         optionFilterProp="label"
-                        dropdownMatchSelectWidth
+                        popupMatchSelectWidth={false}
                         onChange={(plate) => {
                             setPlateSelected(plate || '');
                         }}
