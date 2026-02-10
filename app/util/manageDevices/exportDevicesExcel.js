@@ -21,7 +21,7 @@ export async function exportDevicesExcel({ getDevices, total, filters, t, isEn, 
         'Biển số': d.license_plate || '-',
         KháchHàng: d.user_id?.email || 'Chưa gán',
         ĐạiLý: d.distributor_id?.username || '-',
-        Active: d.active ? 'Có' : 'Không',
+        // Active: d.active ? 'Có' : 'Không',
         NgàyTạo: new Date(d.createdAt).toLocaleString('vi-VN'),
         Driver: d.driver || '-',
     }));
