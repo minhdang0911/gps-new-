@@ -353,6 +353,15 @@ export default function InstallAcceptanceProcess() {
         }
     }, [isEnFromPath]);
 
+    const formatToday = (lang = 'vi') => {
+        const d = new Date();
+        const dd = String(d.getDate()).padStart(2, '0');
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const yyyy = d.getFullYear();
+
+        return lang === 'en' ? `Date: ${dd}/${mm}/${yyyy}` : `Ngày: ${dd}/${mm}/${yyyy}`;
+    };
+
     const formatMinutesToHm = (totalMinutes, lang = 'vi') => {
         if (totalMinutes === null || totalMinutes === undefined) return '--';
         const m = Math.max(0, Math.floor(Number(totalMinutes)));
@@ -548,7 +557,7 @@ export default function InstallAcceptanceProcess() {
                     <Title level={3} className={styles.acceptanceTitle}>
                         {tr('title')}
                     </Title>
-                    <Text type="secondary">{tr('date')}</Text>
+                    <Text type="secondary">{formatToday(lang)}</Text>
                 </div>
             </div>
 
