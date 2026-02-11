@@ -13,6 +13,10 @@
     font-size: 11px; /* chỉnh 12/13 tuỳ bạn */
 }
 
+.report-logo {
+    padding: 12px 12px;
+}
+
 /* giảm font size cho đúng 2 tab mobile */
 .report-topnav-tab__text.is-small {
     font-size: 11px; /* chỉnh 11/12 tuỳ bạn */
@@ -231,4 +235,60 @@
     .report-content-mobile {
         padding: 20px;
     }
+}
+
+/* ===== Fix: title không bị wrap thành dọc khi sider hẹp ===== */
+.report-logo__title {
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ===== Logo row + nút collapse ===== */
+.report-logo {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 12px 12px;
+}
+
+/* Khi collapsed thì ẩn title (tránh chữ rơi thành từng ký tự) */
+.report-sider.is-collapsed .report-logo__title {
+    display: none;
+}
+
+.report-collapse-btn {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ===== Menu item layout (tránh tooltip 2 lớp) ===== */
+.report-menu-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+}
+
+.report-menu-link {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.report-menu-help {
+    flex-shrink: 0;
+}
+
+/* Optional: nếu bạn muốn khi collapsed menu icon canh giữa đẹp hơn */
+.report-sider.is-collapsed .ant-menu-item .ant-menu-item-icon,
+.report-sider.is-collapsed .ant-menu-submenu-title .ant-menu-item-icon {
+    margin-inline-end: 0 !important;
 }

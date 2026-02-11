@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-import { Layout, Menu, Typography, Grid, Tooltip } from 'antd';
+import { Layout, Menu, Typography, Grid, Tooltip, Button } from 'antd';
 import {
     BarChartOutlined,
     ThunderboltOutlined,
@@ -15,6 +15,8 @@ import {
     QuestionCircleOutlined,
     ToolOutlined,
     ClockCircleOutlined,
+    MenuFoldOutlined,
+    MenuUnfoldOutlined,
 } from '@ant-design/icons';
 
 import './reportLayout.css';
@@ -28,6 +30,8 @@ const { Title } = Typography;
 const { useBreakpoint } = Grid;
 
 const locales = { vi, en };
+
+const LS_KEY = 'iky_report_sider_collapsed_v1';
 
 const ReportLayout = ({ children }) => {
     const pathname = usePathname();
@@ -43,12 +47,18 @@ const ReportLayout = ({ children }) => {
         const isEnFromPath = parts[parts.length - 1] === 'en';
 
         if (isEnFromPath) {
-            localStorage.setItem('iky_lang', 'en');
+            try {
+                localStorage.setItem('iky_lang', 'en');
+            } catch {}
             return true;
         }
 
-        const saved = localStorage.getItem('iky_lang');
-        return saved === 'en';
+        try {
+            const saved = localStorage.getItem('iky_lang');
+            return saved === 'en';
+        } catch {
+            return false;
+        }
     }, [pathname]);
 
     const t = isEn ? locales.en.report : locales.vi.report;
@@ -78,6 +88,7 @@ const ReportLayout = ({ children }) => {
             battery: isEn
                 ? 'Battery daily summary: overview per device by day  (SOC/voltage/temperature/location).'
                 : 'Tổng quan pin theo thiết bị: tổng hợp theo ngày và hiển thị trạng thái  (SOC/điện áp/nhiệt độ/vị trí).',
+
             maintenanceHistory: isEn
                 ? 'Maintenance history report: confirmed maintenance records. Search by IMEI or license plate (plate is mapped to IMEI).'
                 : 'Báo cáo lịch sử bảo trì: các record bảo trì đã xác nhận. Tìm theo IMEI hoặc biển số (biển số sẽ map ra IMEI).',
@@ -113,7 +124,7 @@ const ReportLayout = ({ children }) => {
             short: t.tripShort,
             icon: <AimOutlined />,
             helpKey: 'trip',
-            smallText: true, // ✅ giảm font menu này
+            smallText: true,
         },
         {
             key: '/report/trip-report',
@@ -130,7 +141,7 @@ const ReportLayout = ({ children }) => {
             short: t.lastCruiseShort,
             icon: <EnvironmentOutlined />,
             helpKey: 'lastCruise',
-            smallText: true, // ✅ giảm font menu này
+            smallText: true,
         },
         {
             key: '/report/battery-summary',
@@ -165,6 +176,26 @@ const ReportLayout = ({ children }) => {
     }));
 
     const currentKey = useMemo(() => pathname.replace(/\/en$/, ''), [pathname]);
+
+    // ✅ FIX warning: init state from localStorage inside useState initializer (no useEffect setState)
+    const [collapsed, setCollapsed] = useState(() => {
+        if (typeof window === 'undefined') return false;
+        try {
+            return localStorage.getItem(LS_KEY) === '1';
+        } catch {
+            return false;
+        }
+    });
+
+    const toggleCollapsed = useCallback(() => {
+        setCollapsed((prev) => {
+            const next = !prev;
+            try {
+                localStorage.setItem(LS_KEY, next ? '1' : '0');
+            } catch {}
+            return next;
+        });
+    }, []);
 
     const HelpIcon = ({ text, isMobile: isMobileLocal }) => {
         if (!text) return null;
@@ -293,11 +324,28 @@ const ReportLayout = ({ children }) => {
 
     return (
         <Layout className="report-layout-desktop">
-            <Sider className="report-sider" width={240} theme="light">
-                <div className="report-logo">
-                    <Title level={5} className="report-logo__title">
-                        {t.title}
-                    </Title>
+            <Sider className="report-sider" width={240} theme="light" collapsible collapsed={collapsed} trigger={null}>
+                <div
+                    className="report-logo"
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: collapsed ? 'center' : 'space-between',
+                        gap: 8,
+                    }}
+                >
+                    {!collapsed && (
+                        <Title level={5} className="report-logo__title" style={{ margin: 0 }}>
+                            {t.title}
+                        </Title>
+                    )}
+
+                    <Button
+                        type="text"
+                        aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                        icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                        onClick={toggleCollapsed}
+                    />
                 </div>
 
                 <Menu theme="light" mode="inline" selectedKeys={[currentKey]} items={menuItems} />

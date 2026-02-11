@@ -75,7 +75,7 @@ const highlight = (text, keyword) => {
 
 // ===== i18n =====
 const t = {
-    title: { vi: 'Quy trình nghiệm thu lắp đặt iKY-GPS', en: 'iKY-GPS Installation Acceptance Process' },
+    title: { vi: 'Quy trình nghiệm thu lắp đặt IKY-GPS', en: 'IKY-GPS Installation Acceptance Process' },
     date: { vi: 'Ngày: 2026-02-03', en: 'Date: 2026-02-03' },
 
     diagBlockTitle: { vi: 'Chẩn đoán nhanh để nghiệm thu', en: 'Quick diagnostics for acceptance' },
@@ -415,7 +415,7 @@ export default function InstallAcceptanceProcess() {
         loadedAllRef.current = true;
         setLoadingDevices(true);
         try {
-            const res = await getDevices(); // <-- không truyền params
+            const res = await getDevices();
             const list = res?.devices || res?.data || res || [];
             setAllDevices(Array.isArray(list) ? list : []);
         } catch (e) {
@@ -552,7 +552,7 @@ export default function InstallAcceptanceProcess() {
     return (
         <Card variant={false} className={styles.supportCard}>
             <div className={styles.acceptanceHeader}>
-                <img src={logo?.src} alt="iKY-GPS Logo" className={styles.acceptanceLogo} />
+                <img src={logo?.src} alt="IKY-GPS Logo" className={styles.acceptanceLogo} />
                 <div>
                     <Title level={3} className={styles.acceptanceTitle}>
                         {tr('title')}
@@ -576,7 +576,7 @@ export default function InstallAcceptanceProcess() {
                             onFocus={ensureAllDevicesLoaded}
                             onSearch={async (v) => {
                                 setSearchText(v);
-                                setSelectedImei(v); // ✅ để bấm nút Diagnose vẫn ăn theo text đang gõ
+                                setSelectedImei(v);
                                 if (!loadedAllRef.current) await ensureAllDevicesLoaded();
                             }}
                             onSelect={(value) => {
