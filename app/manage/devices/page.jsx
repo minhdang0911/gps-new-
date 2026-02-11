@@ -299,6 +299,7 @@ export default function ManageDevicesPage() {
         devices,
         isEn,
         canAddDevice,
+        getDevices,
         viewMode,
         selectedDevice,
         onExportExcel,

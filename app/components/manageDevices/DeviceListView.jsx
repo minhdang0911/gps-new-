@@ -1,10 +1,7 @@
-/* =========================
-   FILE 2: components/manageDevices/DeviceListView.jsx
-   ========================= */
 'use client';
 
-import React, { useMemo } from 'react';
-import { Card, Input, Button, Table, Space, Typography, Row, Col, Popconfirm, FloatButton, Tooltip } from 'antd';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Card, Input, Button, Table, Space, Typography, Row, Col, Popconfirm, FloatButton } from 'antd';
 import {
     SearchOutlined,
     PlusOutlined,
@@ -45,23 +42,30 @@ export default function DeviceListView({
     onOpenCommandBar,
     onStartTour,
 
-    // ✅ NEW row actions
     onActivateDevice,
     onMaintainDevice,
-
-    // ✅ FIX: only 1 row loading
     activatingId,
 }) {
-    const columns = useMemo(
-        () => [
-            {
-                title: 'STT',
-                width: 60,
-                render: (_, __, index) => (currentPage - 1) * pageSize + index + 1,
-            },
+    const [isMobile, setIsMobile] = useState(false);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const mql = window.matchMedia('(max-width: 767.98px)');
+        const apply = () => setIsMobile(mql.matches);
+        apply();
+        mql.addEventListener?.('change', apply);
+        return () => mql.removeEventListener?.('change', apply);
+    }, []);
+
+    const columns = useMemo(() => {
+        const fixedRight = isMobile ? undefined : 'right';
+
+        return [
+            { title: 'STT', width: 60, render: (_, __, index) => (currentPage - 1) * pageSize + index + 1 },
             {
                 title: 'IMEI',
                 dataIndex: 'imei',
+                width: 170,
                 sorter: (a, b) => (a.imei || '').localeCompare(b.imei || ''),
                 render: (text, record) => (
                     <Button type="link" onClick={() => onSelectDevice(record)}>
@@ -72,50 +76,65 @@ export default function DeviceListView({
             {
                 title: t.deviceType,
                 dataIndex: 'device_category_id',
+                width: 200,
                 sorter: (a, b) => (a.device_category_id?.name || '').localeCompare(b.device_category_id?.name || ''),
                 render: (d) => d?.name || '-',
             },
             {
                 title: t.phone,
                 dataIndex: 'phone_number',
+                width: 140,
                 sorter: (a, b) => (a.phone_number || '').localeCompare(b.phone_number || ''),
             },
             {
                 title: t.plate,
                 dataIndex: 'license_plate',
+                width: 140,
                 sorter: (a, b) => (a.license_plate || '').localeCompare(b.license_plate || ''),
             },
-            { title: t.driver, dataIndex: 'driver', sorter: (a, b) => (a.driver || '').localeCompare(b.driver || '') },
+            {
+                title: t.driver,
+                dataIndex: 'driver',
+                width: 160,
+                sorter: (a, b) => (a.driver || '').localeCompare(b.driver || ''),
+            },
             {
                 title: t.vehicleLine,
                 dataIndex: 'vehicle_category_id',
+                width: 180,
                 sorter: (a, b) => (a.vehicle_category_id?.name || '').localeCompare(b.vehicle_category_id?.name || ''),
                 render: (v) => v?.name || '-',
             },
             {
                 title: t.distributor,
                 dataIndex: 'distributor_id',
+                width: 170,
                 sorter: (a, b) => (a.distributor_id?.username || '').localeCompare(b.distributor_id?.username || ''),
                 render: (u) => u?.username || '-',
             },
             {
                 title: t.createdDate,
                 dataIndex: 'createdAt',
+                width: 190,
                 sorter: (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
                 render: (v) => new Date(v).toLocaleString(isEn ? 'en-US' : 'vi-VN'),
             },
             {
                 title: t.view,
-                width: 60,
+                width: 70,
+                fixed: fixedRight,
                 render: (_, r) => <Button size="small" icon={<EyeOutlined />} onClick={() => onSelectDevice(r)} />,
             },
             {
                 title: t.actions || (isEn ? 'Actions' : 'Thao tác'),
+                key: 'actions',
+                width: 420,
+                fixed: fixedRight, // ✅ desktop only
                 render: (_, r) => {
                     const isActivating = activatingId === r._id;
 
                     return (
-                        <Space wrap>
+                        <Space size={8} wrap={false} style={{ whiteSpace: 'nowrap' }}>
                             <Button
                                 size="small"
                                 type="primary"
@@ -154,30 +173,29 @@ export default function DeviceListView({
                     );
                 },
             },
-        ],
-        [
-            t,
-            isEn,
-            currentPage,
-            pageSize,
-            canEditDevice,
-            canDeleteDevice,
-            onOpenEdit,
-            onDelete,
-            onSelectDevice,
-            onActivateDevice,
-            onMaintainDevice,
-            activatingId,
-        ],
-    );
+        ];
+    }, [
+        isMobile,
+        t,
+        isEn,
+        currentPage,
+        pageSize,
+        canEditDevice,
+        canDeleteDevice,
+        onOpenEdit,
+        onDelete,
+        onSelectDevice,
+        onActivateDevice,
+        onMaintainDevice,
+        activatingId,
+    ]);
 
     return (
         <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
-            <Row justify="space-between" align="middle">
-                <Col>
+            <Row justify="end" align="middle">
+                {/* <Col>
                     <Title level={4}>{t.title}</Title>
 
-                    {/* ✅ tour step: cmdk */}
                     <div style={{ marginTop: 10 }} data-tour="cmdk">
                         <CommandBarTrigger
                             placeholder={isEn ? 'Search devices…' : 'Tìm thiết bị…'}
@@ -189,7 +207,7 @@ export default function DeviceListView({
                     <div style={{ marginTop: 6 }}>
                         <Text type="secondary">{isEn ? 'or press Ctrl+K' : 'hoặc bấm Ctrl+K'}</Text>
                     </div>
-                </Col>
+                </Col> */}
 
                 <Col>
                     <Space>
@@ -206,7 +224,6 @@ export default function DeviceListView({
                 </Col>
             </Row>
 
-            {/* ✅ tour step: filters */}
             <Card data-tour="filters">
                 <Row gutter={[12, 12]}>
                     <Col xs={24} md={6}>
@@ -240,7 +257,6 @@ export default function DeviceListView({
                 </Row>
 
                 <Row justify="end" style={{ marginTop: 12 }}>
-                    {/* ✅ tour step: search */}
                     <Button
                         data-tour="searchBtn"
                         type="primary"
@@ -257,26 +273,30 @@ export default function DeviceListView({
                     {t.deviceList} ({total || (devices || []).length})
                 </Text>
 
-                {/* ✅ tour step: table */}
-                <div data-tour="table">
-                    <Table
-                        dataSource={devices}
-                        columns={columns}
-                        rowKey="_id"
-                        loading={devicesLoading || devicesValidating}
-                        pagination={{
-                            current: currentPage,
-                            pageSize,
-                            total,
-                            showSizeChanger: true,
-                            onChange: (page, size) => {
-                                setCurrentPage(page);
-                                setPageSize(size || pageSize);
-                            },
-                        }}
-                        style={{ marginTop: 12 }}
-                        scroll={{ x: 1100 }}
-                    />
+                <div data-tour="table" style={{ marginTop: 12 }}>
+                    {/* ✅ Mobile touch scroll ngang mượt */}
+                    <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                        <Table
+                            dataSource={devices}
+                            columns={columns}
+                            rowKey="_id"
+                            loading={devicesLoading || devicesValidating}
+                            pagination={{
+                                current: currentPage,
+                                pageSize,
+                                total,
+                                showSizeChanger: true,
+                                onChange: (page, size) => {
+                                    setCurrentPage(page);
+                                    setPageSize(size || pageSize);
+                                },
+                            }}
+                            // ✅ desktop: fixed works, mobile: no fixed but still scroll
+                            scroll={{
+                                x: 1500,
+                            }}
+                        />
+                    </div>
                 </div>
             </Card>
 
