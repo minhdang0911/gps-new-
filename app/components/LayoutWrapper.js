@@ -18,22 +18,30 @@ export default function LayoutWrapper({ children }) {
     }
 
     return (
-        <>
+        <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column' }}>
             <TokenRefresher />
             <MqttConnector />
             <Navbar activeKey="monitor" />
             <StatusBar />
 
-            <div
-                style={{
-                    minHeight: '100vh',
-                    display: 'flex',
-                    flexDirection: 'column',
-                }}
-            >
-                <main style={{ flex: 1 }}>{children}</main>
-                <AppFooter />
-            </div>
-        </>
+            <main style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>{children}</main>
+
+            <AppFooter />
+        </div>
     );
 }
+
+// return (
+//   <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+//     <TokenRefresher />
+//     <MqttConnector />
+//     <Navbar activeKey="monitor" />
+//     <StatusBar />
+
+//     <main style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+//       {children}
+//     </main>
+
+//     <AppFooter />
+//   </div>
+// );
