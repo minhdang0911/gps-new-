@@ -32,7 +32,6 @@ export default function SidebarMenu({ pathname, onNavigate, collapsed = false })
         onNavigate?.();
     };
 
-    // ✅ để label là string => AntD tự tooltip khi inlineCollapsed
     const items = [
         {
             key: 'devices',

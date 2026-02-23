@@ -1083,7 +1083,8 @@ const MonitorPage = () => {
         }
     };
 
-    const isLocked = liveTelemetry?.sos === 1 || liveTelemetry?.sos === '1';
+    const sosVal = isMqttAlive(lastMqttAtRef) ? liveTelemetry?.sos : lastCruise?.sos;
+    const isLocked = sosVal === 1 || sosVal === '1';
     const deviceStatusText = isLocked ? t.control.statusActivated : t.control.statusNotActivated;
     const deviceStatusClass = isLocked ? 'iky-monitor__tag-red' : 'iky-monitor__tag-green';
 
@@ -1403,10 +1404,10 @@ const MonitorPage = () => {
                                                     </div>
                                                 </div>
 
-                                                <div className="iky-monitor__control-row">
+                                                <div className="iky-monitor__control-row iky-monitor__control-row--action">
                                                     <span>{t.control.lockDevice}</span>
                                                     <button
-                                                        className="iky-monitor__secondary-btn"
+                                                        className="iky-monitor__secondary-btn iky-monitor__secondary-btn--control"
                                                         onClick={handleConfirmLock}
                                                         disabled={lockLoading}
                                                     >
@@ -1416,10 +1417,10 @@ const MonitorPage = () => {
                                                     </button>
                                                 </div>
 
-                                                <div className="iky-monitor__control-row">
+                                                <div className="iky-monitor__control-row iky-monitor__control-row--action iky-monitor__control-row--unlock">
                                                     <span>{t.control.unlockDevice}</span>
                                                     <button
-                                                        className="iky-monitor__secondary-btn"
+                                                        className="iky-monitor__secondary-btn iky-monitor__secondary-btn--control"
                                                         onClick={handleConfirmUnlock}
                                                         disabled={lockLoading}
                                                     >
@@ -1428,7 +1429,6 @@ const MonitorPage = () => {
                                                             : t.control.unlockButton}
                                                     </button>
                                                 </div>
-
                                                 {lockError && (
                                                     <div className="iky-monitor__alert iky-monitor__alert--error">
                                                         {lockError}
