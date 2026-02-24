@@ -32,7 +32,7 @@ export default function HeroHeader({ t, isEn }) {
                         <Tag color="blue">
                             {isEn
                                 ? 'Working hours: 8:00 – 17:30 (Mon – Sat)'
-                                : 'Giờ làm việc: 8:00 – 17:30 (Thứ 2 – Thứ 7)'}
+                                : 'Giờ làm việc: 8:00 – 17:00 (Thứ 2 – Thứ 7)'}
                         </Tag>
 
                         <Tag color="green">{isEn ? 'Nationwide remote support' : 'Hỗ trợ từ xa trên toàn quốc'}</Tag>
