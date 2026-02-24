@@ -631,7 +631,7 @@
         "subtitle": "Hiển thị chi tiết từng phiên sử dụng pin của xe, cho phép lọc theo thiết bị, pin, mã usage và khoảng thời gian.",
         "filter": {
             "title": "Bộ lọc",
-            "sessionId": "Mã phiên (Session ID)",
+            "sessionId": "Mã usage",
             "sessionIdPlaceholder": "Nhập mã phiên",
             "batteryId": "Mã pin (Battery ID)",
             "batteryIdPlaceholder": "Nhập mã pin",
@@ -780,7 +780,7 @@
         },
         "filter": {
             "searchLabel": "Nhập xe cần tìm",
-            "searchPlaceholder": "Biển số / tên xe / IMEI...",
+            "searchPlaceholder": "Biển số / tên xe / IMEI/Tài xế...",
             "statusLabel": "Trạng thái",
             "statusAll": "-- Tất cả --",
             "statusOnline": "Online",

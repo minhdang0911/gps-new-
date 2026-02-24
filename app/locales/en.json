@@ -775,7 +775,7 @@
         },
         "filter": {
             "searchLabel": "Search vehicle",
-            "searchPlaceholder": "Plate / name / IMEI...",
+            "searchPlaceholder": "Plate / name / Driver /IMEI...",
             "statusLabel": "Status",
             "statusAll": "-- All --",
             "statusOnline": "Online",
