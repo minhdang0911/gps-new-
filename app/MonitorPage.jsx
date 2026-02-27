@@ -18,7 +18,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { message, Modal, Skeleton } from 'antd';
 import { CheckCircleFilled, LockFilled } from '@ant-design/icons';
 import { reverseGeocodeAddress } from './lib/address/reverseGeocode';
-import { parseTimToDate, toLocalDateTimeInput } from './util/time';
+import { parseTimToDate, toLocalDateTimeInput, formatFixedDateTime } from './util/time';
 import { getDistanceMeters } from './util/geo';
 import { toNumberOrNull } from './util/number';
 
@@ -881,7 +881,7 @@ const MonitorPage = () => {
         const updatedAt = src.tim
             ? parseTimToDate(src.tim)?.toLocaleString()
             : bs.updatedAt
-              ? new Date(bs.updatedAt).toLocaleString()
+              ? formatFixedDateTime(new Date(bs.updatedAt))
               : NA_TEXT;
 
         return (
@@ -926,7 +926,7 @@ const MonitorPage = () => {
         const distance = pickField('dst', ctx, lastMqttAtRef);
 
         const timVal = pickField('tim', ctx, lastMqttAtRef);
-        const timeStr = timVal ? parseTimToDate(timVal)?.toLocaleString() : NA_TEXT;
+        const timeStr = timVal ? formatFixedDateTime(parseTimToDate(timVal)) : NA_TEXT;
 
         const fwr = pickField('fwr', ctx, lastMqttAtRef);
 

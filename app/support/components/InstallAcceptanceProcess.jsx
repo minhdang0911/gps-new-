@@ -1,13 +1,26 @@
 'use client';
 
 import React, { useMemo, useState, useRef } from 'react';
-import { Card, Typography, Divider, Button, Modal, Descriptions, Tag, Alert, Space, Spin, AutoComplete } from 'antd';
+import {
+    Card,
+    Typography,
+    Divider,
+    Button,
+    Modal,
+    Descriptions,
+    Tag,
+    Alert,
+    Space,
+    Spin,
+    AutoComplete,
+    Input,
+} from 'antd';
 import { usePathname } from 'next/navigation';
 import styles from '../SupportPage.module.css';
 import logo from '../../assets/logo-iky.webp';
 
 // =====================
-// API imports (SỬA PATH cho đúng project của bạn)
+// API imports
 // =====================
 import { getDevices, getDeviceInfo } from '../../lib/api/devices';
 import { getBatteryStatusByImei } from '../../lib/api/batteryStatus';
@@ -89,7 +102,7 @@ const t = {
         en: 'Type to search → pick an option to auto diagnose. (Search by IMEI / plate / vehicle)',
     },
     invalidImei: {
-        vi: 'IMEI không hợp lệ. Vui lòng chọn từ danh sách hoặc nhập số (10–20 ký tự).',
+        vi: 'IMEI không hợp lệ',
         en: 'Invalid IMEI. Please pick from list or input 10–20 digits.',
     },
     diagEmpty: { vi: 'Chọn 1 thiết bị trong dropdown để xem kết quả.', en: 'Pick a device from dropdown.' },
@@ -125,7 +138,7 @@ const t = {
 
     deviceInfoTitle: { vi: 'Thông tin thiết bị', en: 'Device Information' },
     imei: { vi: 'IMEI / Serial', en: 'IMEI / Serial' },
-    sim: { vi: 'SIM (nếu có) / IMSI', en: 'SIM (if any) / IMSI' }, // ✅ đúng MD
+    sim: { vi: 'SIM (nếu có) / IMSI', en: 'SIM (if any) / IMSI' },
     tech: { vi: 'Kỹ thuật viên', en: 'Technician' },
     customer: { vi: 'Khách hàng (nếu có)', en: 'Customer (if any)' },
     installTime: { vi: 'Ngày / Giờ lắp', en: 'Install Date / Time' },
@@ -315,7 +328,6 @@ const t = {
     g11: { vi: 'SOH = 100% — (tham khảo theo dữ liệu BMS)', en: 'SOH = 100% — (reference from BMS)' },
     g12: { vi: 'Cycle count = 24 — (tham khảo)', en: 'Cycle count = 24 — (reference)' },
     g13: { vi: 'Nhiệt độ pin ≈ 23 °C (±1–3 °C)', en: 'Battery temperature ≈ 23 °C (±1–3 °C)' },
-
     hTitle: {
         vi: 'H. Ghi chú / bất thường (ghi rõ giá trị web và giá trị đo thực tế)',
         en: 'H. Notes / anomalies (record web vs measured values)',
@@ -342,13 +354,13 @@ export default function InstallAcceptanceProcess() {
         if (isEnFromPath) {
             try {
                 localStorage.setItem('iky_lang', 'en');
-            } catch (e) {}
+            } catch {}
             return 'en';
         }
         try {
             const saved = localStorage.getItem('iky_lang');
             return saved === 'en' ? 'en' : 'vi';
-        } catch (e) {
+        } catch {
             return 'vi';
         }
     }, [isEnFromPath]);
@@ -358,7 +370,6 @@ export default function InstallAcceptanceProcess() {
         const dd = String(d.getDate()).padStart(2, '0');
         const mm = String(d.getMonth() + 1).padStart(2, '0');
         const yyyy = d.getFullYear();
-
         return lang === 'en' ? `Date: ${dd}/${mm}/${yyyy}` : `Ngày: ${dd}/${mm}/${yyyy}`;
     };
 
@@ -368,13 +379,7 @@ export default function InstallAcceptanceProcess() {
         const h = Math.floor(m / 60);
         const r = m % 60;
 
-        if (lang === 'en') {
-            // dạng "50h 3m" (ngắn gọn)
-            return h > 0 ? `${h}h ${r}m` : `${r}m`;
-            // nếu muốn dài: return h > 0 ? `${h} hours ${r} minutes` : `${r} minutes`;
-        }
-
-        // vi: "50 giờ 3 phút"
+        if (lang === 'en') return h > 0 ? `${h}h ${r}m` : `${r}m`;
         return h > 0 ? `${h} giờ ${r} phút` : `${r} phút`;
     };
 
@@ -405,7 +410,7 @@ export default function InstallAcceptanceProcess() {
                 localStorage.getItem('jwt') ||
                 ''
             );
-        } catch (e) {
+        } catch {
             return '';
         }
     };
@@ -485,10 +490,11 @@ export default function InstallAcceptanceProcess() {
             const msg = e?.message || e?.error || (typeof e === 'string' ? e : JSON.stringify(e));
             setDiagErr(tr('errPrefix') + msg);
         } finally {
-            setLoading(false); // ✅ fix bug
+            setLoading(false);
         }
     };
 
+    // NOTE: options label render như cũ
     const options = useMemo(() => {
         const kw = String(searchText || '')
             .trim()
@@ -563,14 +569,14 @@ export default function InstallAcceptanceProcess() {
 
             <Divider />
 
-            {/* ===== SEARCH WITH DROPDOWN ===== */}
+            {/* ===== SEARCH WITH DROPDOWN (FIX UI) ===== */}
             <Card size="small" style={{ background: 'rgba(0,0,0,0.02)' }}>
-                <Space direction="vertical" style={{ width: '100%' }} size={8}>
+                <Space orientation="vertical" style={{ width: '100%' }} size={8}>
                     <Text strong>{tr('diagBlockTitle')}</Text>
 
-                    <Space.Compact style={{ width: '100%' }}>
+                    <div className={styles.diagRow}>
                         <AutoComplete
-                            style={{ width: '100%' }}
+                            className={styles.imeiAuto}
                             options={options}
                             value={searchText}
                             onFocus={ensureAllDevicesLoaded}
@@ -584,19 +590,32 @@ export default function InstallAcceptanceProcess() {
                                 setSelectedImei(value);
                                 runDiagnostic(value);
                             }}
-                            placeholder={tr('imeiPlaceholder')}
                             notFoundContent={loadingDevices ? <Spin size="small" /> : null}
                             allowClear
-                        />
+                            popupMatchSelectWidth={false}
+                        >
+                            <Input
+                                placeholder={tr('imeiPlaceholder')}
+                                inputMode="numeric"
+                                pattern="[0-9]*"
+                                autoComplete="off"
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        runDiagnostic(selectedImei || searchText);
+                                    }
+                                }}
+                            />
+                        </AutoComplete>
 
                         <Button
+                            className={styles.diagBtn}
                             type="primary"
                             onClick={() => runDiagnostic(selectedImei || searchText)}
                             loading={loading}
                         >
                             {tr('diagnoseBtn')}
                         </Button>
-                    </Space.Compact>
+                    </div>
 
                     <Text type="secondary">{tr('diagHint')}</Text>
                 </Space>
@@ -797,7 +816,6 @@ export default function InstallAcceptanceProcess() {
 
             <Divider />
 
-            {/* ===== D ===== */}
             <Title level={4}>{tr('dTitle')}</Title>
 
             <div style={{ marginBottom: 12 }}>
@@ -885,7 +903,6 @@ export default function InstallAcceptanceProcess() {
 
             <Divider />
 
-            {/* ===== E ===== */}
             <Title level={4}>{tr('eTitle')}</Title>
             <ol className={styles.supportList}>
                 <li>{tr('e1')}</li>
@@ -897,7 +914,6 @@ export default function InstallAcceptanceProcess() {
 
             <Divider />
 
-            {/* ===== F ===== */}
             <Title level={4}>{tr('fTitle')}</Title>
             <ul className={styles.supportList}>
                 <li>{tr('f1')}</li>
@@ -909,7 +925,6 @@ export default function InstallAcceptanceProcess() {
 
             <Divider />
 
-            {/* ===== G ===== */}
             <Title level={4}>{tr('gTitle')}</Title>
             <Alert type="warning" showIcon message={tr('gNote')} style={{ marginBottom: 12 }} />
             <ul className={styles.checkList}>
@@ -930,7 +945,6 @@ export default function InstallAcceptanceProcess() {
 
             <Divider />
 
-            {/* ===== H ===== */}
             <Title level={4}>{tr('hTitle')}</Title>
             <ul className={styles.supportList}>
                 <li>
