@@ -5,6 +5,8 @@ import Image from 'next/image';
 import './Navbar.css';
 import { useRouter, usePathname } from 'next/navigation';
 import { UpOutlined, DownOutlined } from '@ant-design/icons';
+import ProfileModal from '../ProfileModal';
+import Link from 'next/link';
 
 import giamsat from '../../assets/giamsat.webp';
 import hanhtrinh from '../../assets/hanhtrinh.webp';
@@ -16,16 +18,13 @@ import maintaince from '../../assets/maintaince.png';
 
 import flagVi from '../../assets/flag-vi.webp';
 import flagEn from '../../assets/flag-en.webp';
+
 import { useAuthStore } from '../../stores/authStore';
-
 import { logoutApi } from '../../lib/api/auth';
-import Link from 'next/link';
 
-// label theo từng ngôn ngữ
 const navItems = [
     { key: 'monitor', labelVi: 'Giám Sát', labelEn: 'Monitor', img: giamsat, path: '/' },
     { key: 'route', labelVi: 'Hành Trình', labelEn: 'Cruise', img: hanhtrinh, path: '/cruise' },
-    // { key: 'maintenance', labelVi: 'Bảo dưỡng', labelEn: 'Maintenance', img: maintaince, path: '/maintenance' },
     { key: 'report', labelVi: 'Báo cáo', labelEn: 'Report', img: baocao, path: '/report' },
     { key: 'manage', labelVi: 'Quản Lý', labelEn: 'Manage', img: quanly, path: '/manage' },
     { key: 'support', labelVi: 'Hỗ Trợ', labelEn: 'Support', img: hotro, path: '/support' },
@@ -34,20 +33,20 @@ const navItems = [
 const Navbar = () => {
     const router = useRouter();
     const pathname = usePathname() || '/';
-
     const dropdownRef = useRef(null);
 
     const [openDropdown, setOpenDropdown] = useState(false);
     const [isLoggingOut, setIsLoggingOut] = useState(false);
     const [isEn, setIsEn] = useState(false);
     const [mounted, setMounted] = useState(false);
+    const [openProfile, setOpenProfile] = useState(false);
 
     // ✅ Zustand
     const user = useAuthStore((s) => s.user);
     const hydrated = useAuthStore((s) => s.hydrated);
     const clearUser = useAuthStore((s) => s.clearUser);
 
-    // tách /en khỏi pathname để lấy normalizedPath + flag en từ URL
+    // detect EN từ URL
     const { isEnFromPath, normalizedPath } = useMemo(() => {
         const segments = pathname.split('/').filter(Boolean);
         const last = segments[segments.length - 1];
@@ -71,12 +70,10 @@ const Navbar = () => {
         );
     }, [normalizedPath]);
 
-    // Mounted check
     useEffect(() => {
         setMounted(true);
     }, []);
 
-    // quyết định ngôn ngữ
     useEffect(() => {
         if (typeof window === 'undefined') return;
 
@@ -89,7 +86,6 @@ const Navbar = () => {
         }
     }, [isEnFromPath, pathname]);
 
-    // Đóng dropdown khi click outside
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -106,11 +102,9 @@ const Navbar = () => {
         };
     }, [openDropdown]);
 
-    // ✅ Tất cả hooks đã được gọi, giờ mới check early return
     if (!mounted) return null;
     if (pathname === '/login' || pathname === '/login/en') return null;
 
-    // Lấy role (sau khi mounted)
     const role = typeof window !== 'undefined' ? localStorage.getItem('role') : '';
 
     const handleClickItem = (item) => {
@@ -123,7 +117,6 @@ const Navbar = () => {
         router.push(targetPath);
     };
 
-    // ✅ Hàm mở file PDF hướng dẫn
     const handleOpenGuide = () => {
         setOpenDropdown(false);
         window.open('/TÀI%20LIỆU%20HƯỚNG%20DẪN%20SỬ%20DỤNG%20WEBSITE%20GPS.pdf', '_blank');
@@ -135,19 +128,12 @@ const Navbar = () => {
         try {
             setIsLoggingOut(true);
             setOpenDropdown(false);
-
             await logoutApi();
         } catch (err) {
-            console.error('Lỗi khi đăng xuất:', err);
+            console.error('Logout error:', err);
         } finally {
-            // ✅ Xóa Zustand store
-            try {
-                clearUser();
-            } catch (e) {
-                console.error('clearUser error:', e);
-            }
+            clearUser();
 
-            // ✅ Xóa token + dữ liệu
             if (typeof window !== 'undefined') {
                 localStorage.removeItem('accessToken');
                 localStorage.removeItem('refreshToken');
@@ -160,107 +146,115 @@ const Navbar = () => {
         }
     };
 
-    // switch VI / EN
     const handleSwitchLang = (lang) => {
         if (typeof window !== 'undefined') localStorage.setItem('iky_lang', lang);
 
         if (lang === 'vi') router.push(normalizedPath || '/');
+
         if (lang === 'en') {
             const newPath = normalizedPath === '/' ? '/en' : `${normalizedPath}/en`;
             router.push(newPath);
         }
     };
 
-    // Lọc nav items nếu role là reporter
     const filteredNavItems = navItems.filter((item) => {
         if (role === 'reporter' && item.key === 'manage') return false;
         return true;
     });
 
     return (
-        <header className="iky-nav">
-            <Link className="iky-nav__logo" href="/">
-                <div>
+        <>
+            <ProfileModal open={openProfile} onClose={() => setOpenProfile(false)} isEn={isEn} />
+
+            <header className="iky-nav">
+                <Link className="iky-nav__logo" href="/">
                     <img src={logo.src} alt="IKY GPS" className="iky-nav__logo-img" />
-                </div>
-            </Link>
+                </Link>
 
-            <nav className="iky-nav__menu">
-                {filteredNavItems.map((item) => (
-                    <button
-                        key={item.key}
-                        type="button"
-                        className={'iky-nav__item' + (item.key === computedActiveKey ? ' iky-nav__item--active' : '')}
-                        onClick={() => handleClickItem(item)}
-                    >
-                        <div
+                <nav className="iky-nav__menu">
+                    {filteredNavItems.map((item) => (
+                        <button
+                            key={item.key}
+                            type="button"
                             className={
-                                'iky-nav__item-icon' + (item.key === 'maintenance' ? ' iky-nav__item-icon--lg' : '')
+                                'iky-nav__item' + (item.key === computedActiveKey ? ' iky-nav__item--active' : '')
                             }
+                            onClick={() => handleClickItem(item)}
                         >
-                            <Image src={item.img} alt={isEn ? item.labelEn : item.labelVi} width={26} height={26} />
-                        </div>
+                            <div className="iky-nav__item-icon">
+                                <Image src={item.img} alt={isEn ? item.labelEn : item.labelVi} width={26} height={26} />
+                            </div>
 
-                        <span className="iky-nav__item-label">{isEn ? item.labelEn : item.labelVi}</span>
-                    </button>
-                ))}
-            </nav>
+                            <span className="iky-nav__item-label">{isEn ? item.labelEn : item.labelVi}</span>
+                        </button>
+                    ))}
+                </nav>
 
-            <div className="iky-nav__right">
-                <div className="iky-nav__lang">
-                    <button
-                        type="button"
-                        className={'iky-nav__lang-btn' + (!isEn ? ' iky-nav__lang-btn--active' : '')}
-                        onClick={() => handleSwitchLang('vi')}
-                    >
-                        <Image src={flagVi} alt="Tiếng Việt" width={16} height={16} />
-                        <span className="iky-nav__lang-text">VI</span>
-                    </button>
+                <div className="iky-nav__right">
+                    {/* Language */}
+                    <div className="iky-nav__lang">
+                        <button
+                            type="button"
+                            className={'iky-nav__lang-btn' + (!isEn ? ' iky-nav__lang-btn--active' : '')}
+                            onClick={() => handleSwitchLang('vi')}
+                        >
+                            <Image src={flagVi} alt="Tiếng Việt" width={16} height={16} />
+                            <span>VI</span>
+                        </button>
 
-                    <button
-                        type="button"
-                        className={'iky-nav__lang-btn' + (isEn ? ' iky-nav__lang-btn--active' : '')}
-                        onClick={() => handleSwitchLang('en')}
-                    >
-                        <Image src={flagEn} alt="English" width={16} height={16} />
-                        <span className="iky-nav__lang-text">EN</span>
-                    </button>
+                        <button
+                            type="button"
+                            className={'iky-nav__lang-btn' + (isEn ? ' iky-nav__lang-btn--active' : '')}
+                            onClick={() => handleSwitchLang('en')}
+                        >
+                            <Image src={flagEn} alt="English" width={16} height={16} />
+                            <span>EN</span>
+                        </button>
+                    </div>
+
+                    {/* User */}
+                    <div className="iky-nav__user" ref={dropdownRef} onClick={() => setOpenDropdown((prev) => !prev)}>
+                        <span className="iky-nav__user-name">
+                            {!hydrated ? '...' : user?.username || user?.email || 'Tài khoản'}
+                        </span>
+
+                        {openDropdown ? <UpOutlined /> : <DownOutlined />}
+
+                        {openDropdown && (
+                            <div className="iky-nav__dropdown" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                    className="iky-nav__dropdown-item"
+                                    onClick={() => {
+                                        setOpenDropdown(false);
+                                        setOpenProfile(true);
+                                    }}
+                                >
+                                    {isEn ? 'Profile' : 'Thông tin cá nhân'}
+                                </button>
+
+                                <button className="iky-nav__dropdown-item" onClick={handleOpenGuide}>
+                                    {isEn ? 'User Guide' : 'Hướng dẫn sử dụng'}
+                                </button>
+
+                                <button
+                                    className="iky-nav__dropdown-item"
+                                    onClick={handleLogout}
+                                    disabled={isLoggingOut}
+                                >
+                                    {isLoggingOut
+                                        ? isEn
+                                            ? 'Logging out...'
+                                            : 'Đang đăng xuất...'
+                                        : isEn
+                                          ? 'Logout'
+                                          : 'Đăng xuất'}
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
-
-                <div className="iky-nav__user" ref={dropdownRef} onClick={() => setOpenDropdown((prev) => !prev)}>
-                    <span className="iky-nav__user-name">
-                        {!hydrated ? '...' : user?.username || user?.email || 'Tài khoản'}
-                    </span>
-
-                    {openDropdown ? (
-                        <UpOutlined className="iky-nav__user-caret" />
-                    ) : (
-                        <DownOutlined className="iky-nav__user-caret" />
-                    )}
-
-                    {openDropdown && (
-                        <div className="iky-nav__dropdown" onClick={(e) => e.stopPropagation()}>
-                            <button className="iky-nav__dropdown-item">{isEn ? 'Profile' : 'Cá nhân'}</button>
-
-                            {/* ✅ THÊM MỤC HƯỚNG DẪN SỬ DỤNG */}
-                            <button className="iky-nav__dropdown-item" onClick={handleOpenGuide}>
-                                {isEn ? 'User Guide' : 'Hướng dẫn sử dụng'}
-                            </button>
-
-                            <button className="iky-nav__dropdown-item" onClick={handleLogout} disabled={isLoggingOut}>
-                                {isLoggingOut
-                                    ? isEn
-                                        ? 'Logging out...'
-                                        : 'Đang đăng xuất...'
-                                    : isEn
-                                    ? 'Logout'
-                                    : 'Đăng xuất'}
-                            </button>
-                        </div>
-                    )}
-                </div>
-            </div>
-        </header>
+            </header>
+        </>
     );
 };
 

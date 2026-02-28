@@ -354,16 +354,16 @@
 .supportLayout {
     position: relative;
     display: flex;
-    gap: 20px; /* nới ra chút cho thoáng */
-    max-width: 1240px; /* cho rộng nhẹ, đỡ “bí” */
+    gap: 20px;
+    max-width: 1240px;
     margin: 0 auto;
     padding: 20px 16px 40px;
 }
 
 /* Sidebar */
 .supportSidebar {
-    width: 320px; /* ✅ theo ý bạn: 300-320 đẹp */
-    flex: 0 0 320px; /* ✅ đồng bộ width/flex */
+    width: 320px;
+    flex: 0 0 320px;
     position: sticky;
     top: 16px;
     align-self: flex-start;
@@ -403,7 +403,7 @@
 }
 
 .acceptanceLogo {
-    width: 56px; /* ✅ hợp lý hơn 200px */
+    width: 56px;
     height: 56px;
     object-fit: contain;
 }
@@ -438,5 +438,61 @@
         flex: 0 0 auto;
         position: relative;
         top: auto;
+    }
+}
+
+/* ===== DIAG INPUT FIX ===== */
+/* row: input + button gọn, không “kì” khi responsive */
+.diagRow {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+}
+
+/* AutoComplete full width */
+.imeiAuto {
+    flex: 1;
+    min-width: 0;
+}
+
+/* Đồng bộ height cho input + button */
+.imeiAuto :global(.ant-input-affix-wrapper),
+.imeiAuto :global(.ant-input) {
+    height: 40px;
+}
+
+/* ant-input-affix-wrapper cần align cho chuẩn */
+.imeiAuto :global(.ant-input-affix-wrapper) {
+    padding-top: 0;
+    padding-bottom: 0;
+    display: flex;
+    align-items: center;
+}
+
+/* input bên trong */
+.imeiAuto :global(.ant-input) {
+    line-height: 38px;
+    font-size: 14px;
+}
+
+/* Button */
+.diagBtn {
+    height: 40px;
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
+/* Mobile: tránh input lùn + tránh iOS zoom */
+@media (max-width: 480px) {
+    .diagRow {
+        flex-direction: column;
+    }
+
+    .diagBtn {
+        width: 100%;
+    }
+
+    .imeiAuto :global(.ant-input) {
+        font-size: 16px; /* tránh safari zoom + dễ đọc */
     }
 }

@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState, memo, startTransition } from 'react';
 import './cruise.css';
 
-import markerIconImg from '../assets/xe2.png';
+import markerIconImg from '../assets/xe2.webp';
 import { getCruiseHistory } from '../lib/api/cruise';
 import { getDevices } from '../lib/api/devices';
 import cruiseCacheManager from '../lib/cache/CruiseCacheManager';
@@ -12,233 +12,46 @@ import vi from '../locales/vi.json';
 import en from '../locales/en.json';
 import { usePathname } from 'next/navigation';
 import { formatDateFromDevice } from '../util/FormatDate';
+import CruiseExportButton from '../components/CruiseExportButton';
 
 import loading from '../assets/loading.gif';
 import Image from 'next/image';
-import { Select } from 'antd';
+import { Select, Tabs, Modal, Tooltip, Tag, Switch } from 'antd';
 import { FixedSizeList as VirtualList } from 'react-window';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, CartesianGrid } from 'recharts';
 
 // ✅ use shared reverse geocode (multi-provider)
 import { reverseGeocodeAddress } from '../lib/address/reverseGeocode';
 
+// ✅ IMPORT ALL UTILS (2 files only)
+import {
+    FETCH_PAGE_LIMIT,
+    VISUAL_MAX_POINTS_ON_MAP,
+    MAP_MIN_SAMPLE_DIST_M,
+    UI_THROTTLE_MS,
+    BASE_SPEED_MPS,
+    MIN_EVENT_DURATION_SEC,
+    distanceMeters,
+    calcTotalDistanceKm,
+    getBearing,
+    normalizeAngle,
+    buildMapSample,
+    nearestRenderIndex,
+    toNum,
+    getStatusType,
+    buildStatusHard,
+    safeTimeMs,
+    formatDuration,
+    buildPopupHtml,
+    toInputDateTime,
+    toApiDateTime,
+} from '../util/cruiseUtils';
+import { UpOutlined } from '@ant-design/icons';
+
 const locales = { vi, en };
 
 // ===============================
-// ⚙️ CONFIG
-// ===============================
-const FETCH_PAGE_LIMIT = 1000;
-
-// Map sampling (polyline + playback)
-const VISUAL_MAX_POINTS_ON_MAP = 3000;
-const MAP_MIN_SAMPLE_DIST_M = 60;
-
-// Playback/UI perf
-const UI_FPS = 6;
-const UI_THROTTLE_MS = Math.round(1000 / UI_FPS);
-const BASE_SPEED_MPS = 15;
-
-// ===============================
-// GPS utils
-// ===============================
-const EARTH_RADIUS_M = 6371000;
-const toRad = (v) => (v * Math.PI) / 180;
-
-const distanceMeters = (a, b) => {
-    const dLat = toRad(b.lat - a.lat);
-    const dLon = toRad(b.lon - a.lon);
-
-    const sinLat = Math.sin(dLat / 2);
-    const sinLon = Math.sin(dLon / 2);
-
-    const aa = sinLat * sinLat + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * sinLon * sinLon;
-    const c = 2 * Math.atan2(Math.sqrt(aa), Math.sqrt(1 - aa));
-    return EARTH_RADIUS_M * c;
-};
-
-const calcTotalDistanceKm = (points) => {
-    if (!points || points.length < 2) return 0;
-    let totalM = 0;
-    for (let i = 1; i < points.length; i++) {
-        const a = points[i - 1];
-        const b = points[i];
-        if (typeof a?.lat !== 'number' || typeof a?.lon !== 'number') continue;
-        if (typeof b?.lat !== 'number' || typeof b?.lon !== 'number') continue;
-
-        const d = distanceMeters({ lat: a.lat, lon: a.lon }, { lat: b.lat, lon: b.lon });
-        if (d > 0 && d < 2000) totalM += d;
-    }
-    return totalM / 1000;
-};
-
-// ===============================
-// Bearing
-// ===============================
-const getBearing = (lat1, lon1, lat2, lon2) => {
-    const φ1 = (lat1 * Math.PI) / 180;
-    const φ2 = (lat2 * Math.PI) / 180;
-    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
-
-    const y = Math.sin(Δλ) * Math.cos(φ2);
-    const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
-
-    let θ = Math.atan2(y, x);
-    θ = (θ * 180) / Math.PI;
-    return (θ + 360) % 360;
-};
-
-const normalizeAngle = (a) => ((a % 360) + 360) % 360;
-
-// ===============================
-// 🧠 Map downsample
-// ===============================
-const buildMapSample = (rawPoints, maxPoints = VISUAL_MAX_POINTS_ON_MAP, minDistM = MAP_MIN_SAMPLE_DIST_M) => {
-    if (!rawPoints || rawPoints.length === 0) return { indices: [], points: [] };
-    const isValid = (p) => p && typeof p.lat === 'number' && typeof p.lon === 'number';
-
-    let first = -1;
-    for (let i = 0; i < rawPoints.length; i++) {
-        if (isValid(rawPoints[i])) {
-            first = i;
-            break;
-        }
-    }
-    if (first === -1) return { indices: [], points: [] };
-
-    let last = first;
-    for (let i = rawPoints.length - 1; i >= 0; i--) {
-        if (isValid(rawPoints[i])) {
-            last = i;
-            break;
-        }
-    }
-
-    const kept = [first];
-    let lastKept = rawPoints[first];
-
-    for (let i = first + 1; i <= last; i++) {
-        const p = rawPoints[i];
-        if (!isValid(p)) continue;
-        const d = distanceMeters({ lat: lastKept.lat, lon: lastKept.lon }, { lat: p.lat, lon: p.lon });
-        if (d >= minDistM) {
-            kept.push(i);
-            lastKept = p;
-        }
-    }
-
-    if (kept[kept.length - 1] !== last) kept.push(last);
-
-    if (kept.length > maxPoints) {
-        const step = Math.ceil(kept.length / maxPoints);
-        const down = [];
-        for (let i = 0; i < kept.length; i += step) down.push(kept[i]);
-        if (down[down.length - 1] !== kept[kept.length - 1]) down.push(kept[kept.length - 1]);
-        return { indices: down, points: down.map((idx) => rawPoints[idx]) };
-    }
-
-    return { indices: kept, points: kept.map((idx) => rawPoints[idx]) };
-};
-
-const nearestRenderIndex = (renderToRaw, rawIdx) => {
-    if (!renderToRaw || renderToRaw.length === 0) return -1;
-    let lo = 0;
-    let hi = renderToRaw.length - 1;
-    while (lo <= hi) {
-        const mid = (lo + hi) >> 1;
-        const v = renderToRaw[mid];
-        if (v === rawIdx) return mid;
-        if (v < rawIdx) lo = mid + 1;
-        else hi = mid - 1;
-    }
-    const a = Math.max(0, Math.min(renderToRaw.length - 1, lo));
-    const b = Math.max(0, Math.min(renderToRaw.length - 1, lo - 1));
-    return Math.abs(renderToRaw[a] - rawIdx) < Math.abs(renderToRaw[b] - rawIdx) ? a : b;
-};
-
-// ===============================
-// ✅ Popup text (hard, khỏi khai báo json)
-// ===============================
-const popupText = (isEn) => ({
-    licensePlate: isEn ? 'License plate' : 'Biển số xe',
-    vehicleType: isEn ? 'Vehicle type' : 'Loại xe',
-    manufacturer: isEn ? 'Manufacturer' : 'Hãng',
-    time: isEn ? 'Time' : 'Thời điểm',
-    currentLocation: isEn ? 'Current location' : 'Vị trí hiện tại',
-    coordinate: isEn ? 'Coordinates' : 'Tọa độ',
-    machineStatus: isEn ? 'Engine status' : 'Trạng thái máy',
-    vehicleStatus: isEn ? 'Vehicle status' : 'Trạng thái xe',
-    speed: isEn ? 'Speed' : 'Vận tốc',
-
-    engineOn: isEn ? 'Engine on' : 'Mở máy',
-    engineOff: isEn ? 'Engine off' : 'Tắt máy',
-    vehicleRunning: isEn ? 'Running' : 'Xe đang chạy',
-    vehicleStopped: isEn ? 'Stopped' : 'Xe dừng',
-    vehicleParking: isEn ? 'Parked' : 'Xe đỗ',
-
-    loadingAddress: isEn ? 'Fetching address...' : 'Đang lấy địa chỉ...',
-});
-
-// ===============================
-// ✅ Status logic
-// acc = 1 => tắt máy => xe đỗ
-// acc = 0/undefined => có speed => chạy, không speed => dừng
-// ===============================
-const buildStatusHard = ({ acc, spd }, isEn) => {
-    const t = popupText(isEn);
-    const speed = Number(spd) || 0;
-
-    if (acc === 1) {
-        return {
-            machineStatus: t.engineOff,
-            vehicleStatus: t.vehicleParking,
-            speedText: `${speed} km/h`,
-        };
-    }
-
-    if (speed > 0) {
-        return {
-            machineStatus: t.engineOn,
-            vehicleStatus: t.vehicleRunning,
-            speedText: `${speed} km/h`,
-        };
-    }
-
-    return {
-        machineStatus: t.engineOn,
-        vehicleStatus: t.vehicleStopped,
-        speedText: '0 km/h',
-    };
-};
-
-// ===============================
-// Popup HTML
-// ===============================
-const buildPopupHtml = (p, isEn) => {
-    const t = popupText(isEn);
-    const status = buildStatusHard({ acc: p.acc, spd: p.spd ?? p.velocity }, isEn);
-
-    return `
-    <div class="iky-cruise-popup">
-      <div><strong>${t.licensePlate}:</strong> ${p.licensePlate || '--'}</div>
-      <div><strong>${t.vehicleType}:</strong> ${p.vehicleName || '--'}</div>
-      <div><strong>${t.manufacturer}:</strong> ${p.manufacturer || '--'}</div>
-      <div><strong>${t.time}:</strong> ${formatDateFromDevice(p.dateTime) || '--'}</div>
-      <div><strong>${t.currentLocation}:</strong> ${p.address || t.loadingAddress}</div>
-      <div><strong>${t.coordinate}:</strong> ${p.lat}, ${p.lon}</div>
-      <div><strong>${t.machineStatus}:</strong> ${status.machineStatus}</div>
-      <div><strong>${t.vehicleStatus}:</strong> ${status.vehicleStatus}</div>
-      <div><strong>${t.speed}:</strong> ${status.speedText}</div>
-    </div>
-  `;
-};
-
-const toInputDateTime = (date) => {
-    const tzOffset = date.getTimezoneOffset() * 60000;
-    const localISO = new Date(date.getTime() - tzOffset).toISOString();
-    return localISO.slice(0, 16);
-};
-
-// ===============================
-// Virtual Row
+// Virtual Row (lộ trình)
 // ===============================
 const Row = memo(function Row({ index, style, data }) {
     const { items, activeIndex, onClick } = data;
@@ -306,11 +119,19 @@ const CruisePage = () => {
     const [activeIndex, setActiveIndex] = useState(0);
     const [activeRenderIndex, setActiveRenderIndex] = useState(0);
     const [sliderValue, setSliderValue] = useState(0);
+    const [navOpen, setNavOpen] = useState(true);
 
     const [isPlaying, setIsPlaying] = useState(false);
     const isPlayingRef = useRef(false);
 
     const [totalKm, setTotalKm] = useState(0);
+
+    // ✅ NEW: follow mode
+    const [followMode, setFollowMode] = useState(true);
+
+    // ✅ NEW: fixed info panel address state
+    const [currentAddr, setCurrentAddr] = useState('');
+    const currentAddrKeyRef = useRef('');
 
     // leaflet
     const [LMap, setLMap] = useState(null);
@@ -344,15 +165,17 @@ const CruisePage = () => {
     // ✅ giữ point đang mở popup để rerender khi đổi ngôn ngữ
     const currentPopupPointRef = useRef(null);
 
+    // ✅ TAB UI/UX
+    const [activeTab, setActiveTab] = useState('route');
+    const [statsOpen, setStatsOpen] = useState(false);
+
     // ✅ FIX: auto scroll table theo activeIndex khi đang play
     const lastScrollRef = useRef(-1);
     useEffect(() => {
         if (!isPlaying) return;
         if (!vlistRef.current) return;
-
         if (lastScrollRef.current === activeIndex) return;
         lastScrollRef.current = activeIndex;
-
         vlistRef.current.scrollToItem(activeIndex, 'center');
     }, [activeIndex, isPlaying]);
 
@@ -458,13 +281,145 @@ const CruisePage = () => {
         });
     }, [deviceList, t, deviceSearchText]);
 
-    const toApiDateTime = (value) => {
-        if (!value) return '';
-        const [date, timeRaw] = value.split('T');
-        if (!timeRaw) return date;
-        const time = timeRaw.slice(0, 8);
-        if (time.length === 5) return `${date} ${time}:00`;
-        return `${date} ${time}`;
+    const routeTimeline = useMemo(() => {
+        if (!rawRouteData?.length) return [];
+
+        const pts = rawRouteData
+            .map((p, idx) => {
+                const speedNum = toNum(p.spd) ?? toNum(p.velocityNum) ?? 0;
+                const type = getStatusType({ acc: p.acc, spd: speedNum }); // PARK/RUN/STOP
+                const timeMs = Number.isFinite(p.__timeMs) ? p.__timeMs : safeTimeMs(p);
+                return Number.isFinite(timeMs)
+                    ? { ...p, __idx: idx, __type: type, __timeMs: timeMs, __speedNum: speedNum }
+                    : null;
+            })
+            .filter(Boolean);
+
+        if (pts.length < 2) return [];
+
+        const blocks = [];
+        let s = 0;
+
+        const blockDistanceKm = (aIdx, bIdx) => {
+            let totalM = 0;
+            for (let i = aIdx + 1; i <= bIdx; i++) {
+                const A = pts[i - 1];
+                const B = pts[i];
+                if (typeof A?.lat !== 'number' || typeof A?.lon !== 'number') continue;
+                if (typeof B?.lat !== 'number' || typeof B?.lon !== 'number') continue;
+                const d = distanceMeters({ lat: A.lat, lon: A.lon }, { lat: B.lat, lon: B.lon });
+                if (d > 0 && d < 5000) totalM += d;
+            }
+            return totalM / 1000;
+        };
+
+        while (s < pts.length) {
+            let e = s;
+            while (e + 1 < pts.length && pts[e + 1].__type === pts[s].__type) e++;
+
+            const start = pts[s];
+            const end = pts[e];
+
+            const durationSec = Math.max(0, (end.__timeMs - start.__timeMs) / 1000);
+            const distKm = start.__type === 'RUN' ? blockDistanceKm(s, e) : 0;
+
+            blocks.push({
+                type: start.__type,
+                startIdx: start.__idx,
+                endIdx: end.__idx,
+                startTime: start.dateTime,
+                endTime: end.dateTime,
+                durationSec,
+                distKm,
+                startLat: start.lat,
+                startLon: start.lon,
+                endLat: end.lat,
+                endLon: end.lon,
+            });
+
+            s = e + 1;
+        }
+
+        return blocks.filter((b) => b.durationSec >= 5);
+    }, [rawRouteData]);
+
+    const RouteDetail = () => {
+        const labelType = (tp) => {
+            if (tp === 'RUN') return isEn ? 'Moving' : 'Di chuyển';
+            if (tp === 'PARK') return isEn ? 'Parking' : 'Đỗ';
+            return isEn ? 'Stop' : 'Dừng';
+        };
+
+        return (
+            <div className="iky-cruise__events">
+                <div className="iky-cruise__events-header">
+                    <div className="iky-cruise__events-title">{isEn ? 'Route details' : 'Lộ trình chi tiết'}</div>
+                    <div className="iky-cruise__events-sub">
+                        {isEn ? 'Blocks' : 'Số đoạn'}: <b>{routeTimeline.length}</b>
+                    </div>
+                </div>
+
+                <div className="iky-cruise__events-table">
+                    <div className="iky-cruise__events-head iky-cruise__route-head">
+                        <div className="iky-cruise__events-cell iky-cruise__events-cell--stt">#</div>
+                        <div className="iky-cruise__events-cell">{isEn ? 'Type' : 'Loại'}</div>
+                        <div className="iky-cruise__events-cell">{isEn ? 'Duration' : 'Thời gian'}</div>
+                        <div className="iky-cruise__events-cell">{isEn ? 'Time range' : 'Khoảng thời gian'}</div>
+                        <div className="iky-cruise__events-cell">{isEn ? 'Start coord' : 'Tọa độ bắt đầu'}</div>
+                        <div className="iky-cruise__events-cell">{isEn ? 'End coord' : 'Tọa độ kết thúc'}</div>
+                        <div className="iky-cruise__events-cell">{isEn ? 'Distance' : 'Quãng đường'}</div>
+                        <div className="iky-cruise__events-cell iky-cruise__events-cell--action">
+                            {isEn ? 'Go' : 'Tới'}
+                        </div>
+                    </div>
+
+                    <div className="iky-cruise__events-body">
+                        {routeTimeline.length === 0 ? (
+                            <div className="iky-cruise__empty">{isEn ? 'No data' : 'Không có dữ liệu'}</div>
+                        ) : (
+                            routeTimeline.map((b, idx) => (
+                                <div
+                                    key={`${b.type}-${b.startIdx}-${b.endIdx}`}
+                                    className="iky-cruise__events-row iky-cruise__route-row"
+                                >
+                                    <div className="iky-cruise__events-cell iky-cruise__events-cell--stt">
+                                        {idx + 1}
+                                    </div>
+                                    <div className="iky-cruise__events-cell">{labelType(b.type)}</div>
+                                    <div className="iky-cruise__events-cell">{formatDuration(b.durationSec)}</div>
+                                    <Tooltip
+                                        title={`${formatDateFromDevice(b.startTime)} → ${formatDateFromDevice(
+                                            b.endTime,
+                                        )}`}
+                                    >
+                                        <div className="iky-cruise__events-cell">
+                                            {formatDateFromDevice(b.startTime)} → {formatDateFromDevice(b.endTime)}
+                                        </div>
+                                    </Tooltip>
+                                    <div className="iky-cruise__events-cell">
+                                        {typeof b.startLat === 'number' ? `${b.startLat},${b.startLon}` : '--'}
+                                    </div>
+                                    <div className="iky-cruise__events-cell">
+                                        {typeof b.endLat === 'number' ? `${b.endLat},${b.endLon}` : '--'}
+                                    </div>
+                                    <div className="iky-cruise__events-cell">
+                                        {b.type === 'RUN' ? `${b.distKm.toFixed(2)} km` : '--'}
+                                    </div>
+                                    <div className="iky-cruise__events-cell iky-cruise__events-cell--action">
+                                        <button
+                                            className="iky-cruise__mini-btn"
+                                            onClick={() => goToRawIndex(b.startIdx)}
+                                        >
+                                            {isEn ? 'Go' : 'Tới'}
+                                        </button>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
     };
 
     const handlePresetRange = (hours) => {
@@ -483,7 +438,7 @@ const CruisePage = () => {
         }
     };
 
-    // ✅ fetch address lazily + cache (CACHE THEO NGÔN NGỮ) - dùng multi-provider
+    // ✅ fetch address lazily + cache
     const ensureAddress = async (lat, lon) => {
         if (lat == null || lon == null) return '';
 
@@ -507,43 +462,59 @@ const CruisePage = () => {
         return p;
     };
 
+    // ✅ NEW: update fixed info address when activeIndex changes
+    useEffect(() => {
+        const p = rawRouteData?.[activeIndex];
+        if (!p || p.lat == null || p.lon == null) {
+            setCurrentAddr('');
+            currentAddrKeyRef.current = '';
+            return;
+        }
+
+        const lang = isEn ? 'en' : 'vi';
+        const key = `${lang}:${Number(p.lat).toFixed(6)},${Number(p.lon).toFixed(6)}`;
+        if (currentAddrKeyRef.current === key) return;
+
+        currentAddrKeyRef.current = key;
+        setCurrentAddr('');
+
+        (async () => {
+            const addr = await ensureAddress(p.lat, p.lon);
+            if (currentAddrKeyRef.current === key) setCurrentAddr(addr || '');
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeIndex, isEn, rawRouteData]);
+
     // ✅ popup: show ngay -> update khi có address
     const openInfoPopup = async (p) => {
         if (!LMap || !mapRef.current) return;
         if (!p || p.lat == null || p.lon == null) return;
 
-        // ✅ lưu point để khi đổi isEn thì rerender popup
         currentPopupPointRef.current = p;
 
         if (!popupRef.current) {
             popupRef.current = LMap.popup({ closeButton: true, autoPan: true });
         }
 
-        // ✅ show ngay (đúng EN/VI)
         popupRef.current.setLatLng([p.lat, p.lon]).setContent(buildPopupHtml(p, isEn)).openOn(mapRef.current);
 
-        // ✅ load address
         const addr = await ensureAddress(p.lat, p.lon);
         if (!addr) return;
 
-        // ✅ update content (đúng EN/VI + có address)
         const updated = { ...p, address: addr };
         popupRef.current.setLatLng([p.lat, p.lon]).setContent(buildPopupHtml(updated, isEn)).openOn(mapRef.current);
 
-        // ✅ giữ lại bản updated để đổi ngôn ngữ không mất address
         currentPopupPointRef.current = updated;
     };
 
-    // ✅ Khi đổi ngôn ngữ: rerender popup đang mở (Leaflet popup không tự rerender)
+    // ✅ When language changes: rerender popup
     useEffect(() => {
         if (!popupRef.current || !mapRef.current) return;
         const p = currentPopupPointRef.current;
         if (!p || p.lat == null || p.lon == null) return;
 
-        // update ngay label theo ngôn ngữ mới
         popupRef.current.setLatLng([p.lat, p.lon]).setContent(buildPopupHtml(p, isEn)).openOn(mapRef.current);
 
-        // rồi lấy lại address theo ngôn ngữ mới (nếu có)
         (async () => {
             const addr = await ensureAddress(p.lat, p.lon);
             if (!addr) return;
@@ -567,7 +538,6 @@ const CruisePage = () => {
         return rIdx;
     };
 
-    // TABLE click: giữ behavior cũ (nhảy marker + pan + popup)
     const handlePointClickRaw = (rawIdx) => {
         if (!rawRouteData.length) return;
         stopPlaying();
@@ -590,7 +560,104 @@ const CruisePage = () => {
         vlistRef.current?.scrollToItem(rawIdx, 'center');
     };
 
+    // ===============================
+    // ✅ Build STOP/PARK segments + stats (fixed time)
+    // ===============================
+    const segments = useMemo(() => {
+        if (!rawRouteData?.length) return { stop: [], park: [], maxSpeed: null };
+
+        const points = rawRouteData.map((p, idx) => {
+            const speedNum = toNum(p.spd) ?? toNum(p.vgp) ?? toNum(p.velocityNum) ?? 0;
+            const type = getStatusType({ acc: p.acc, spd: speedNum });
+            const timeMs = safeTimeMs(p);
+            return { ...p, __idx: idx, __type: type, __timeMs: timeMs, __speedNum: speedNum };
+        });
+
+        let maxSpeed = null;
+        for (const p of points) {
+            const sp = p.__speedNum ?? 0;
+            if (!maxSpeed || sp > maxSpeed.speed) {
+                maxSpeed = { speed: sp, timeMs: p.__timeMs, idx: p.__idx, point: p };
+            }
+        }
+
+        const makeEvents = (wantedType) => {
+            const events = [];
+            let i = 0;
+
+            while (i < points.length) {
+                const p = points[i];
+                if (p.__type !== wantedType) {
+                    i++;
+                    continue;
+                }
+
+                const startIdx = i;
+                let endIdx = i;
+                while (endIdx + 1 < points.length && points[endIdx + 1].__type === wantedType) endIdx++;
+
+                const a = points[startIdx];
+                const b = points[endIdx];
+
+                const startMs = a.__timeMs;
+                const endMs = b.__timeMs;
+
+                const durationSec =
+                    Number.isFinite(startMs) && Number.isFinite(endMs) && endMs >= startMs
+                        ? (endMs - startMs) / 1000
+                        : 0;
+
+                if (durationSec >= MIN_EVENT_DURATION_SEC) {
+                    events.push({
+                        type: wantedType,
+                        startIndex: a.__idx,
+                        endIndex: b.__idx,
+                        startTime: a.dateTime,
+                        endTime: b.dateTime,
+                        durationSec,
+                        startLat: a.lat,
+                        startLon: a.lon,
+                        endLat: b.lat,
+                        endLon: b.lon,
+                    });
+                }
+
+                i = endIdx + 1;
+            }
+
+            return events;
+        };
+
+        return {
+            stop: makeEvents('STOP'),
+            park: makeEvents('PARK'),
+            maxSpeed,
+        };
+    }, [rawRouteData]);
+
+    const stats = useMemo(() => {
+        const totalStopSec = segments.stop.reduce((s, e) => s + (e.durationSec || 0), 0);
+        const totalParkSec = segments.park.reduce((s, e) => s + (e.durationSec || 0), 0);
+        return {
+            totalDistanceKm: totalKm,
+            stopCount: segments.stop.length,
+            parkCount: segments.park.length,
+            totalStopSec,
+            totalParkSec,
+            maxSpeed: segments.maxSpeed?.speed ?? 0,
+            maxSpeedTime: segments.maxSpeed?.point?.dateTime ?? '',
+            maxSpeedRawIndex: segments.maxSpeed?.idx ?? 0,
+        };
+    }, [segments, totalKm]);
+
+    const goToRawIndex = (rawIdx) => {
+        if (!rawRouteData.length) return;
+        handlePointClickRaw(rawIdx);
+    };
+
+    // ===============================
     // build segment distances for playback
+    // ===============================
     useEffect(() => {
         if (!mapRouteData?.length || mapRouteData.length < 2) {
             segMRef.current = [];
@@ -630,7 +697,7 @@ const CruisePage = () => {
         totalMRef.current = sum;
     }, [mapRouteData]);
 
-    // Dots render (canvas + viewport + adaptive step)
+    // Dots render
     const drawDots = () => {
         if (!LMap || !mapRef.current || !mapRouteData.length) return;
 
@@ -709,7 +776,7 @@ const CruisePage = () => {
         return best;
     };
 
-    // ✅ click map: CHỈ mở popup (không nhảy marker)
+    // ✅ click map: CHỈ mở popup
     useEffect(() => {
         if (!mapRef.current) return;
         const map = mapRef.current;
@@ -728,7 +795,6 @@ const CruisePage = () => {
             const pRaw = rawRouteData[rawIdx];
             if (!pRaw) return;
 
-            // optional highlight: chấm vàng nhảy theo điểm click (marker xe không nhảy)
             if (pRaw.lat != null && pRaw.lon != null) {
                 highlightDotRef.current?.setLatLng([pRaw.lat, pRaw.lon]);
             }
@@ -781,9 +847,9 @@ const CruisePage = () => {
         if (!latlngs.length) return;
 
         polylineRef.current = LMap.polyline(latlngs, {
-            color: '#f97316',
-            weight: 3,
-            opacity: 0.7,
+            color: '#1677ff',
+            weight: 4,
+            opacity: 0.8,
             lineCap: 'round',
             lineJoin: 'round',
             interactive: false,
@@ -863,6 +929,7 @@ const CruisePage = () => {
         let segIdx = Math.max(0, Math.min(mapRouteData.length - 2, activeRenderIndex));
         let lastTime = performance.now();
         let lastUi = 0;
+        let lastFollow = 0;
 
         const step = (now) => {
             if (!isPlayingRef.current) return;
@@ -879,6 +946,11 @@ const CruisePage = () => {
                 if (pLast?.lat != null && pLast?.lon != null) {
                     movingMarkerRef.current.setLatLng([pLast.lat, pLast.lon]);
                     highlightDotRef.current?.setLatLng([pLast.lat, pLast.lon]);
+
+                    // ✅ follow at end
+                    if (followMode && mapRef.current) {
+                        mapRef.current.panTo([pLast.lat, pLast.lon], { animate: true, duration: 0.25 });
+                    }
                 }
 
                 startTransition(() => {
@@ -900,7 +972,7 @@ const CruisePage = () => {
             const a = mapRouteData[segIdx];
             const b = mapRouteData[segIdx + 1];
 
-            if (!a || !b || segLen <= 0 || a.lat == null || a.lon == null || b.lat == null || b.lon == null) {
+            if (!a || !b || segLen <= 0) {
                 animationFrameRef.current = requestAnimationFrame(step);
                 return;
             }
@@ -913,6 +985,12 @@ const CruisePage = () => {
 
             movingMarkerRef.current.setLatLng([lat, lon]);
             highlightDotRef.current?.setLatLng([lat, lon]);
+
+            // ✅ follow mode (throttle)
+            if (followMode && mapRef.current && now - lastFollow > 180) {
+                lastFollow = now;
+                mapRef.current.panTo([lat, lon], { animate: true, duration: 0.18 });
+            }
 
             const bearing = getBearing(a.lat, a.lon, b.lat, b.lon);
             const el = movingMarkerRef.current.getElement();
@@ -946,7 +1024,7 @@ const CruisePage = () => {
                 animationFrameRef.current = null;
             }
         };
-    }, [isPlaying, mapRouteData, playbackRate, activeRenderIndex]);
+    }, [isPlaying, mapRouteData, playbackRate, activeRenderIndex, followMode]);
 
     // Slider behavior
     const handleSliderChange = (e) => {
@@ -1000,6 +1078,8 @@ const CruisePage = () => {
             addressCacheRef.current.clear();
             inflightRef.current.clear();
             currentPopupPointRef.current = null;
+            setCurrentAddr('');
+            currentAddrKeyRef.current = '';
 
             setRawRouteData([]);
             setMapRouteData([]);
@@ -1008,6 +1088,9 @@ const CruisePage = () => {
             setActiveIndex(0);
             setActiveRenderIndex(0);
             setSliderValue(0);
+
+            setActiveTab('route');
+            setStatsOpen(false);
 
             const apiStart = toApiDateTime(start);
             const apiEnd = toApiDateTime(end);
@@ -1039,20 +1122,38 @@ const CruisePage = () => {
             const manufacturer = currentDevice.device_category_id?.name || currentDevice.device_category_id?.code || '';
 
             const mapped = allData.map((item) => {
-                const { speedText } = buildStatusHard({ acc: item.acc, spd: item.vgp }, isEn);
+                const speedNum = toNum(item.vgp) ?? 0;
+                const status = buildStatusHard({ acc: item.acc, spd: speedNum }, isEn);
+
+                const timRaw = item.tim;
+                const createdAt = item.createdAt;
+                const dateTime = item.tim || item.createdAt || item.created || '';
 
                 return {
                     lat: item.lat,
                     lon: item.lon,
+
+                    gps: item.gps,
+                    sat: item.sat,
+                    mil: item.mil,
+
+                    timRaw,
+                    createdAt,
+
                     licensePlate: plate,
                     vehicleName,
                     manufacturer,
                     selector: item._id,
-                    dateTime: item.tim || item.created || item.createdAt || '',
-                    velocity: speedText,
+
+                    dateTime,
+                    velocity: status.speedText,
+                    velocityNum: status.speedNum,
+
                     acc: item.acc,
                     spd: item.vgp,
+
                     address: '',
+                    __timeMs: safeTimeMs({ timRaw, dateTime, createdAt }),
                 };
             });
 
@@ -1063,7 +1164,6 @@ const CruisePage = () => {
             mapToRawIndexRef.current = sample.indices;
             setMapRouteData(sample.points);
 
-            // warm cache điểm đầu tiên
             const firstValid = mapped.find((p) => typeof p.lat === 'number' && typeof p.lon === 'number');
             if (firstValid) ensureAddress(firstValid.lat, firstValid.lon);
         } catch (e) {
@@ -1103,6 +1203,265 @@ const CruisePage = () => {
 
         vlistRef.current?.scrollToItem(rawIdx, 'center');
     };
+
+    // ===============================
+    // Speed series
+    // ===============================
+    const speedSeries = useMemo(() => {
+        if (!rawRouteData?.length) return [];
+
+        const pts = rawRouteData
+            .map((p, i) => {
+                const tms = Number.isFinite(p.__timeMs) ? p.__timeMs : safeTimeMs(p);
+                const v = toNum(p.spd) ?? toNum(p.velocityNum) ?? 0;
+                return Number.isFinite(tms) ? { i, tms, v } : null;
+            })
+            .filter(Boolean);
+
+        const MAX = 1200;
+        if (pts.length <= MAX) return pts;
+        const step = Math.ceil(pts.length / MAX);
+        const out = [];
+        for (let k = 0; k < pts.length; k += step) out.push(pts[k]);
+        if (out[out.length - 1] !== pts[pts.length - 1]) out.push(pts[pts.length - 1]);
+        return out;
+    }, [rawRouteData]);
+
+    // ✅ ACC series (step chart)
+    const accSeries = useMemo(() => {
+        if (!rawRouteData?.length) return [];
+        const pts = rawRouteData
+            .map((p, i) => {
+                const tms = Number.isFinite(p.__timeMs) ? p.__timeMs : safeTimeMs(p);
+                if (!Number.isFinite(tms)) return null;
+                const acc = Number(p.acc ?? 0) ? 1 : 0;
+                return { i, tms, acc };
+            })
+            .filter(Boolean);
+
+        const MAX = 1500;
+        if (pts.length <= MAX) return pts;
+        const step = Math.ceil(pts.length / MAX);
+        const out = [];
+        for (let k = 0; k < pts.length; k += step) out.push(pts[k]);
+        if (out[out.length - 1] !== pts[pts.length - 1]) out.push(pts[pts.length - 1]);
+        return out;
+    }, [rawRouteData]);
+
+    const SpeedChart = () => {
+        if (!speedSeries.length) return <div className="iky-cruise__empty">No data</div>;
+
+        const formatTime = (ms) => {
+            const d = new Date(ms);
+            const hh = String(d.getHours()).padStart(2, '0');
+            const mm = String(d.getMinutes()).padStart(2, '0');
+            return `${hh}:${mm}`;
+        };
+
+        return (
+            <div className="iky-cruise__chart">
+                <div className="iky-cruise__chart-head">
+                    <div className="iky-cruise__chart-title">{isEn ? 'Speed chart' : 'Đồ thị vận tốc'}</div>
+                    <div className="iky-cruise__chart-sub">
+                        {isEn ? 'Max speed' : 'Tốc độ lớn nhất'}: <b>{stats.maxSpeed} km/h</b>{' '}
+                        {stats.maxSpeedTime ? (
+                            <span>
+                                ({isEn ? 'at' : 'lúc'} {formatDateFromDevice(stats.maxSpeedTime)})
+                            </span>
+                        ) : null}
+                    </div>
+                </div>
+
+                <div className="iky-cruise__chart-box">
+                    <ResponsiveContainer width="100%" height={260}>
+                        <LineChart data={speedSeries} margin={{ top: 10, right: 18, left: 6, bottom: 10 }}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis
+                                dataKey="tms"
+                                tickFormatter={formatTime}
+                                minTickGap={24}
+                                type="number"
+                                domain={['dataMin', 'dataMax']}
+                            />
+                            <YAxis dataKey="v" width={40} tickFormatter={(v) => `${v}`} domain={[0, 'auto']} />
+                            <ReTooltip
+                                labelFormatter={(ms) => `${isEn ? 'Time' : 'Thời gian'}: ${formatTime(ms)}`}
+                                formatter={(value) => [`${value} km/h`, isEn ? 'Speed' : 'Vận tốc']}
+                            />
+                            <Line type="monotone" dataKey="v" dot={false} strokeWidth={2} />
+                        </LineChart>
+                    </ResponsiveContainer>
+                </div>
+
+                <div className="iky-cruise__chart-actions">
+                    <button
+                        type="button"
+                        className="iky-cruise__mini-btn"
+                        onClick={() => goToRawIndex(stats.maxSpeedRawIndex)}
+                    >
+                        {isEn ? 'Go to max-speed point' : 'Tới điểm tốc độ lớn nhất'}
+                    </button>
+                </div>
+            </div>
+        );
+    };
+
+    const AccChart = () => {
+        if (!accSeries.length) return <div className="iky-cruise__empty">No data</div>;
+
+        const formatTime = (ms) => {
+            const d = new Date(ms);
+            const hh = String(d.getHours()).padStart(2, '0');
+            const mm = String(d.getMinutes()).padStart(2, '0');
+            return `${hh}:${mm}`;
+        };
+
+        // Chuẩn hóa data: acc = 1 là TẮT, còn lại (0, null, undefined) là BẬT
+        const normalizedData = accSeries.map((item) => ({
+            ...item,
+            accValue: item.acc === 1 ? 0 : 1, // Đảo ngược: 1->0 (tắt), còn lại->1 (bật)
+            accOriginal: item.acc, // Giữ giá trị gốc để debug nếu cần
+        }));
+
+        return (
+            <div className="iky-cruise__chart">
+                <div className="iky-cruise__chart-head">
+                    <div className="iky-cruise__chart-title">
+                        {isEn ? 'ACC (engine) chart' : 'Đồ thị trạng thái máy'}
+                    </div>
+                    {/* <div className="iky-cruise__chart-sub">
+                        {isEn ? 'Step chart: 1 = ON, 0 = OFF' : 'Dạng bậc thang: 1 = BẬT, 0 = TẮT'}
+                    </div> */}
+                </div>
+
+                <div className="iky-cruise__chart-box">
+                    <ResponsiveContainer width="100%" height={220}>
+                        <LineChart data={normalizedData} margin={{ top: 10, right: 18, left: 6, bottom: 10 }}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis
+                                dataKey="tms"
+                                tickFormatter={formatTime}
+                                minTickGap={28}
+                                type="number"
+                                domain={['dataMin', 'dataMax']}
+                            />
+                            <YAxis
+                                dataKey="accValue"
+                                width={40}
+                                domain={[-0.05, 1.05]}
+                                ticks={[0, 1]}
+                                tickFormatter={(value) => (value === 1 ? (isEn ? 'ON' : 'BẬT') : isEn ? 'OFF' : 'TẮT')}
+                            />
+                            <ReTooltip
+                                labelFormatter={(ms) => `${isEn ? 'Time' : 'Thời gian'}: ${formatTime(ms)}`}
+                                formatter={(value, name) => [
+                                    value === 1 ? (isEn ? 'ON' : 'Mở máy') : isEn ? 'OFF' : 'Tắt máy',
+                                    'Trạng thái máy',
+                                ]}
+                            />
+                            <Line
+                                type="stepAfter"
+                                dataKey="accValue"
+                                dot={false}
+                                strokeWidth={2}
+                                isAnimationActive={false}
+                                stroke="#8884d8"
+                            />
+                        </LineChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+        );
+    };
+    // ===============================
+    // Event tables (Dừng/Đỗ)
+    // ===============================
+    const EventTable = ({ items, kind }) => {
+        const isStop = kind === 'STOP';
+        const title = isStop ? (isEn ? 'Stops' : 'Dừng xe') : isEn ? 'Parking' : 'Đỗ xe';
+
+        const color = isStop ? 'gold' : 'blue';
+        const tagText = isStop ? (isEn ? 'STOP' : 'DỪNG') : isEn ? 'PARK' : 'ĐỖ';
+
+        return (
+            <div className="iky-cruise__events">
+                <div className="iky-cruise__events-header">
+                    <div className="iky-cruise__events-title">
+                        {title} <Tag color={color}>{tagText}</Tag>
+                    </div>
+                </div>
+
+                <div className="iky-cruise__events-table">
+                    <div className="iky-cruise__events-head">
+                        <div className="iky-cruise__events-cell iky-cruise__events-cell--stt">#</div>
+                        <div className="iky-cruise__events-cell">{isEn ? 'Start' : 'Bắt đầu'}</div>
+                        <div className="iky-cruise__events-cell">{isEn ? 'End' : 'Kết thúc'}</div>
+                        <div className="iky-cruise__events-cell">{isEn ? 'Duration' : 'Thời gian'}</div>
+                        <div className="iky-cruise__events-cell">{isEn ? 'Start coord' : 'Tọa độ bắt đầu'}</div>
+                        <div className="iky-cruise__events-cell">{isEn ? 'End coord' : 'Tọa độ kết thúc'}</div>
+                        <div className="iky-cruise__events-cell iky-cruise__events-cell--action">
+                            {isEn ? 'Action' : 'Thao tác'}
+                        </div>
+                    </div>
+
+                    <div className="iky-cruise__events-body">
+                        {items.length === 0 ? (
+                            <div className="iky-cruise__empty">{isEn ? 'No events' : 'Không có dữ liệu'}</div>
+                        ) : (
+                            items.map((e, idx) => (
+                                <div key={`${e.type}-${e.startIndex}-${e.endIndex}`} className="iky-cruise__events-row">
+                                    <div className="iky-cruise__events-cell iky-cruise__events-cell--stt">
+                                        {idx + 1}
+                                    </div>
+                                    <div className="iky-cruise__events-cell">{formatDateFromDevice(e.startTime)}</div>
+                                    <div className="iky-cruise__events-cell">{formatDateFromDevice(e.endTime)}</div>
+                                    <div className="iky-cruise__events-cell">{formatDuration(e.durationSec)}</div>
+                                    <div className="iky-cruise__events-cell">
+                                        {typeof e.startLat === 'number' ? `${e.startLat},${e.startLon}` : '--'}
+                                    </div>
+                                    <div className="iky-cruise__events-cell">
+                                        {typeof e.endLat === 'number' ? `${e.endLat},${e.endLon}` : '--'}
+                                    </div>
+                                    <div className="iky-cruise__events-cell iky-cruise__events-cell--action">
+                                        <Tooltip title={isEn ? 'Go to start point' : 'Tới điểm bắt đầu'}>
+                                            <button
+                                                type="button"
+                                                className="iky-cruise__mini-btn"
+                                                onClick={() => goToRawIndex(e.startIndex)}
+                                            >
+                                                {isEn ? 'Go' : 'Tới'}
+                                            </button>
+                                        </Tooltip>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    // ✅ Current info panel data
+    const currentPoint = rawRouteData?.[activeIndex] || null;
+    const currentInfo = useMemo(() => {
+        if (!currentPoint) return null;
+        const speed = toNum(currentPoint.spd) ?? toNum(currentPoint.velocityNum) ?? 0;
+        const acc = Number(currentPoint.acc ?? 0) ? 1 : 0;
+        const gpsLost = Number(currentPoint.gps ?? 0) === 1;
+        const sat = typeof currentPoint.sat === 'number' ? currentPoint.sat : null;
+        return {
+            time: currentPoint.dateTime,
+            lat: currentPoint.lat,
+            lon: currentPoint.lon,
+            speed,
+            acc,
+            gpsLost,
+            sat,
+            velocityText: currentPoint.velocity,
+            plate: currentPoint.licensePlate || '',
+        };
+    }, [currentPoint]);
 
     const VLIST_HEIGHT = 460;
     const ROW_HEIGHT = 40;
@@ -1175,6 +1534,22 @@ const CruisePage = () => {
                             {loadingRoute ? t.form.loadingRoute : t.form.loadRoute}
                         </button>
 
+                        <CruiseExportButton
+                            isEn={isEn}
+                            disabled={loadingRoute || rawRouteData.length === 0}
+                            rawRouteData={rawRouteData}
+                            stats={stats}
+                            segments={segments}
+                            device={deviceList.find((d) => d._id === selectedDeviceId)}
+                            startText={start}
+                            endText={end}
+                            distanceMetersFn={(a, b) => distanceMeters(a, b)}
+                            formatDateFn={(dt) => formatDateFromDevice(dt)}
+                            formatDurationFn={(sec) => formatDuration(sec)}
+                            // ✅ nếu bạn muốn cố gắng điền address vào excel (giới hạn 120 điểm để không chậm):
+                            ensureAddressFn={ensureAddress}
+                        />
+
                         {error && <div className="iky-cruise__error">{error}</div>}
                     </div>
 
@@ -1205,6 +1580,20 @@ const CruisePage = () => {
                                     ⏹
                                 </button>
 
+                                {/* ✅ Follow toggle */}
+                                <div className="iky-cruise__follow">
+                                    <Tooltip
+                                        title={
+                                            isEn
+                                                ? 'Follow marker (auto pan while playing)'
+                                                : 'Bám theo xe (tự pan khi chạy)'
+                                        }
+                                    >
+                                        <span className="iky-cruise__follow-label">{isEn ? 'Follow' : 'Bám'}</span>
+                                    </Tooltip>
+                                    <Switch size="small" checked={followMode} onChange={(v) => setFollowMode(v)} />
+                                </div>
+
                                 <select
                                     value={playbackRate}
                                     onChange={(e) => setPlaybackRate(Number(e.target.value))}
@@ -1214,6 +1603,9 @@ const CruisePage = () => {
                                     <option value={1}>1x</option>
                                     <option value={1.5}>1.5x</option>
                                     <option value={2}>2x</option>
+                                    <option value={3}>3x</option>
+                                    <option value={5}>5x</option>
+                                    <option value={10}>10x</option>
                                 </select>
 
                                 <input
@@ -1265,6 +1657,221 @@ const CruisePage = () => {
             {/* MAP */}
             <div className="iky-cruise__map">
                 <div id="iky-cruise-map" className="iky-cruise__map-inner" />
+
+                {/* ✅ Fixed current point info panel */}
+                {rawRouteData.length > 0 && currentInfo && (
+                    <div className="iky-cruise__infobox">
+                        <div className="iky-cruise__infobox-title">{isEn ? 'Current point' : 'Điểm hiện tại'}</div>
+
+                        <div className="iky-cruise__infobox-row">
+                            <span className="iky-cruise__infobox-k">{isEn ? 'Time' : 'Thời gian'}</span>
+                            <span className="iky-cruise__infobox-v">
+                                <b>{formatDateFromDevice(currentInfo.time)}</b>
+                            </span>
+                        </div>
+
+                        <div className="iky-cruise__infobox-row">
+                            <span className="iky-cruise__infobox-k">{isEn ? 'Speed' : 'Tốc độ'}</span>
+                            <span className="iky-cruise__infobox-v">
+                                <b>{currentInfo.speed}</b> km/h{' '}
+                            </span>
+                        </div>
+
+                        <div className="iky-cruise__infobox-row">
+                            <span className="iky-cruise__infobox-k">Trạng thái máy</span>
+                            <span className="iky-cruise__infobox-v">
+                                <Tag color={Number(currentInfo.acc) === 1 ? 'default' : 'green'}>
+                                    {Number(currentInfo.acc) === 1
+                                        ? isEn
+                                            ? 'Off'
+                                            : 'Tắt máy'
+                                        : isEn
+                                          ? 'On'
+                                          : 'Mở máy'}
+                                </Tag>
+                            </span>
+                        </div>
+
+                        {/* 
+                        <div className="iky-cruise__infobox-row">
+                            <span className="iky-cruise__infobox-k">GPS</span>
+                            <span className="iky-cruise__infobox-v">
+                                <Tag color={currentInfo.gpsLost ? 'red' : 'green'}>
+                                    {currentInfo.gpsLost ? (isEn ? 'LOST' : 'MẤT') : isEn ? 'OK' : 'TỐT'}
+                                </Tag>
+                                {typeof currentInfo.sat === 'number' ? (
+                                    <span className="iky-cruise__infobox-sub">
+                                        SAT: <b>{currentInfo.sat}</b>
+                                    </span>
+                                ) : null}
+                            </span>
+                        </div> */}
+
+                        <div className="iky-cruise__infobox-row">
+                            <span className="iky-cruise__infobox-k">{isEn ? 'Coord' : 'Tọa độ'}</span>
+                            <span className="iky-cruise__infobox-v">
+                                {typeof currentInfo.lat === 'number'
+                                    ? `${currentInfo.lat.toFixed(6)}, ${currentInfo.lon.toFixed(6)}`
+                                    : '--'}
+                            </span>
+                        </div>
+
+                        <div className="iky-cruise__infobox-row">
+                            <span className="iky-cruise__infobox-k">{isEn ? 'Address' : 'Địa chỉ'}</span>
+                            <span className="iky-cruise__infobox-v">
+                                {currentAddrKeyRef.current && !currentAddr ? (
+                                    <i>{isEn ? 'Loading…' : 'Đang tải…'}</i>
+                                ) : currentAddr ? (
+                                    currentAddr
+                                ) : (
+                                    '--'
+                                )}
+                            </span>
+                        </div>
+                    </div>
+                )}
+
+                {/* dữ liệu đang làm theo trang tài xế công nghệ sẽ phát triển thêm trong tương lại ,tạm thời ẩn đi */}
+                {/* {rawRouteData.length > 0 && (
+                    <>
+                        {navOpen && (
+                            <div className="iky-cruise__bottomnav">
+                                <div className="iky-cruise__bottomnav-top">
+                                    <div className="iky-cruise__bottomnav-tabs">
+                                        <Tabs
+                                            activeKey={activeTab}
+                                            onChange={(k) => {
+                                                setActiveTab(k);
+                                                if (k === 'stats') setStatsOpen(true);
+                                            }}
+                                            size="small"
+                                            items={[
+                                                { key: 'route', label: isEn ? 'Route detail' : 'Lộ trình chi tiết' },
+                                                { key: 'stop', label: isEn ? 'Stop' : 'Dừng' },
+                                                { key: 'park', label: isEn ? 'Park' : 'Đỗ' },
+                                                { key: 'speed', label: isEn ? 'Speed' : 'Đồ thị vận tốc' },
+                                                { key: 'acc', label: 'Bật/tắt máy' }, // ✅ NEW
+                                                { key: 'stats', label: isEn ? 'Stats' : 'Thống kê' },
+                                            ]}
+                                        />
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        className="iky-cruise__bottomnav-close"
+                                        onClick={() => setNavOpen(false)}
+                                        aria-label="Close"
+                                        title={isEn ? 'Close' : 'Đóng'}
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+
+                                {activeTab !== 'stats' && (
+                                    <div className="iky-cruise__bottomnav-body">
+                                        {activeTab === 'route' && <RouteDetail />}
+                                        {activeTab === 'stop' && <EventTable items={segments.stop} kind="STOP" />}
+                                        {activeTab === 'park' && <EventTable items={segments.park} kind="PARK" />}
+                                        {activeTab === 'speed' && <SpeedChart />}
+                                        {activeTab === 'acc' && <AccChart />}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {!navOpen && (
+                            <button
+                                type="button"
+                                className="iky-cruise__bottomnav-open"
+                                onClick={() => setNavOpen(true)}
+                                title={isEn ? 'View details' : 'Xem thông tin chi tiết'}
+                            >
+                                <span className="iky-cruise__double-up">
+                                    <UpOutlined />
+                                    <UpOutlined />
+                                </span>
+                                <span className="iky-cruise__bottomnav-open-text">
+                                    {isEn ? 'View details' : 'Xem thông tin chi tiết'}
+                                </span>
+                            </button>
+                        )}
+                    </>
+                )} */}
+
+                <Modal
+                    open={statsOpen}
+                    title={isEn ? 'Statistics' : 'Thống kê'}
+                    onCancel={() => {
+                        setStatsOpen(false);
+                        if (activeTab === 'stats') setActiveTab('route');
+                    }}
+                    footer={null}
+                    width={720}
+                >
+                    <div className="iky-cruise__stats">
+                        <div className="iky-cruise__stats-row">
+                            <div className="iky-cruise__stats-k">{isEn ? 'Total distance' : 'Tổng quãng đường'}</div>
+                            <div className="iky-cruise__stats-v">
+                                <b>{stats.totalDistanceKm.toFixed(3)} km</b>
+                            </div>
+                        </div>
+
+                        <div className="iky-cruise__stats-row">
+                            <div className="iky-cruise__stats-k">{isEn ? 'Stop count' : 'Tổng số lần dừng'}</div>
+                            <div className="iky-cruise__stats-v">
+                                <b>{stats.stopCount}</b>
+                            </div>
+                        </div>
+
+                        <div className="iky-cruise__stats-row">
+                            <div className="iky-cruise__stats-k">
+                                {isEn ? 'Total stop time' : 'Tổng thời gian dừng'}
+                            </div>
+                            <div className="iky-cruise__stats-v">
+                                <b>{formatDuration(stats.totalStopSec)}</b>
+                            </div>
+                        </div>
+
+                        <div className="iky-cruise__stats-row">
+                            <div className="iky-cruise__stats-k">{isEn ? 'Parking count' : 'Tổng số lần đỗ'}</div>
+                            <div className="iky-cruise__stats-v">
+                                <b>{stats.parkCount}</b>
+                            </div>
+                        </div>
+
+                        <div className="iky-cruise__stats-row">
+                            <div className="iky-cruise__stats-k">
+                                {isEn ? 'Total parking time' : 'Tổng thời gian đỗ'}
+                            </div>
+                            <div className="iky-cruise__stats-v">
+                                <b>{formatDuration(stats.totalParkSec)}</b>
+                            </div>
+                        </div>
+
+                        <div className="iky-cruise__stats-row">
+                            <div className="iky-cruise__stats-k">{isEn ? 'Max speed' : 'Tốc độ lớn nhất'}</div>
+                            <div className="iky-cruise__stats-v">
+                                <b>{stats.maxSpeed} km/h</b>{' '}
+                                {stats.maxSpeedTime ? (
+                                    <span>
+                                        ({isEn ? 'at' : 'lúc'} {formatDateFromDevice(stats.maxSpeedTime)})
+                                    </span>
+                                ) : null}
+                            </div>
+                        </div>
+
+                        <div className="iky-cruise__stats-actions">
+                            <button
+                                type="button"
+                                className="iky-cruise__mini-btn"
+                                onClick={() => goToRawIndex(stats.maxSpeedRawIndex)}
+                            >
+                                {isEn ? 'Go to max-speed point' : 'Tới điểm tốc độ lớn nhất'}
+                            </button>
+                        </div>
+                    </div>
+                </Modal>
+
                 {loadingRoute && (
                     <div className="iky-cruise__map-overlay">
                         <Image

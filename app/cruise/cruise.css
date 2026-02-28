@@ -5,7 +5,11 @@
     display: flex;
     height: calc(100vh - 50px);
     background: #f3f4f6;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family:
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont,
+        sans-serif;
 }
 
 /* =========================
@@ -233,7 +237,6 @@
  * ========================= */
 .iky-cruise__list {
     margin-top: 8px;
-
     border: 1px solid #e5e7eb;
     border-radius: 6px;
     background: #ffffff;
@@ -293,24 +296,27 @@
     box-sizing: border-box;
 }
 
-/* khung bọc map */
+/* ✅ khung bọc map: flex column để bottomnav nằm dưới map */
 .iky-cruise__map {
     width: 100%;
     height: 100%;
     border-radius: 16px;
     border: 1px solid #e5e7eb;
     background: #e5e7eb;
-    position: relative; /* để overlay bám theo */
     overflow: hidden;
+
+    display: flex;
+    flex-direction: column;
+    position: relative;
 }
 
-/* div chứa Leaflet map */
+/* ✅ div chứa Leaflet map: flex:1 */
 .iky-cruise__map-inner {
-    position: absolute;
-    inset: 0;
+    flex: 1;
     width: 100%;
-    height: 100%;
-    z-index: 0; /* luôn nằm dưới overlay */
+    min-height: 0;
+    position: relative;
+    z-index: 0;
 }
 
 /* overlay mờ + loading */
@@ -318,11 +324,11 @@
     position: absolute;
     inset: 0;
     z-index: 1000;
-    background: rgba(0, 0, 0, 0.35); /* mờ rõ màu đen nhẹ */
+    background: rgba(0, 0, 0, 0.35);
     display: flex;
     align-items: center;
     justify-content: center;
-    pointer-events: none; /* không chặn drag/zoom map nếu bạn muốn */
+    pointer-events: none;
 }
 
 .iky-cruise__loading-gif {
@@ -330,22 +336,6 @@
     height: 200px;
     object-fit: contain;
 }
-
-/* (tuỳ chọn) spinner nếu muốn dùng thay vì GIF
-.iky-cruise__spinner {
-    width: 48px;
-    height: 48px;
-    border-radius: 999px;
-    border: 4px solid rgba(255, 255, 255, 0.6);
-    border-top-color: #ffffff;
-    animation: iky-spin 0.8s linear infinite;
-}
-@keyframes iky-spin {
-    to {
-        transform: rotate(360deg);
-    }
-}
-*/
 
 /* =========================
  *  POPUP & ICON A/B
@@ -358,8 +348,6 @@
 .iky-cruise-popup div + div {
     margin-top: 2px;
 }
-
-/* tô màu phần text khớp trong dropdown */
 
 .iky-cruise-ab-icon {
     background: #2563eb;
@@ -417,4 +405,496 @@
     .iky-cruise__map {
         height: 500px;
     }
+}
+
+/* =========================
+ *  OVERLAY (nếu còn dùng)
+ * ========================= */
+.iky-cruise__overlay {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: min(980px, calc(100% - 24px));
+    background: rgba(255, 255, 255, 0.92);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    overflow: hidden;
+    pointer-events: auto;
+}
+
+.iky-cruise__overlay-tabs {
+    padding: 8px 12px 0 12px;
+}
+
+.iky-cruise__overlay-body {
+    padding: 8px 12px 12px 12px;
+    max-height: 60vh;
+    overflow: auto;
+}
+
+/* =========================
+ *  EVENTS / TABLES
+ * ========================= */
+.iky-cruise__events-title {
+    font-weight: 700;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.iky-cruise__events-sub {
+    opacity: 0.85;
+    margin-top: 4px;
+}
+
+.iky-cruise__events-table {
+    margin-top: 10px;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.iky-cruise__events-head,
+.iky-cruise__events-row {
+    display: grid;
+    grid-template-columns: 44px 1.2fr 1.2fr 1fr 1.2fr 1.2fr 80px;
+    gap: 6px; /* gọn hơn */
+    padding: 8px 8px; /* gọn hơn */
+}
+
+.iky-cruise__events-head {
+    background: rgba(0, 0, 0, 0.04);
+    font-weight: 600;
+}
+
+.iky-cruise__events-row {
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.iky-cruise__events-cell {
+    font-size: 12px; /* gọn hơn */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.iky-cruise__events-cell--action {
+    text-align: right;
+}
+
+.iky-cruise__empty {
+    padding: 14px;
+    opacity: 0.75;
+}
+
+.iky-cruise__mini-btn {
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    background: #fff;
+    cursor: pointer;
+}
+
+.iky-cruise__mini-btn:hover {
+    background: rgba(0, 0, 0, 0.03);
+}
+
+/* =========================
+ *  STATS MODAL
+ * ========================= */
+.iky-cruise__stats-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px dashed rgba(0, 0, 0, 0.12);
+}
+
+.iky-cruise__stats-k {
+    opacity: 0.85;
+}
+
+.iky-cruise__stats-actions {
+    margin-top: 12px;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.iky-cruise__stats-note {
+    margin-top: 10px;
+    font-size: 12px;
+    opacity: 0.75;
+}
+
+/* =========================
+ *  CHART
+ * ========================= */
+.iky-cruise__chart {
+    padding: 6px 0;
+}
+
+.iky-cruise__chart-head {
+    margin-bottom: 8px;
+}
+
+.iky-cruise__chart-title {
+    font-weight: 700;
+}
+
+.iky-cruise__chart-sub {
+    opacity: 0.8;
+    font-size: 12px;
+    margin-top: 2px;
+}
+
+.iky-cruise__chart-actions {
+    margin-top: 8px;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.iky-cruise__chart-box {
+    width: 100%;
+    height: 260px;
+}
+
+/* =========================
+ *  ✅ Bottom nav (GHIM DƯỚI MAP) + NÚT X
+ * ========================= */
+.iky-cruise__bottomnav {
+    width: 100%;
+    flex: 0 0 auto;
+    padding: 8px 10px;
+    background: rgba(255, 255, 255, 0.96);
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+/* row trên: tabs + close */
+.iky-cruise__bottomnav-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.iky-cruise__bottomnav-tabs {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    padding: 0;
+}
+
+/* nút X */
+.iky-cruise__bottomnav-close {
+    width: 28px;
+    height: 28px;
+    border-radius: 10px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    background: #fff;
+    cursor: pointer;
+    line-height: 26px;
+    text-align: center;
+    font-size: 14px;
+}
+
+.iky-cruise__bottomnav-close:hover {
+    background: rgba(0, 0, 0, 0.04);
+}
+
+/* body: GIẢM HEIGHT */
+.iky-cruise__bottomnav-body {
+    margin-top: 6px;
+    background: rgba(255, 255, 255, 0.98);
+    border-radius: 12px;
+    padding: 8px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+    max-height: 26vh; /* 👈 thấp hơn */
+    overflow: auto;
+}
+
+/* Optional: giảm padding table events khi nằm bottom */
+.iky-cruise__events {
+    padding: 0;
+}
+
+.iky-cruise__events-table {
+    max-height: 24vh;
+    overflow: auto;
+}
+
+/* ✅ nếu bạn dùng RouteDetail grid rộng hơn */
+.iky-cruise__route-head,
+.iky-cruise__route-row {
+    grid-template-columns: 44px 120px 120px 1.6fr 1.2fr 1.2fr 120px 80px;
+}
+
+/* nút mở lại (floating để tiện xem full map) */
+.iky-cruise__bottomnav-open {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    z-index: 1200;
+    padding: 8px 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.iky-cruise__bottomnav-open:hover {
+    background: rgba(255, 255, 255, 1);
+}
+
+/* hint */
+.iky-cruise__hint {
+    font-size: 13px;
+    opacity: 0.75;
+}
+
+/* đảm bảo absolute con nằm theo map */
+.iky-cruise__map {
+    position: relative;
+}
+
+/* nút mở lại bảng (pill) */
+.iky-cruise__bottomnav-open {
+    position: absolute;
+    left: 50%;
+    bottom: 10% !important;
+    transform: translateX(-50%);
+    z-index: 9999;
+
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+
+    background: #ffffff;
+    color: #111827;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 999px;
+    padding: 10px 16px;
+
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.iky-cruise__bottomnav-open:hover {
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.16);
+}
+
+/* chấm đỏ giống hình bạn khoanh */
+.iky-cruise__bottomnav-open-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ff2d55;
+    display: inline-block;
+}
+
+.iky-cruise__bottomnav-open-text {
+    white-space: nowrap;
+}
+
+/* nếu leaflet có overlay ăn click, cái này giúp chắc chắn nút click được */
+.iky-cruise__bottomnav-open {
+    pointer-events: auto;
+}
+
+.iky-cruise__double-up {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1;
+}
+
+.iky-cruise__double-up .anticon {
+    font-size: 12px;
+    margin-top: -4px; /* kéo sát lại giống video */
+}
+
+.iky-cruise__double-up .anticon:first-child {
+    margin-top: 0;
+}
+
+.iky-cruise__bottomnav-open {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: 14px;
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    display: inline-flex;
+    gap: 10px;
+    align-items: center;
+    cursor: pointer;
+    z-index: 9999;
+}
+
+.iky-cruise__double-up {
+    display: inline-flex;
+    flex-direction: column;
+    line-height: 10px;
+    font-size: 12px;
+}
+
+.iky-cruise__bottomnav-open-text {
+    font-weight: 600;
+    font-size: 13px;
+}
+
+/* follow toggle next to controls */
+.iky-cruise__follow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 8px;
+}
+.iky-cruise__follow-label {
+    font-size: 12px;
+    opacity: 0.85;
+    user-select: none;
+}
+
+/* fixed info box on map */
+.iky-cruise__infobox {
+    position: absolute;
+    right: 14px;
+    top: 14px;
+    width: 320px;
+    max-width: calc(100% - 28px);
+    background: rgba(17, 24, 39, 0.88);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    padding: 12px;
+    z-index: 2000;
+    backdrop-filter: blur(6px);
+}
+.iky-cruise__infobox-title {
+    font-weight: 700;
+    margin-bottom: 8px;
+}
+.iky-cruise__infobox-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.iky-cruise__infobox-row:first-of-type {
+    border-top: none;
+}
+.iky-cruise__infobox-k {
+    opacity: 0.85;
+    font-size: 12px;
+    min-width: 84px;
+}
+.iky-cruise__infobox-v {
+    font-size: 12px;
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.iky-cruise__infobox-sub {
+    margin-left: 8px;
+    opacity: 0.9;
+}
+
+.iky-cruise__current-panel {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: 280px;
+    background: rgba(20, 20, 22, 0.85);
+    color: #fff;
+    border-radius: 10px;
+    padding: 12px 12px 10px;
+    z-index: 9999;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
+    backdrop-filter: blur(6px);
+}
+
+.iky-cruise__current-title {
+    font-weight: 700;
+    margin-bottom: 10px;
+}
+
+.iky-cruise__current-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.iky-cruise__current-row:first-of-type {
+    border-top: none;
+}
+
+.iky-cruise__current-k {
+    opacity: 0.8;
+    flex: 0 0 90px;
+}
+
+.iky-cruise__current-v {
+    text-align: right;
+    flex: 1;
+    word-break: break-word;
+}
+
+.iky-cruise__badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.iky-cruise__badge-on {
+    background: #1f7a1f;
+}
+.iky-cruise__badge-off {
+    background: #666;
+}
+.iky-cruise__badge-ok {
+    background: #2f9e44;
+}
+.iky-cruise__badge-warn {
+    background: #c92a2a;
+}
+
+.iky-cruise__current-row--follow {
+    margin-top: 6px;
+}
+
+/* add somewhere in cruise.css */
+.iky-cruise__export-btn {
+    width: 100%;
+    margin-top: 10px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(22, 119, 255, 0.25);
+    background: linear-gradient(180deg, rgba(22, 119, 255, 0.12), rgba(22, 119, 255, 0.06));
+    color: #0b3b91;
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+        transform 0.06s ease,
+        opacity 0.2s ease;
+}
+.iky-cruise__export-btn:hover {
+    transform: translateY(-1px);
+}
+.iky-cruise__export-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none;
 }

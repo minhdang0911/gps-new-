@@ -1,11 +1,10 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
-// storage giả khi SSR (server không có localStorage)
 const noopStorage = {
-    getItem: (_key) => null,
-    setItem: (_key, _value) => {},
-    removeItem: (_key) => {},
+    getItem: () => null,
+    setItem: () => {},
+    removeItem: () => {},
 };
 
 const storage =
@@ -32,8 +31,11 @@ export const useAuthStore = create(
             name: 'iky_user',
             storage: createJSONStorage(() => storage),
             partialize: (state) => ({ user: state.user }),
+
             onRehydrateStorage: () => (state, error) => {
-                if (error) console.error('[zustand] rehydrate error', error);
+                if (error) {
+                    console.error('[zustand] rehydrate error', error);
+                }
                 state?.setHydrated(true);
             },
         },
