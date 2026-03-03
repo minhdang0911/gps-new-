@@ -14,7 +14,6 @@ import baocao from '../../assets/baocao.webp';
 import quanly from '../../assets/quanly.webp';
 import hotro from '../../assets/hotro.png';
 import logo from '../../assets/logo-iky.webp';
-import maintaince from '../../assets/maintaince.png';
 
 import flagVi from '../../assets/flag-vi.webp';
 import flagEn from '../../assets/flag-en.webp';
@@ -41,12 +40,10 @@ const Navbar = () => {
     const [mounted, setMounted] = useState(false);
     const [openProfile, setOpenProfile] = useState(false);
 
-    // ✅ Zustand
     const user = useAuthStore((s) => s.user);
     const hydrated = useAuthStore((s) => s.hydrated);
     const clearUser = useAuthStore((s) => s.clearUser);
 
-    // detect EN từ URL
     const { isEnFromPath, normalizedPath } = useMemo(() => {
         const segments = pathname.split('/').filter(Boolean);
         const last = segments[segments.length - 1];
@@ -70,9 +67,7 @@ const Navbar = () => {
         );
     }, [normalizedPath]);
 
-    useEffect(() => {
-        setMounted(true);
-    }, []);
+    useEffect(() => setMounted(true), []);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -93,13 +88,8 @@ const Navbar = () => {
             }
         };
 
-        if (openDropdown) {
-            document.addEventListener('mousedown', handleClickOutside);
-        }
-
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-        };
+        if (openDropdown) document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [openDropdown]);
 
     if (!mounted) return null;
@@ -109,11 +99,7 @@ const Navbar = () => {
 
     const handleClickItem = (item) => {
         let targetPath = item.path;
-
-        if (isEn) {
-            targetPath = item.path === '/' ? '/en' : `${item.path}/en`;
-        }
-
+        if (isEn) targetPath = item.path === '/' ? '/en' : `${item.path}/en`;
         router.push(targetPath);
     };
 
@@ -133,14 +119,12 @@ const Navbar = () => {
             console.error('Logout error:', err);
         } finally {
             clearUser();
-
             if (typeof window !== 'undefined') {
                 localStorage.removeItem('accessToken');
                 localStorage.removeItem('refreshToken');
                 localStorage.removeItem('role');
                 localStorage.removeItem('iky_user');
             }
-
             setIsLoggingOut(false);
             router.push('/login');
         }
@@ -148,9 +132,7 @@ const Navbar = () => {
 
     const handleSwitchLang = (lang) => {
         if (typeof window !== 'undefined') localStorage.setItem('iky_lang', lang);
-
         if (lang === 'vi') router.push(normalizedPath || '/');
-
         if (lang === 'en') {
             const newPath = normalizedPath === '/' ? '/en' : `${normalizedPath}/en`;
             router.push(newPath);
@@ -184,14 +166,12 @@ const Navbar = () => {
                             <div className="iky-nav__item-icon">
                                 <Image src={item.img} alt={isEn ? item.labelEn : item.labelVi} width={26} height={26} />
                             </div>
-
                             <span className="iky-nav__item-label">{isEn ? item.labelEn : item.labelVi}</span>
                         </button>
                     ))}
                 </nav>
 
                 <div className="iky-nav__right">
-                    {/* Language */}
                     <div className="iky-nav__lang">
                         <button
                             type="button"
@@ -212,12 +192,10 @@ const Navbar = () => {
                         </button>
                     </div>
 
-                    {/* User */}
                     <div className="iky-nav__user" ref={dropdownRef} onClick={() => setOpenDropdown((prev) => !prev)}>
                         <span className="iky-nav__user-name">
                             {!hydrated ? '...' : user?.username || user?.email || 'Tài khoản'}
                         </span>
-
                         {openDropdown ? <UpOutlined /> : <DownOutlined />}
 
                         {openDropdown && (
