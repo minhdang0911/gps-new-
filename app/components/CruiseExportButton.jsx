@@ -1,8 +1,11 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { Tooltip } from 'antd';
+import { Tooltip, Dropdown } from 'antd';
+import { DownOutlined } from '@ant-design/icons';
+
 import { exportCruiseRouteOnlyExcel } from '../util/cruiseReportExcel';
+import { exportCruiseRouteOnlyPdf } from '../util/cruiseReportPdf';
 
 const Spinner = () => (
     <svg
@@ -27,19 +30,22 @@ export default function CruiseExportButton({
     startText,
     endText,
     distanceMetersFn,
-    maxExportRecords = 1000,
+    maxExportRecords = 2000, // ✅ tối đa 2000
 }) {
     const [exporting, setExporting] = useState(false);
+    const [exportType, setExportType] = useState(null);
+
     const label = useMemo(() => (isEn ? 'Export report' : 'Xuất báo cáo'), [isEn]);
 
-    const onExport = () => {
+    const runExport = async (type) => {
         if (disabled || exporting) return;
+
+        setExportType(type);
         setExporting(true);
 
-        // setTimeout để React kịp re-render loading trước khi hàm sync chạy
-        setTimeout(() => {
+        setTimeout(async () => {
             try {
-                exportCruiseRouteOnlyExcel({
+                const payload = {
                     isEn,
                     device,
                     startText,
@@ -47,9 +53,13 @@ export default function CruiseExportButton({
                     rawRouteData,
                     distanceMetersFn,
                     maxExportRecords,
-                });
+                };
+
+                if (type === 'excel') exportCruiseRouteOnlyExcel(payload);
+                if (type === 'pdf') await exportCruiseRouteOnlyPdf(payload); // ✅ await
             } finally {
                 setExporting(false);
+                setExportType(null);
             }
         }, 50);
     };
@@ -63,33 +73,56 @@ export default function CruiseExportButton({
               ? 'Exporting, please wait…'
               : 'Đang xuất, vui lòng chờ…'
           : isEn
-            ? 'Export Excel (max 1000 points)'
-            : 'Xuất Excel (tối đa 1000 điểm)';
+            ? 'Export report (Excel / PDF, max 2000 points)'
+            : 'Xuất báo cáo (Excel / PDF, tối đa 2000 điểm)';
+
+    const items = [
+        {
+            key: 'excel',
+            label: isEn ? 'Excel (.xlsx)' : 'Excel (.xlsx)',
+            onClick: () => runExport('excel'),
+            disabled: disabled || exporting,
+        },
+        {
+            key: 'pdf',
+            label: isEn ? 'PDF (.pdf)' : 'PDF (.pdf)',
+            onClick: () => runExport('pdf'),
+            disabled: disabled || exporting,
+        },
+    ];
 
     return (
         <Tooltip title={tooltipTitle}>
-            <button
-                type="button"
-                className="iky-cruise__export-btn"
-                onClick={onExport}
-                disabled={disabled || exporting}
-                style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 6,
-                    width: '100%',
-                }}
-            >
-                {exporting ? (
-                    <>
-                        <Spinner />
-                        {isEn ? 'Exporting…' : 'Đang xuất…'}
-                    </>
-                ) : (
-                    label
-                )}
-            </button>
+            <Dropdown menu={{ items }} trigger={['click']} placement="bottomRight" disabled={disabled || exporting}>
+                <button
+                    type="button"
+                    className="iky-cruise__export-btn"
+                    disabled={disabled || exporting}
+                    style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        width: '100%',
+                        cursor: disabled || exporting ? 'not-allowed' : 'pointer',
+                    }}
+                >
+                    {exporting ? (
+                        <>
+                            <Spinner />
+                            {isEn ? 'Exporting…' : 'Đang xuất…'}
+                            <span style={{ opacity: 0.9 }}>
+                                {exportType === 'pdf' ? 'PDF' : exportType === 'excel' ? 'Excel' : ''}
+                            </span>
+                        </>
+                    ) : (
+                        <>
+                            {label}
+                            <DownOutlined style={{ fontSize: 12, opacity: 0.85 }} />
+                        </>
+                    )}
+                </button>
+            </Dropdown>
         </Tooltip>
     );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal, Form, Input, Tabs, message } from 'antd';
 import { updateUser, getUserInfo } from '../lib/api/user';
 import { useAuthStore } from '../stores/authStore';
@@ -38,7 +38,7 @@ const ProfileModal = ({ open, onClose, isEn }) => {
         };
 
         fetchInfo();
-    }, [open, user?._id]); // giữ như bạn đang dùng
+    }, [open, user?._id]);
 
     const handleSubmit = async () => {
         try {
@@ -47,7 +47,7 @@ const ProfileModal = ({ open, onClose, isEn }) => {
 
                 const payload = {
                     name: values.name,
-                    email: values.email, // ✅ email edit được
+                    email: values.email,
                     phone: values.phone,
                     address: values.address,
                 };
@@ -65,7 +65,7 @@ const ProfileModal = ({ open, onClose, isEn }) => {
             const values = await passwordForm.validateFields();
 
             const payload = {
-                password: values.newPassword, // ✅ backend tính sau
+                password: values.newPassword,
             };
 
             const res = await updateUser(user._id, payload);
@@ -130,7 +130,6 @@ const ProfileModal = ({ open, onClose, isEn }) => {
                                     <Input />
                                 </Form.Item>
 
-                                {/* ✅ Address AutoComplete */}
                                 <Form.Item label={isEn ? 'Address' : 'Địa chỉ'} name="address">
                                     <AddressAutoComplete
                                         value={profileForm.getFieldValue('address')}

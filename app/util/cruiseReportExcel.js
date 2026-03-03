@@ -136,7 +136,7 @@ const isValidPoint = (p) => typeof p?.lat === 'number' && typeof p?.lon === 'num
 /* =======================
    REDUCE POINTS
 ======================= */
-const reducePointsForExcel = (points, distanceMetersFn, maxPoints = 1000) => {
+const reducePointsForExcel = (points, distanceMetersFn, maxPoints = 2000) => {
     if (!Array.isArray(points) || points.length <= maxPoints) return points;
 
     if (typeof distanceMetersFn !== 'function') {
@@ -252,7 +252,7 @@ export const exportCruiseRouteOnlyExcel = ({
     endText,
     rawRouteData,
     distanceMetersFn,
-    maxExportRecords = 1000,
+    maxExportRecords = 2000,
 }) => {
     const T = isEn ? I18N.en : I18N.vi;
     if (!rawRouteData?.length) return;
@@ -351,8 +351,7 @@ export const exportCruiseRouteOnlyExcel = ({
 
     // làm sạch biển số cho an toàn tên file
     const plateSafe = (plate || 'vehicle').replace(/[^\w\-]+/g, '_').replace(/_+/g, '_');
-    `${T.fileName}_${plateSafe}_${DD}-${MM}-${YYYY}_${HH}-${MI}-${SS}.xlsx`;
 
-    const fileName = `${T.fileName}_${plateSafe}_${DD}-${MM}-${YYYY}_${HH}/${MI}${SS}.xlsx`;
+    const fileName = `${T.fileName}_${plateSafe}_${DD}-${MM}-${YYYY}_${HH}${MI}${SS}.xlsx`;
     XLSX.writeFile(wb, fileName);
 };
