@@ -1,9 +1,16 @@
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography, Grid } from 'antd';
+import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography, Grid, Select } from 'antd';
 import { SearchOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
+import TimeRangePresetPicker from '../../components/common/TimeRangePresetPicker';
+
+import dayjs from 'dayjs';
+import isoWeek from 'dayjs/plugin/isoWeek';
+import quarterOfYear from 'dayjs/plugin/quarterOfYear';
+dayjs.extend(isoWeek);
+dayjs.extend(quarterOfYear);
 
 import { getUsageSessions } from '../../lib/api/usageSession';
 import './usageSession.css';
@@ -11,28 +18,30 @@ import './usageSession.css';
 import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
 
-// ✅ reusable (existing)
+// resizable
+import { Resizable } from 'react-resizable';
+import 'react-resizable/css/styles.css';
+
+// reusable
 import ColumnManagerModal from '../../components/report/ColumnManagerModal';
 import { useReportColumns } from '../../hooks/useReportColumns';
 import ReportSortSelect from '../../components/report/ReportSortSelect';
 
-// ✅ compare modal generic + insight riêng (existing)
+// compare
 import ReportCompareModal from '../../components/report/ReportCompareModal';
 import { buildUsageSessionInsight } from '../../features/usageSessionReport/compare/usageSessionCompareInsight';
 
-// ✅ extracted (existing)
+// extracted
 import { LOCKED_KEYS, STORAGE_KEY } from '../../features/usageSessionReport/constants';
 import { useLangFromPath } from '../../features/usageSessionReport/locale';
-import { applyClientFilterSort, buildGrouped } from '../../features/usageSessionReport/utils';
+import { applyClientFilterSort, buildGrouped, filterByTimeRange } from '../../features/usageSessionReport/utils';
 import { buildAllColsMeta } from '../../features/usageSessionReport/columns/buildAllColsMeta';
 import { useUsageSessionData } from '../../features/usageSessionReport/hooks/useUsageSessionData';
 import { useUsageSessionExcel } from '../../features/usageSessionReport/hooks/useUsageSessionExcel';
 
-// ✅ NEW: generic report components
+// chart view
 import ReportViewToggle from '../../components/chart/ReportViewToggle';
 import ReportPanel from '../../components/chart/ReportPanel';
-
-// ✅ NEW: adapter/config for THIS report
 import { buildUsageSessionReportConfig } from '../../features/usageSessionReport/reportConfig';
 
 const { RangePicker } = DatePicker;
@@ -41,7 +50,54 @@ const { useBreakpoint } = Grid;
 
 const locales = { vi, en };
 
-const UsageSessionReportPage = () => {
+// ===== Resizable header cell =====
+const ResizableTitle = (props) => {
+    const { onResize, width, ...restProps } = props;
+
+    if (!width) return <th {...restProps} />;
+
+    return (
+        <Resizable
+            width={width}
+            height={0}
+            handle={<span className="iky-resize-handle" onClick={(e) => e.stopPropagation()} />}
+            onResize={onResize}
+            draggableOpts={{ enableUserSelectHack: false }}
+        >
+            <th {...restProps} />
+        </Resizable>
+    );
+};
+
+// ========= Preset Range =========
+const buildPresetRange = (key) => {
+    const now = dayjs();
+
+    switch (key) {
+        case 'thisWeek':
+            return [now.startOf('isoWeek'), now.endOf('day')];
+        case 'last1Month':
+            return [now.subtract(1, 'month').startOf('day'), now.endOf('day')];
+        case 'thisMonth':
+            return [now.startOf('month'), now.endOf('day')];
+        case 'last3Months':
+            return [now.subtract(3, 'month').startOf('day'), now.endOf('day')];
+        case 'last6Months':
+            return [now.subtract(6, 'month').startOf('day'), now.endOf('day')];
+        case 'thisQuarter':
+            return [now.startOf('quarter'), now.endOf('day')];
+        case 'prevQuarter': {
+            const prev = now.subtract(1, 'quarter');
+            return [prev.startOf('quarter'), prev.endOf('quarter')];
+        }
+        case 'thisYear':
+            return [now.startOf('year'), now.endOf('day')];
+        default:
+            return null;
+    }
+};
+
+export default function UsageSessionReportPage() {
     const [form] = Form.useForm();
 
     const pathname = usePathname() || '/';
@@ -51,7 +107,6 @@ const UsageSessionReportPage = () => {
     const { isEn } = useLangFromPath(pathname);
     const t = isEn ? locales.en.usageSessionReport : locales.vi.usageSessionReport;
 
-    // ✅ view mode: table | report
     const [viewMode, setViewMode] = useState('table');
 
     const {
@@ -74,28 +129,67 @@ const UsageSessionReportPage = () => {
         refresh,
     } = useUsageSessionData({ form, getUsageSessions, isEn, t });
 
-    // ======= Excel export (moved to hook) =======
     const { exporting, exportExcel } = useUsageSessionExcel({ form, getUsageSessions, t, isEn });
+
+    // preset
+    const [presetKey, setPresetKey] = useState('none');
+    const applyPreset = (key) => {
+        setPresetKey(key);
+        const range = buildPresetRange(key);
+        if (!range) return;
+        form.setFieldsValue({ timeRange: range });
+    };
 
     const onFinish = () => {
         setPagination((p) => ({ ...p, current: 1 }));
         if (needFullData) fetchAll();
         else fetchPaged(1, pagination.pageSize);
-        // nếu muốn luôn refetch dù cache đang có:
-        // refresh();
     };
+
+    // ===== Column Resize (persist) =====
+    const COL_WIDTHS_KEY = `${STORAGE_KEY}__widths`;
+    const [colWidths, setColWidths] = useState({});
+
+    // load widths on mount
+    useEffect(() => {
+        try {
+            const raw = localStorage.getItem(COL_WIDTHS_KEY);
+            if (!raw) return;
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object') setColWidths(parsed);
+        } catch {}
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // save widths when change
+    useEffect(() => {
+        try {
+            localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(colWidths || {}));
+        } catch {}
+    }, [colWidths]);
+
+    const handleResize =
+        (key) =>
+        (_, { size }) => {
+            setColWidths((prev) => ({ ...prev, [key]: size.width }));
+        };
 
     const onReset = async () => {
         form.resetFields();
+        setPresetKey('none');
+
         setTableFilters({ vehicleId: null, batteryId: null });
         setSortMode('none');
         setGroupBy('none');
         setPagination((p) => ({ ...p, current: 1 }));
 
-        // set params về default
-        await fetchPaged(1, pagination.pageSize);
+        // reset widths + clear storage
+        setColWidths({});
+        try {
+            localStorage.removeItem(COL_WIDTHS_KEY);
+        } catch {}
 
-        // ✅ ép gọi lại API dù params y chang
+        await fetchPaged(1, pagination.pageSize);
         await refresh();
     };
 
@@ -123,10 +217,13 @@ const UsageSessionReportPage = () => {
     const processedData = useMemo(() => {
         if (!needFullData) return serverData;
 
-        const filteredSorted = applyClientFilterSort(fullData, tableFilters, sortMode);
+        const timeRange = form.getFieldValue('timeRange');
+        const timeFiltered = filterByTimeRange(fullData, timeRange);
+
+        const filteredSorted = applyClientFilterSort(timeFiltered, tableFilters, sortMode);
         if (groupBy !== 'none') return buildGrouped(filteredSorted, groupBy);
         return filteredSorted;
-    }, [needFullData, serverData, fullData, sortMode, tableFilters, groupBy]);
+    }, [needFullData, serverData, fullData, sortMode, tableFilters, groupBy, form]);
 
     const pagedData = useMemo(() => {
         const { current, pageSize } = pagination;
@@ -140,7 +237,7 @@ const UsageSessionReportPage = () => {
         setPagination((p) => ({ ...p, total: processedData.length }));
     }, [needFullData, processedData.length, setPagination]);
 
-    // ======= Column Manager =======
+    // Column manager
     const [colModalOpen, setColModalOpen] = useState(false);
 
     const allColsMeta = useMemo(() => {
@@ -166,7 +263,30 @@ const UsageSessionReportPage = () => {
         return m;
     }, [allColsForModal]);
 
-    // ======= dataSource gắn __rowNo =======
+    const columnsWithMenu = useMemo(() => columns || [], [columns]);
+
+    // apply resize to columns
+    const columnsResizable = useMemo(() => {
+        const DEFAULT_W = 180;
+
+        return (columnsWithMenu || []).map((col) => {
+            const key = col.key ?? col.dataIndex ?? col.title;
+            if (!key) return col;
+
+            const width = colWidths[key] ?? col.width ?? DEFAULT_W;
+
+            return {
+                ...col,
+                width,
+                onHeaderCell: () => ({
+                    width,
+                    onResize: handleResize(key),
+                }),
+            };
+        });
+    }, [columnsWithMenu, colWidths]);
+
+    // datasource gắn __rowNo
     const tableData = useMemo(() => {
         return (pagedData || []).map((row, idx) => ({
             ...row,
@@ -174,7 +294,7 @@ const UsageSessionReportPage = () => {
         }));
     }, [pagedData, pagination.current, pagination.pageSize]);
 
-    // ======= Compare selection =======
+    // Compare selection
     const [compareOpen, setCompareOpen] = useState(false);
     const [selectedRowKeys, setSelectedRowKeys] = useState([]);
     const [selectedRows, setSelectedRows] = useState([]);
@@ -184,7 +304,6 @@ const UsageSessionReportPage = () => {
             setSelectedRowKeys([]);
             setSelectedRows([]);
         }, 0);
-
         return () => clearTimeout(id);
     }, [needFullData, pagination.current, pagination.pageSize, sortMode, tableFilters]);
 
@@ -193,23 +312,18 @@ const UsageSessionReportPage = () => {
             selectedRowKeys,
             onChange: (keys, rows) => {
                 if (keys.length > 3) {
-                    const nextKeys = keys.slice(0, 3);
-                    const nextRows = rows.slice(0, 3);
-                    setSelectedRowKeys(nextKeys);
-                    setSelectedRows(nextRows);
+                    setSelectedRowKeys(keys.slice(0, 3));
+                    setSelectedRows(rows.slice(0, 3));
                     return;
                 }
                 setSelectedRowKeys(keys);
                 setSelectedRows(rows);
             },
-            getCheckboxProps: (record) => ({
-                disabled: record?.__group,
-            }),
+            getCheckboxProps: (record) => ({ disabled: record?.__group }),
         }),
         [selectedRowKeys],
     );
 
-    // ======= Handle Table change (pagination + filters) =======
     const handleTableChange = (pager, filters) => {
         const nextPager = { current: pager.current, pageSize: pager.pageSize };
 
@@ -230,14 +344,9 @@ const UsageSessionReportPage = () => {
 
         setPagination((p) => ({ ...p, current: nextPager.current, pageSize: nextPager.pageSize }));
 
-        if (!needFullData) {
-            fetchPaged(nextPager.current, nextPager.pageSize);
-        }
+        if (!needFullData) fetchPaged(nextPager.current, nextPager.pageSize);
     };
 
-    // =========================
-    // ✅ REPORT CONFIG (kpis + charts) - page chỉ build config, UI render bởi component chung
-    // =========================
     const reportConfig = useMemo(() => {
         return buildUsageSessionReportConfig({
             rows: processedData || [],
@@ -279,8 +388,13 @@ const UsageSessionReportPage = () => {
                                 <Input placeholder={t.filter.sohPlaceholder} allowClear />
                             </Form.Item>
 
-                            <Form.Item label={t.filter.timeRange} name="timeRange">
-                                <RangePicker showTime style={{ width: '100%' }} format="YYYY-MM-DD HH:mm:ss" />
+                            <Form.Item label={t.filter.timeRange}>
+                                <TimeRangePresetPicker
+                                    name="timeRange"
+                                    locale={isEn ? 'en' : 'vi'}
+                                    format="YYYY-MM-DD HH:mm:ss"
+                                    showTime
+                                />
                             </Form.Item>
 
                             <Form.Item>
@@ -309,10 +423,8 @@ const UsageSessionReportPage = () => {
                         title={t.table.title}
                         extra={
                             <Space size={12} wrap>
-                                {/* ✅ Toggle mode: extracted */}
                                 <ReportViewToggle value={viewMode} onChange={setViewMode} locale={isEn ? 'en' : 'vi'} />
 
-                                {/* Table-only controls */}
                                 <ReportSortSelect
                                     locale={isEn ? 'en' : 'vi'}
                                     value={sortMode}
@@ -343,25 +455,19 @@ const UsageSessionReportPage = () => {
                                 <Button size="small" onClick={exportExcel} loading={exporting}>
                                     {t.excel?.buttonText || (!isEn ? 'Xuất Excel' : 'Export Excel')}
                                 </Button>
-
-                                {selectedRows.length > 0 && viewMode === 'table' && (
-                                    <Button
-                                        size="small"
-                                        onClick={() => {
-                                            setSelectedRowKeys([]);
-                                            setSelectedRows([]);
-                                        }}
-                                    >
-                                        {isEn ? 'Clear selection' : 'Bỏ chọn'}
-                                    </Button>
-                                )}
                             </Space>
                         }
                     >
                         {viewMode === 'table' ? (
                             <Table
+                                tableLayout="fixed"
                                 rowKey={(record) => record._id || record.usageCode}
-                                columns={columns}
+                                columns={columnsResizable}
+                                components={{
+                                    header: {
+                                        cell: ResizableTitle,
+                                    },
+                                }}
                                 dataSource={tableData}
                                 loading={loading}
                                 locale={{ emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu' }}
@@ -393,12 +499,11 @@ const UsageSessionReportPage = () => {
                 </Col>
             </Row>
 
-            {/* Compare modal */}
             <ReportCompareModal
                 open={compareOpen}
                 onClose={() => setCompareOpen(false)}
                 rows={selectedRows}
-                uiColumns={columns}
+                uiColumns={columnsWithMenu}
                 colLabelMap={colLabelMap}
                 ctx={{ isEn, t }}
                 buildInsight={buildUsageSessionInsight}
@@ -428,9 +533,21 @@ const UsageSessionReportPage = () => {
                 .iky-group-row td {
                     background: #f8fafc !important;
                 }
+
+                /* resizable handle */
+                .iky-resize-handle {
+                    position: absolute;
+                    right: -6px;
+                    top: 0;
+                    height: 100%;
+                    width: 12px;
+                    cursor: col-resize;
+                    z-index: 1;
+                }
+                .ant-table-thead > tr > th {
+                    position: relative;
+                }
             `}</style>
         </div>
     );
-};
-
-export default UsageSessionReportPage;
+}

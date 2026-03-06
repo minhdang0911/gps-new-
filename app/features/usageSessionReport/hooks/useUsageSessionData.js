@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import useSWR from 'swr';
+import { Form } from 'antd';
 import { API_SAFE_LIMIT } from '../constants';
 import { buildParams } from '../utils';
 
@@ -26,10 +27,18 @@ export function useUsageSessionData({ form, getUsageSessions, isEn, t }) {
     const [tableFilters, setTableFilters] = useState({ vehicleId: null, batteryId: null });
     const [groupBy, setGroupBy] = useState('none');
 
+    // ✅ FIX: watch timeRange REACTIVE (đổi range là hook biết ngay)
+    const watchedTimeRange = Form.useWatch('timeRange', form);
+
+    const hasTimeRange = useMemo(() => {
+        const v = watchedTimeRange;
+        return Array.isArray(v) && v.length === 2 && !!v?.[0] && !!v?.[1];
+    }, [watchedTimeRange]);
+
     const needFullData = useMemo(() => {
         const hasTableFilter = tableFilters.vehicleId?.length || tableFilters.batteryId?.length;
-        return sortMode !== 'none' || hasTableFilter || groupBy !== 'none';
-    }, [sortMode, tableFilters, groupBy]);
+        return sortMode !== 'none' || hasTableFilter || groupBy !== 'none' || hasTimeRange;
+    }, [sortMode, tableFilters, groupBy, hasTimeRange]);
 
     // params quyết định SWR fetch cái gì
     const [pagedParams, setPagedParams] = useState(null);
@@ -48,14 +57,13 @@ export function useUsageSessionData({ form, getUsageSessions, isEn, t }) {
         [getUsageSessions],
     );
 
-    // ✅ SWR opt cho cache “đúng nghĩa”
     const swrOpt = useMemo(
         () => ({
             revalidateOnFocus: false,
             revalidateOnReconnect: false,
             revalidateIfStale: false,
             keepPreviousData: true,
-            dedupingInterval: 5 * 60 * 1000, // 5 phút: cùng key thì không gọi lại
+            dedupingInterval: 5 * 60 * 1000,
             shouldRetryOnError: false,
         }),
         [],
@@ -81,7 +89,7 @@ export function useUsageSessionData({ form, getUsageSessions, isEn, t }) {
     const serverData = useMemo(() => (swrPaged.data?.data ? swrPaged.data.data : []), [swrPaged.data]);
     const fullData = useMemo(() => (swrAll.data?.data ? swrAll.data.data : []), [swrAll.data]);
 
-    // ✅ Initial load: chỉ set params, SWR tự fetch + cache
+    // ✅ Initial load: set paged params
     useEffect(() => {
         const values = form.getFieldsValue();
         const params = buildParams(values, 1, pagination.pageSize);
@@ -89,7 +97,7 @@ export function useUsageSessionData({ form, getUsageSessions, isEn, t }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // ✅ Khi needFullData bật: set allParams để SWR fetch (có cache thì dùng)
+    // ✅ Khi needFullData bật: set allParams để SWR fetch
     useEffect(() => {
         if (!needFullData) return;
 
@@ -101,28 +109,27 @@ export function useUsageSessionData({ form, getUsageSessions, isEn, t }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [needFullData]);
 
-    // ✅ Update total
+    // ✅ Update total (an toàn)
     useEffect(() => {
         if (!needFullData) {
             const list = serverData || [];
-            const safeTotal = Math.max(swrPaged.data?.total || 0, list.length);
+            const safeTotal = Math.max(Number(swrPaged.data?.total || 0), list.length);
             setPagination((p) => ({ ...p, total: safeTotal }));
             return;
         }
 
         const list = fullData || [];
-        const safeTotal = Math.max(swrAll.data?.total || 0, list.length);
+        const safeTotal = Math.max(Number(swrAll.data?.total || 0), list.length);
         setPagination((p) => ({ ...p, total: safeTotal }));
     }, [needFullData, serverData, fullData, swrPaged.data, swrAll.data]);
 
-    // ✅ API gọi theo page: chỉ đổi params (cache theo key)
     const fetchPaged = useCallback(
         async (page = 1, pageSize = pagination.pageSize || 20) => {
             const values = form.getFieldsValue();
             const params = buildParams(values, page, pageSize);
 
             setPagination((p) => ({ ...p, current: page, pageSize }));
-            setPagedParams(params); // SWR tự fetch nếu key mới, nếu key cũ thì lấy cache
+            setPagedParams(params);
         },
         [form, pagination.pageSize],
     );
@@ -135,14 +142,10 @@ export function useUsageSessionData({ form, getUsageSessions, isEn, t }) {
         setAllParams(params);
     }, [form]);
 
-    // ✅ Refetch chủ động (khi user bấm Search/Reset/Reload)
     const refresh = useCallback(async () => {
         if (needFullData) return swrAll.mutate();
         return swrPaged.mutate();
     }, [needFullData, swrAll, swrPaged]);
-
-    // giữ API cũ
-    const mutate = refresh;
 
     return {
         serverData,
@@ -164,6 +167,6 @@ export function useUsageSessionData({ form, getUsageSessions, isEn, t }) {
         fetchAll,
 
         refresh,
-        mutate,
+        mutate: refresh,
     };
 }

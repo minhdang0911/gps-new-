@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useCallback } from 'react';
-import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography, Select, Grid } from 'antd';
+import { Card, Form, Input, Button, Row, Col, Table, Space, Typography, Select, Grid } from 'antd';
 import { SearchOutlined, ReloadOutlined, DownloadOutlined, SettingOutlined } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 import '../usage-session/usageSession.css';
@@ -12,6 +12,9 @@ import en from '../../locales/en.json';
 import ColumnManagerModal from '../../components/report/ColumnManagerModal';
 import { useReportColumns } from '../../hooks/useReportColumns';
 import ReportSortSelect from '../../components/report/ReportSortSelect';
+
+// ✅ time preset picker (new)
+import TimeRangePresetPicker from '../../components/common/TimeRangePresetPicker';
 
 // ✅ compare
 import ReportCompareModal from '../../components/report/ReportCompareModal';
@@ -35,7 +38,6 @@ import ReportPanel from '../../components/chart/ReportPanel';
 import { buildLastCruiseReportConfig } from '../../features/lastCruiseReport/reportConfig';
 
 const { useBreakpoint } = Grid;
-const { RangePicker } = DatePicker;
 const { Title, Text } = Typography;
 const { Option } = Select;
 
@@ -54,6 +56,9 @@ const LastCruiseReportPage = () => {
 
     const [viewMode, setViewMode] = useState('table');
     const [colModalOpen, setColModalOpen] = useState(false);
+
+    // ✅ reset key for time preset picker (force remount to reset preset UI)
+    const [timePresetResetKey, setTimePresetResetKey] = useState(0);
 
     // ✅ Compare states
     const [compareOpen, setCompareOpen] = useState(false);
@@ -197,8 +202,15 @@ const LastCruiseReportPage = () => {
                                 </Select>
                             </Form.Item>
 
-                            <Form.Item label={t.filter.timeRange} name="timeRange">
-                                <RangePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
+                            {/* ✅ preset + timeRange (reusable component) */}
+                            <Form.Item label={t.filter.timeRange}>
+                                <TimeRangePresetPicker
+                                    key={timePresetResetKey}
+                                    name="timeRange"
+                                    locale={isEn ? 'en' : 'vi'}
+                                    format="YYYY-MM-DD"
+                                    showTime={false}
+                                />
                             </Form.Item>
 
                             <Form.Item>
@@ -218,6 +230,10 @@ const LastCruiseReportPage = () => {
                                         onClick={async () => {
                                             onReset();
                                             clearSelection();
+
+                                            // ✅ reset preset UI (force remount)
+                                            setTimePresetResetKey((k) => k + 1);
+
                                             // ✅ force new data
                                             await Promise.allSettled([refreshDeviceMap(), refreshApi()]);
                                         }}

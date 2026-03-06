@@ -790,7 +790,7 @@ export default function ManageUserPage() {
                 okText={t.modal.okText}
                 cancelText={t.modal.cancelText}
                 wrapClassName="user-modal"
-                destroyOnClose
+                destroyOnHidden
                 okButtonProps={{ disabled: !canEdit }}
             >
                 {distributorsBusy ? (
@@ -821,7 +821,7 @@ export default function ManageUserPage() {
                 }}
                 footer={<Button onClick={() => setViewUserModalVisible(false)}>{t.view.close}</Button>}
                 wrapClassName="user-modal"
-                destroyOnClose
+                destroyOnHidden
             >
                 {loadingViewUser ? (
                     t.view.loading
@@ -838,8 +838,8 @@ export default function ManageUserPage() {
                             {typeof viewUserData.distributor_id === 'string'
                                 ? viewUserData.distributor_id
                                 : viewUserData.distributor_id
-                                ? `${viewUserData.distributor_id.email} (${viewUserData.distributor_id.username})`
-                                : ''}
+                                  ? `${viewUserData.distributor_id.email} (${viewUserData.distributor_id.username})`
+                                  : ''}
                         </Descriptions.Item>
                         <Descriptions.Item label={t.view.fields.address}>
                             {viewUserData.address || ''}

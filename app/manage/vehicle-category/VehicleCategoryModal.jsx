@@ -30,7 +30,7 @@ export default function VehicleCategoryModal({
             okText={t.modal.okText}
             cancelText={t.modal.cancelText}
             wrapClassName="vc-modal"
-            destroyOnClose
+            destroyOnHidden
         >
             <Form form={form} layout="vertical">
                 <Form.Item

@@ -16,14 +16,19 @@ import {
     DatePicker,
     Space,
     Tooltip,
+    Statistic,
+    Form,
+    Modal,
 } from 'antd';
-import { SearchOutlined, ReloadOutlined, FileExcelOutlined } from '@ant-design/icons';
+import { SearchOutlined, ReloadOutlined, FileExcelOutlined, BarChartOutlined } from '@ant-design/icons';
 
 import { usePathname } from 'next/navigation'; // ✅ add
 import { useMaintenanceDeviceMap } from '../../hooks/useMaintenanceDeviceMap';
 import { getMaintenanceHistory } from '../../lib/api/maintain';
 import { getUserList } from '../../lib/api/user';
 import { useAuthStore } from '../../stores/authStore';
+import MaintenanceTrendChart from '../../components/reports/MaintenanceTrendChart';
+import TimeRangePresetPicker from '../../components/common/TimeRangePresetPicker';
 
 import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx-js-style';
@@ -80,11 +85,14 @@ const hasAnySearchCondition = (filters) => {
 
 /* -------------------------- FE filter/sort helpers -------------------------- */
 function applyFilters({ rows, filters, plateToImeis, imeiToPlate }) {
+    console.log('FILTER INPUT:', filters);
+
     let out = Array.isArray(rows) ? [...rows] : [];
 
     const imeiInput = normStr(filters?.imei);
     const plateInput = normalizePlate(filters?.license_plate);
     const range = filters?.maintenanceRange;
+    console.log('DATE RANGE:', range?.[0]?.toString(), range?.[1]?.toString());
 
     // plate
     if (plateInput) {
@@ -421,6 +429,8 @@ export default function MaintenanceHistoryReportPage() {
     const [rawData, setRawData] = useState([]);
     const [allData, setAllData] = useState([]);
     const [searchMode, setSearchMode] = useState(false);
+    const [chartDataSource, setChartDataSource] = useState([]);
+    const [openChart, setOpenChart] = useState(false);
 
     const [tableLoading, setTableLoading] = useState(false);
     const [exportLoading, setExportLoading] = useState(false);
@@ -445,6 +455,23 @@ export default function MaintenanceHistoryReportPage() {
 
     const isFiltering = hasAnySearchCondition(filters);
     const pagingOnClient = searchMode || isFiltering;
+
+    const openChartModal = async () => {
+        setOpenChart(true);
+
+        if (chartDataSource.length === 0) {
+            const all = await fetchAllPages();
+
+            const filtered = applyFilters({
+                rows: all,
+                filters,
+                plateToImeis,
+                imeiToPlate,
+            });
+
+            setChartDataSource(filtered);
+        }
+    };
 
     useEffect(() => {
         const loadUsers = async () => {
@@ -558,16 +585,20 @@ export default function MaintenanceHistoryReportPage() {
 
         if (searchingNow) {
             setTableLoading(true);
-            setSearchMode(false);
+
             try {
+                // FIX: lấy toàn bộ data
                 const all = await fetchAllPages();
+
                 setAllData(all);
-                setRawData([]);
+                setRawData(all);
                 setTotal(all.length);
+
                 setSearchMode(true);
             } finally {
                 setTableLoading(false);
             }
+
             return;
         }
 
@@ -575,7 +606,6 @@ export default function MaintenanceHistoryReportPage() {
         setAllData([]);
         await loadServerPage({ p: 1 });
     };
-
     const onClear = async () => {
         setFilters({ imei: '', license_plate: '', maintenanceRange: null });
         setSorterState({ field: 'createdAt', order: 'descend' });
@@ -724,24 +754,35 @@ export default function MaintenanceHistoryReportPage() {
                     <Title level={3} style={{ marginBottom: 4 }}>
                         {t.pageTitle}
                     </Title>
+
                     <Text type="secondary">
                         {t.pageHint}
                         <b>{t.pageHintBtn}</b>
                         {t.pageHintTail}
                     </Text>
+
+                    <div style={{ marginTop: 12 }}>
+                        <Statistic title={isEn ? 'Total records' : 'Tổng số bản ghi'} value={totalForPaging} />
+                    </div>
                 </Col>
 
                 <Col>
-                    <Tooltip title={exportTooltip}>
-                        <Button
-                            icon={<FileExcelOutlined />}
-                            onClick={onExport}
-                            loading={exportLoading}
-                            disabled={tableLoading}
-                        >
-                            {t.export}
+                    <Space>
+                        <Button icon={<BarChartOutlined />} onClick={openChartModal}>
+                            {isEn ? 'View statistics' : 'Xem thống kê'}
                         </Button>
-                    </Tooltip>
+
+                        <Tooltip title={exportTooltip}>
+                            <Button
+                                icon={<FileExcelOutlined />}
+                                onClick={onExport}
+                                loading={exportLoading}
+                                disabled={tableLoading}
+                            >
+                                {t.export}
+                            </Button>
+                        </Tooltip>
+                    </Space>
                 </Col>
             </Row>
 
@@ -771,13 +812,19 @@ export default function MaintenanceHistoryReportPage() {
 
                     <Col xs={24} md={8}>
                         <Text strong>{t.range}</Text>
-                        <RangePicker
-                            style={{ width: '100%' }}
-                            format="YYYY-MM-DD"
-                            placeholder={[t.from, t.to]}
+                        <TimeRangePresetPicker
+                            locale={isEn ? 'en' : 'vi'}
+                            showTime={false}
+                            defaultPreset="thisMonth"
                             value={filters.maintenanceRange}
-                            onChange={(v) => setFilters((p) => ({ ...p, maintenanceRange: v }))}
-                            allowClear
+                            onChange={(range) => {
+                                console.log('RANGE CHANGED TYPE:', typeof range);
+                                console.log('RANGE CHANGED VALUE:', range);
+                                setFilters((p) => ({
+                                    ...p,
+                                    maintenanceRange: range,
+                                }));
+                            }}
                         />
                     </Col>
 
@@ -796,7 +843,6 @@ export default function MaintenanceHistoryReportPage() {
                     </Col>
                 </Row>
             </Card>
-
             <Card style={{ marginTop: 12 }}>
                 {tableLoading ? (
                     <div style={{ textAlign: 'center', padding: 24 }}>
@@ -827,6 +873,15 @@ export default function MaintenanceHistoryReportPage() {
                     />
                 )}
             </Card>
+            <Modal
+                title={isEn ? 'Maintenance statistics' : 'Thống kê bảo trì'}
+                open={openChart}
+                onCancel={() => setOpenChart(false)}
+                footer={null}
+                width={900}
+            >
+                <MaintenanceTrendChart data={chartDataSource} filters={filters} isEn={isEn} />
+            </Modal>
         </div>
     );
 }

@@ -210,7 +210,8 @@ export default function DeviceCommandBarModal({
             <Divider style={{ margin: '12px 0' }} />
 
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Text type="secondary">{isEn ? 'Devices (current page)' : 'Thiết bị (trang hiện tại)'}</Text>
+                <Text type="secondary">{isEn ? 'All devices' : 'Tất cả thiết bị'}</Text>
+
                 <Text type="secondary">
                     {isEn
                         ? 'J/K: move • Enter: view • E: edit • Del: delete'
@@ -277,8 +278,8 @@ export default function DeviceCommandBarModal({
                                                     ? 'Delete'
                                                     : 'Xoá'
                                                 : isEn
-                                                ? 'No permission'
-                                                : 'Không có quyền'
+                                                  ? 'No permission'
+                                                  : 'Không có quyền'
                                         }
                                     >
                                         <Button
@@ -292,7 +293,7 @@ export default function DeviceCommandBarModal({
                                 </Popconfirm>,
                             ]}
                         >
-                            <Space direction="vertical" size={0}>
+                            <Space orientation="vertical" size={0}>
                                 <Text strong>{d.imei}</Text>
                                 <Text type="secondary">
                                     {t.plate}: {d.license_plate || '-'} • {t.phone}: {d.phone_number || '-'}

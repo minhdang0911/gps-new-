@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useCallback } from 'react';
-import { Card, Form, Input, Button, Row, Col, Table, DatePicker, Space, Typography, Select, Grid } from 'antd';
+import { Card, Form, Input, Button, Row, Col, Table, Space, Typography, Select, Grid } from 'antd';
 import { SearchOutlined, ReloadOutlined, DownloadOutlined, SettingOutlined } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 import '../usage-session/usageSession.css';
@@ -16,6 +16,9 @@ import { buildBatteryInsight } from '../../features/batteryReport/compare/batter
 import ReportSortSelect from '../../components/report/ReportSortSelect';
 import ColumnManagerModal from '../../components/report/ColumnManagerModal';
 import { useReportColumns } from '../../hooks/useReportColumns';
+
+// ✅ time preset picker (new)
+import TimeRangePresetPicker from '../../components/common/TimeRangePresetPicker';
 
 // ✅ NEW: generic report components
 import ReportViewToggle from '../../components/chart/ReportViewToggle';
@@ -39,7 +42,6 @@ import { formatDateTime } from '../../util/FormatDate';
 import { formatStatus } from '../../util/FormatStatus';
 
 const { useBreakpoint } = Grid;
-const { RangePicker } = DatePicker;
 const { Title, Text } = Typography;
 const { Option } = Select;
 
@@ -56,6 +58,9 @@ const BatterySummaryReportPage = () => {
 
     // ✅ view mode
     const [viewMode, setViewMode] = useState('table');
+
+    // ✅ reset key for time preset picker (force remount to reset preset UI)
+    const [timePresetResetKey, setTimePresetResetKey] = useState(0);
 
     const rawLocale = isEn ? locales.en : locales.vi;
 
@@ -74,7 +79,7 @@ const BatterySummaryReportPage = () => {
             connectionStatusPlaceholder: 'Chọn trạng thái',
             utilization: 'Trạng thái sử dụng',
             utilizationPlaceholder: 'Chọn trạng thái',
-            timeRange: 'Khoảng ngày',
+            timeRange: 'Khoảng thời gian',
             search: 'Tìm kiếm',
             reset: 'Làm mới',
         },
@@ -246,8 +251,15 @@ const BatterySummaryReportPage = () => {
                                 </Select>
                             </Form.Item>
 
-                            <Form.Item label={t.filter.timeRange} name="timeRange">
-                                <RangePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
+                            {/* ✅ preset + timeRange (reusable component) */}
+                            <Form.Item label={t.filter.timeRange}>
+                                <TimeRangePresetPicker
+                                    key={timePresetResetKey}
+                                    name="timeRange"
+                                    locale={isEn ? 'en' : 'vi'}
+                                    format="YYYY-MM-DD"
+                                    showTime={false}
+                                />
                             </Form.Item>
 
                             <Form.Item>
@@ -266,6 +278,9 @@ const BatterySummaryReportPage = () => {
                                             // ✅ reset data + clear selection
                                             onReset();
                                             clearSelection();
+
+                                            // ✅ reset preset UI (force remount)
+                                            setTimePresetResetKey((k) => k + 1);
 
                                             // ✅ option: clear cache map + refresh lại map cho chắc
                                             // clearDeviceMapCache();

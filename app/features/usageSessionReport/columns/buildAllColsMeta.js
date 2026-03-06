@@ -83,6 +83,7 @@ export function buildAllColsMeta({ t, isEn, isMobile, vehicleFilterOptions, batt
             key: 'usageCode',
             label: t.table.usageCode,
             column: {
+                key: 'usageCode',
                 title: <ColTitle label={t.table.usageCode} tip={colHelp.usageCode} isEn={isEn} isMobile={isMobile} />,
                 dataIndex: 'usageCode',
                 ellipsis: true,

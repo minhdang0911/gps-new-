@@ -12,19 +12,28 @@ export default function LayoutWrapper({ children }) {
 
     const isLoginPage = pathname === '/login' || pathname === '/login/en' || pathname?.startsWith('/login');
 
-    // bypass login
-    if (isLoginPage) return <>{children}</>;
+    // 👉 CHỐT: bypass toàn bộ layout cho login
+    if (isLoginPage) {
+        return <>{children}</>;
+    }
 
     return (
-        <div className="app-shell">
+        <>
             <TokenRefresher />
             <MqttConnector />
             <Navbar activeKey="monitor" />
             <StatusBar />
 
-            <main className="app-main">{children}</main>
-
-            <AppFooter />
-        </div>
+            <div
+                style={{
+                    minHeight: '100vh',
+                    display: 'flex',
+                    flexDirection: 'column',
+                }}
+            >
+                <main style={{ flex: 1 }}>{children}</main>
+                <AppFooter />
+            </div>
+        </>
     );
 }

@@ -104,7 +104,7 @@
             "utilization": "Trạng thái sử dụng",
             "utilizationPlaceholder": "Chọn trạng thái",
 
-            "timeRange": "Khoảng ngày",
+            "timeRange": "Khoảng thời gian",
             "search": "Tìm kiếm",
             "reset": "Làm mới"
         },
@@ -187,7 +187,7 @@
             "lockStatus": "Trạng thái khoá",
             "lockStatusPlaceholder": "Chọn trạng thái",
 
-            "timeRange": "Khoảng ngày",
+            "timeRange": "Khoảng thời gian",
             "search": "Tìm kiếm",
             "reset": "Làm mới"
         },
@@ -247,7 +247,7 @@
             "sosOn": "Đang bật",
             "sosOff": "Đang tắt",
 
-            "timeRange": "Khoảng ngày (createdAt)",
+            "timeRange": "Khoảng thời gian",
             "search": "Tìm kiếm",
             "reset": "Làm mới",
             "export": "Xuất Excel"

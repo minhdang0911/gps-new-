@@ -20,7 +20,7 @@ export default function DeviceDetailView({
     onBack,
 }) {
     return (
-        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+        <Space orientation="vertical" style={{ width: '100%' }} size="middle">
             <Space wrap>
                 <Button icon={<ArrowLeftOutlined />} onClick={onBack}>
                     {t.back}

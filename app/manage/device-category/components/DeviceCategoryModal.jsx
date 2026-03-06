@@ -26,7 +26,7 @@ export default function DeviceCategoryModal({
             okText={t.modal.okText}
             cancelText={t.modal.cancelText}
             wrapClassName="dc-modal"
-            destroyOnClose
+            destroyOnHidden
         >
             <Form form={form} layout="vertical">
                 <Form.Item

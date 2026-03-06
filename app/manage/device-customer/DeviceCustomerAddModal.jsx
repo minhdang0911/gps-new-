@@ -23,7 +23,7 @@ export default function DeviceCustomerAddModal({
             onCancel={onCancel}
             okText={t.modal.okText}
             cancelText={t.modal.cancelText}
-            destroyOnClose
+            destroyOnHidden
         >
             <Form form={form} layout="vertical">
                 <Form.Item

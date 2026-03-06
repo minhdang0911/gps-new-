@@ -1,22 +1,7 @@
 'use client';
 
-import React, { useMemo, useState, useCallback } from 'react';
-import {
-    Card,
-    Form,
-    Input,
-    Button,
-    Row,
-    Col,
-    Table,
-    DatePicker,
-    Space,
-    Typography,
-    Select,
-    Grid,
-    Statistic,
-    Divider,
-} from 'antd';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import { Card, Form, Input, Button, Row, Col, Table, Space, Typography, Select, Grid, Statistic, Divider } from 'antd';
 import { SearchOutlined, ReloadOutlined, DownloadOutlined, SettingOutlined } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 
@@ -33,6 +18,8 @@ import { buildImeiToLicensePlateMap, attachLicensePlate } from '../../util/devic
 import ReportSortSelect from '../../components/report/ReportSortSelect';
 import ColumnManagerModal from '../../components/report/ColumnManagerModal';
 import { useReportColumns } from '../../hooks/useReportColumns';
+
+import TimeRangePresetPicker from '../../components/common/TimeRangePresetPicker';
 
 import ReportCompareModal from '../../components/report/ReportCompareModal';
 import { buildTripReportInsight } from '../../features/tripReport/compare/tripReportCompareInsight';
@@ -53,7 +40,6 @@ import { buildTripReportReportConfig } from '../../features/tripReport/reportCon
 // ✅ NEW: auth store (để lấy role)
 import { useAuthStore } from '../../stores/authStore';
 
-const { RangePicker } = DatePicker;
 const { useBreakpoint } = Grid;
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -71,6 +57,9 @@ const TripReportPage = () => {
 
     // ✅ view mode
     const [viewMode, setViewMode] = useState('table');
+
+    // ✅ reset key for time preset picker (force remount to reset preset UI)
+    const [timePresetResetKey, setTimePresetResetKey] = useState(0);
 
     const rawLocale = isEn ? locales.en : locales.vi;
 
@@ -91,7 +80,7 @@ const TripReportPage = () => {
             movementStatusPlaceholder: 'Chọn trạng thái',
             lockStatus: 'Trạng thái khoá',
             lockStatusPlaceholder: 'Chọn trạng thái',
-            timeRange: 'Khoảng ngày',
+            timeRange: 'Khoảng thời gian',
             search: 'Tìm kiếm',
             reset: 'Làm mới',
         },
@@ -183,6 +172,9 @@ const TripReportPage = () => {
         setPagination((p) => ({ ...p, current: 1 }));
         clearSelection();
 
+        // ✅ reset preset UI (force remount)
+        setTimePresetResetKey((k) => k + 1);
+
         const values = {};
         setFilterValues(values);
 
@@ -193,10 +185,18 @@ const TripReportPage = () => {
     };
 
     const handleTableChange = (pager) => {
-        setPagination({ current: pager.current, pageSize: pager.pageSize });
+        setPagination((p) => ({
+            ...p,
+            current: pager.current,
+            pageSize: pager.pageSize,
+        }));
         clearSelection();
         fetchData({ page: pager.current, pageSize: pager.pageSize, filters: filterValues, sortMode }, { force: true });
     };
+
+    useEffect(() => {
+        console.log('UI pagination =', pagination);
+    }, [pagination]);
 
     const rowSelection = useMemo(
         () => ({
@@ -345,8 +345,15 @@ const TripReportPage = () => {
                                 </Select>
                             </Form.Item>
 
-                            <Form.Item label={t.filter.timeRange} name="timeRange">
-                                <RangePicker style={{ width: '100%' }} format="YYYY-MM-DD" />
+                            {/* ✅ preset + timeRange (reusable component) */}
+                            <Form.Item label={t.filter.timeRange}>
+                                <TimeRangePresetPicker
+                                    key={timePresetResetKey}
+                                    name="timeRange"
+                                    locale={isEn ? 'en' : 'vi'}
+                                    format="YYYY-MM-DD"
+                                    showTime={false}
+                                />
                             </Form.Item>
 
                             <Form.Item>

@@ -3,21 +3,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import {
-    Card,
-    Form,
-    Input,
-    Button,
-    Row,
-    Col,
-    Table,
-    DatePicker,
-    Space,
-    Typography,
-    Grid,
-    Divider,
-    Statistic,
-} from 'antd';
+import { Card, Form, Input, Button, Row, Col, Table, Space, Typography, Grid, Divider, Statistic } from 'antd';
 import { SearchOutlined, ReloadOutlined, DownloadOutlined, SettingOutlined } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 
@@ -35,6 +21,9 @@ import { buildImeiToLicensePlateMap, attachLicensePlate } from '../../util/devic
 import ColumnManagerModal from '../../components/report/ColumnManagerModal';
 import { useReportColumns } from '../../hooks/useReportColumns';
 import ReportSortSelect from '../../components/report/ReportSortSelect';
+
+// ✅ time preset picker (new)
+import TimeRangePresetPicker from '../../components/common/TimeRangePresetPicker';
 
 // ✅ compare
 import ReportCompareModal from '../../components/report/ReportCompareModal';
@@ -54,7 +43,6 @@ import ReportViewToggle from '../../components/chart/ReportViewToggle';
 import ReportPanel from '../../components/chart/ReportPanel';
 import { buildTripSessionReportConfig } from '../../features/tripSessionReport/reportConfig';
 
-const { RangePicker } = DatePicker;
 const { Title, Text } = Typography;
 const { useBreakpoint } = Grid;
 
@@ -153,6 +141,9 @@ const TripSessionReportPage = () => {
 
     // FE filters
     const [feFilters, setFeFilters] = useState({ imeis: [], imeiText: '', plateText: '' });
+
+    // ✅ reset key for time preset picker (force remount to reset preset UI)
+    const [timePresetResetKey, setTimePresetResetKey] = useState(0);
 
     // ✅ device maps
     const { imeiToPlate, plateToImeis, loadingDeviceMap, refreshDeviceMap } = useTripDeviceMap({
@@ -290,6 +281,9 @@ const TripSessionReportPage = () => {
         setSortMode('none');
         setPagination((p) => ({ ...p, current: 1 }));
 
+        // ✅ reset preset UI (force remount)
+        setTimePresetResetKey((k) => k + 1);
+
         // ✅ Reset = map mới + data mới
         await Promise.allSettled([refreshDeviceMap(), fetchBase({ resetPage: true }, { force: true })]);
     };
@@ -376,8 +370,15 @@ const TripSessionReportPage = () => {
                                 <Input placeholder={t.filter.sohPlaceholder} allowClear />
                             </Form.Item>
 
-                            <Form.Item label={t.filter.timeRange} name="timeRange">
-                                <RangePicker showTime style={{ width: '100%' }} format="YYYY-MM-DD HH:mm:ss" />
+                            {/* ✅ preset + timeRange (reusable component) */}
+                            <Form.Item label={t.filter.timeRange}>
+                                <TimeRangePresetPicker
+                                    key={timePresetResetKey}
+                                    name="timeRange"
+                                    locale={isEn ? 'en' : 'vi'}
+                                    format="YYYY-MM-DD HH:mm:ss"
+                                    showTime
+                                />
                             </Form.Item>
 
                             <Form.Item>

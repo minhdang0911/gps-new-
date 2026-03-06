@@ -51,8 +51,8 @@ export default function DeviceAuditModal({
             ? 'Review new device'
             : 'Review changes'
         : mode === 'add'
-        ? 'Xem lại thiết bị mới'
-        : 'Xem lại thay đổi';
+          ? 'Xem lại thiết bị mới'
+          : 'Xem lại thay đổi';
 
     return (
         <Modal
@@ -72,7 +72,7 @@ export default function DeviceAuditModal({
                     dataSource={diffs}
                     renderItem={(it) => (
                         <List.Item>
-                            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                            <Space orientation="vertical" size={2} style={{ width: '100%' }}>
                                 <Text strong>{it.key}</Text>
                                 <Space wrap>
                                     <Tag>

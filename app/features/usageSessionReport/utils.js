@@ -1,6 +1,30 @@
+// features/usageSessionReport/utils.js
 import dayjs from 'dayjs';
 
 export const formatDateTime = (value) => (value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '-');
+
+// ✅ NEW: FE filter time range (BE không support)
+export const filterByTimeRange = (list, timeRange) => {
+    const rows = Array.isArray(list) ? list : [];
+
+    if (!Array.isArray(timeRange) || timeRange.length !== 2 || !timeRange[0] || !timeRange[1]) return rows;
+
+    const start = dayjs(timeRange[0]);
+    const end = dayjs(timeRange[1]);
+
+    if (!start.isValid() || !end.isValid()) return rows;
+
+    const startMs = start.valueOf();
+    const endMs = end.valueOf();
+
+    return rows.filter((x) => {
+        // ✅ ưu tiên usageTimestamp/startTime/endTime
+        const t = x?.usageTimestamp || x?.startTime || x?.createdAt;
+        const ms = dayjs(t).valueOf();
+        if (!Number.isFinite(ms)) return false;
+        return ms >= startMs && ms <= endMs;
+    });
+};
 
 export const buildParams = (values, page, limit, noPagination = false) => {
     const params = {};
@@ -10,17 +34,18 @@ export const buildParams = (values, page, limit, noPagination = false) => {
     }
 
     // NOTE: bạn đang set usageCode từ sessionId và usageCode cùng lúc
-    // => coi lại BE cần field nào. Nếu "sessionId" là một field khác thì mapping hiện tại có thể sai.
+    // => giữ y chang để không phá behavior cũ
     if (values.sessionId) params.usageCode = values.sessionId.trim();
     if (values.batteryId) params.batteryId = values.batteryId.trim();
     if (values.usageCode) params.usageCode = values.usageCode.trim();
     if (values.deviceId) params.deviceId = values.deviceId.trim();
     if (values.soh) params.soh = values.soh;
 
-    if (values.timeRange?.length === 2) {
-        params.startTime = values.timeRange[0].format('YYYY-MM-DD HH:mm:ss');
-        params.endTime = values.timeRange[1].format('YYYY-MM-DD HH:mm:ss');
-    }
+    // ❌ BE không support -> KHÔNG gửi nữa
+    // if (values.timeRange?.length === 2) {
+    //     params.startTime = values.timeRange[0].format('YYYY-MM-DD HH:mm:ss');
+    //     params.endTime = values.timeRange[1].format('YYYY-MM-DD HH:mm:ss');
+    // }
 
     return params;
 };

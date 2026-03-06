@@ -36,7 +36,7 @@ export default function DeviceUpsertModal({
             okText={t.save}
             width={600}
             confirmLoading={false}
-            destroyOnClose
+            destroyOnHidden
             afterOpenChange={afterOpenChange}
         >
             <Form form={form} layout="vertical">
