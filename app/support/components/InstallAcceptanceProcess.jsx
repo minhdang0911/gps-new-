@@ -926,7 +926,7 @@ export default function InstallAcceptanceProcess() {
             <Divider />
 
             <Title level={4}>{tr('gTitle')}</Title>
-            <Alert type="warning" showIcon message={tr('gNote')} style={{ marginBottom: 12 }} />
+            <Alert type="warning" showIcon title={tr('gNote')} style={{ marginBottom: 12 }} />
             <ul className={styles.checkList}>
                 <li>☐ {tr('g1')}</li>
                 <li>☐ {tr('g2')}</li>
