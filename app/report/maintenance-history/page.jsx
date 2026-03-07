@@ -85,14 +85,11 @@ const hasAnySearchCondition = (filters) => {
 
 /* -------------------------- FE filter/sort helpers -------------------------- */
 function applyFilters({ rows, filters, plateToImeis, imeiToPlate }) {
-    console.log('FILTER INPUT:', filters);
-
     let out = Array.isArray(rows) ? [...rows] : [];
 
     const imeiInput = normStr(filters?.imei);
     const plateInput = normalizePlate(filters?.license_plate);
     const range = filters?.maintenanceRange;
-    console.log('DATE RANGE:', range?.[0]?.toString(), range?.[1]?.toString());
 
     // plate
     if (plateInput) {
@@ -818,8 +815,6 @@ export default function MaintenanceHistoryReportPage() {
                             defaultPreset="thisMonth"
                             value={filters.maintenanceRange}
                             onChange={(range) => {
-                                console.log('RANGE CHANGED TYPE:', typeof range);
-                                console.log('RANGE CHANGED VALUE:', range);
                                 setFilters((p) => ({
                                     ...p,
                                     maintenanceRange: range,

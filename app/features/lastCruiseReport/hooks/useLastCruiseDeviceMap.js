@@ -55,8 +55,6 @@ export function useLastCruiseDeviceMap({ buildImeiToLicensePlateMap }) {
 
         const res = await buildImeiToLicensePlateMap(token);
         const map = res?.imeiToPlate ?? res ?? new Map();
-        console.log('DEVICE MAP FETCH');
-        console.log('plate for 860056082635831 =', map.get('860056082635831'));
 
         if (typeof window !== 'undefined') {
             localStorage.setItem(MAP_CACHE_KEY, JSON.stringify(serializeMapWithTTL(map)));
@@ -88,7 +86,6 @@ export function useLastCruiseDeviceMap({ buildImeiToLicensePlateMap }) {
     }, [imeiToPlate]);
 
     const refreshDeviceMap = useCallback(() => {
-        // ✅ ép refetch map mới + update localStorage
         return swr.mutate(undefined, { revalidate: true });
     }, [swr]);
 

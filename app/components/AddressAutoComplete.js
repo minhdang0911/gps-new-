@@ -127,7 +127,6 @@ export default function AddressAutoComplete({ value, onChange, placeholder }) {
         if (typeof window !== 'undefined') {
             sessionStorage.setItem('goong_fallback_mode', 'true');
         }
-        console.log('Switched to fallback mode (manual input)');
     }, []);
 
     const fetchSuggestions = useCallback(
