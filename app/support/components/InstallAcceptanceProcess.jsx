@@ -27,6 +27,7 @@ import jsPDF from 'jspdf';
 import { getDevices, getDeviceInfo } from '../../lib/api/devices';
 import { getBatteryStatusByImei } from '../../lib/api/batteryStatus';
 import { getLastCruise } from '../../lib/api/cruise';
+import Image from 'next/image';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -1244,7 +1245,13 @@ export default function InstallAcceptanceProcess() {
         <>
             <Card variant={false} className={styles.supportCard}>
                 <div className={styles.acceptanceHeader}>
-                    <img src={logo?.src} alt="IKY-GPS Logo" className={styles.acceptanceLogo} />
+                    <Image
+                        src={logo?.src}
+                        alt="IKY-GPS Logo"
+                        width={120}
+                        height={40}
+                        className={styles.acceptanceLogo}
+                    />
                     <div>
                         <Title level={3} className={styles.acceptanceTitle}>
                             {tr('title')}
@@ -1256,7 +1263,7 @@ export default function InstallAcceptanceProcess() {
                 <Divider />
 
                 <Card size="small" style={{ background: 'rgba(0,0,0,0.02)' }}>
-                    <Space direction="vertical" style={{ width: '100%' }} size={8}>
+                    <Space orientation="vertical" style={{ width: '100%' }} size={8}>
                         <Text strong>{tr('diagBlockTitle')}</Text>
 
                         <div className={styles.diagRow}>
