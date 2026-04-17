@@ -25,10 +25,9 @@ export default function FaqSection({ isEn, faqItems }) {
 
     return (
         <Row gutter={[20, 20]} className={styles.faqRow}>
-            <Col xs={24} lg={16}>
+            <Col xs={24} xl={16}>
                 <Card
-                    variant={false}
-                    className={styles.faqCard}
+                    className={`${styles.supportCard} ${styles.faqCard}`}
                     title={isEn ? 'Frequently asked questions' : 'Câu hỏi thường gặp'}
                 >
                     <Collapse
@@ -41,16 +40,18 @@ export default function FaqSection({ isEn, faqItems }) {
                 </Card>
             </Col>
 
-            <Col xs={24} lg={8}>
-                <Card variant={false} className={styles.faqCtaCard}>
+            <Col xs={24} xl={8}>
+                <Card className={`${styles.supportCard} ${styles.faqCtaCard}`}>
                     <Title level={4} className={styles.cardTitle}>
                         {isEn ? "Can't find the answer?" : 'Chưa tìm thấy câu trả lời?'}
                     </Title>
+
                     <Paragraph className={styles.paragraph}>
                         {isEn
                             ? 'Call our hotline or send us a ticket, our team will assist you directly and guide you step by step.'
                             : 'Gọi ngay hotline hoặc gửi yêu cầu hỗ trợ, đội ngũ kỹ thuật IKY sẽ hỗ trợ trực tiếp và hướng dẫn chi tiết.'}
                     </Paragraph>
+
                     <a href="tel:+842862801999" className={styles.faqHotline}>
                         <PhoneOutlined />
                         <span>08 628 01 999</span>

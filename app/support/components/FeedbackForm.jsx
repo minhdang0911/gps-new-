@@ -22,7 +22,11 @@ export default function FeedbackForm({ t, isEn }) {
     };
 
     return (
-        <Card variant={false} className={`${styles.supportCard} ${styles.supportCardElevated}`} title={t.feedbackTitle}>
+        <Card
+            variant={false}
+            className={`${styles.supportCard} ${styles.supportCardElevated} ${styles.feedbackFormCard}`}
+            title={<span className={styles.formCardTitle}>{t.feedbackTitle}</span>}
+        >
             <Form layout="vertical" form={form} onFinish={handleSubmit} requiredMark={false}>
                 <Form.Item
                     label={t.formFullName}
@@ -34,7 +38,7 @@ export default function FeedbackForm({ t, isEn }) {
                         },
                     ]}
                 >
-                    <Input placeholder={isEn ? 'Enter your full name' : 'Nhập họ tên của bạn'} />
+                    <Input size="large" placeholder={isEn ? 'Enter your full name' : 'Nhập họ tên của bạn'} />
                 </Form.Item>
 
                 <Form.Item
@@ -48,7 +52,7 @@ export default function FeedbackForm({ t, isEn }) {
                         { type: 'email', message: isEn ? 'Invalid email' : 'Email không hợp lệ' },
                     ]}
                 >
-                    <Input placeholder={isEn ? 'Enter your contact email' : 'Nhập email liên hệ'} />
+                    <Input size="large" placeholder={isEn ? 'Enter your contact email' : 'Nhập email liên hệ'} />
                 </Form.Item>
 
                 <Form.Item
@@ -62,6 +66,7 @@ export default function FeedbackForm({ t, isEn }) {
                     ]}
                 >
                     <Input
+                        size="large"
                         placeholder={isEn ? 'E.g. Support for activating IKY GPS' : 'Ví dụ: Hỗ trợ kích hoạt IKY GPS'}
                     />
                 </Form.Item>
@@ -82,13 +87,19 @@ export default function FeedbackForm({ t, isEn }) {
                                 ? 'Describe the issue, device IMEI, time, screenshots…'
                                 : 'Mô tả chi tiết lỗi, mã thiết bị (IMEI), thời gian xảy ra, hình ảnh…'
                         }
-                        rows={4}
+                        rows={5}
                     />
                 </Form.Item>
 
                 <Form.Item style={{ marginBottom: 0 }}>
                     <div className={styles.formActions}>
-                        <Button type="primary" htmlType="submit" icon={<SendOutlined />}>
+                        <Button
+                            type="primary"
+                            htmlType="submit"
+                            icon={<SendOutlined />}
+                            size="large"
+                            className={styles.submitButton}
+                        >
                             {t.formSend}
                         </Button>
                     </div>

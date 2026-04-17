@@ -30,7 +30,7 @@ export default function SupportPage() {
     const { kpiTexts, faqItems, supportChannels } = useMemo(() => buildSupportContent(isEn), [isEn]);
 
     const [mapLocation, setMapLocation] = useState('hcm');
-    const [activeKey, setActiveKey] = useState('support'); // 'support' | 'acceptance'
+    const [activeKey, setActiveKey] = useState('support');
 
     const menuItems = [
         {
@@ -50,7 +50,6 @@ export default function SupportPage() {
             <div className={styles.supportPageGradient} />
 
             <div className={styles.supportLayout}>
-                {/* Sidebar */}
                 <aside className={styles.supportSidebar}>
                     <div className={styles.sidebarTitle}>{isEn ? 'Support' : 'Hỗ trợ'}</div>
 
@@ -63,7 +62,6 @@ export default function SupportPage() {
                     />
                 </aside>
 
-                {/* Content */}
                 <main className={styles.supportMain}>
                     {activeKey === 'support' ? (
                         <div className={styles.supportPageInner}>
@@ -72,15 +70,14 @@ export default function SupportPage() {
                             <KpiStrip items={kpiTexts} />
 
                             <Row gutter={[20, 20]} className={styles.supportTopRow}>
-                                <Col xs={24} lg={8}>
-                                    <IntroCard t={t} isEn={isEn} />
+                                <Col xs={24} xl={15}>
+                                    <div className={styles.stackColumn}>
+                                        <IntroCard t={t} isEn={isEn} />
+                                        <ContactCard t={t} isEn={isEn} />
+                                    </div>
                                 </Col>
 
-                                <Col xs={24} lg={8}>
-                                    <ContactCard t={t} isEn={isEn} />
-                                </Col>
-
-                                <Col xs={24} lg={8}>
+                                <Col xs={24} xl={9}>
                                     <FeedbackForm t={t} isEn={isEn} />
                                 </Col>
                             </Row>

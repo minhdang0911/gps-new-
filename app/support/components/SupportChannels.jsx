@@ -26,16 +26,16 @@ export default function SupportChannels({ isEn, channels }) {
                         {channels.map((ch, idx) => (
                             <Col xs={24} md={8} key={idx}>
                                 <div className={styles.channelCard}>
-                                    <Text strong>{ch.label}</Text>
+                                    <Text strong className={styles.channelTitle}>
+                                        {ch.label}
+                                    </Text>
 
                                     <Paragraph type="secondary" className={styles.channelDesc}>
                                         {ch.desc}
                                     </Paragraph>
 
                                     <a href={ch.contactLink}>
-                                        <Tag color="blue" className={styles.channelTag}>
-                                            {ch.contact}
-                                        </Tag>
+                                        <Tag className={styles.channelTag}>{ch.contact}</Tag>
                                     </a>
                                 </div>
                             </Col>

@@ -10,11 +10,11 @@ export default function KpiStrip({ items }) {
     return (
         <Row gutter={[16, 16]} className={styles.kpiRow}>
             {items.map((item, idx) => (
-                <Col xs={24} sm={8} key={idx}>
+                <Col xs={24} md={8} key={idx}>
                     <Card variant={false} className={styles.kpiCard}>
-                        <Space align="center" size={12}>
+                        <Space align="center" size={14}>
                             <div className={styles.kpiIcon}>{item.icon}</div>
-                            <div>
+                            <div className={styles.kpiContent}>
                                 <Text type="secondary" className={styles.kpiLabel}>
                                     {item.label}
                                 </Text>

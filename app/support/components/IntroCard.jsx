@@ -8,7 +8,7 @@ const { Title, Paragraph } = Typography;
 
 export default function IntroCard({ t, isEn }) {
     return (
-        <Card variant={false} className={styles.supportCard}>
+        <Card variant={false} className={`${styles.supportCard} ${styles.supportCardSoft}`}>
             <Title level={4} className={styles.cardTitle}>
                 {t.introTitle}
             </Title>

@@ -10,17 +10,17 @@ const { Title, Text } = Typography;
 
 export default function ContactCard({ t, isEn }) {
     return (
-        <Card variant={false} className={styles.supportCard}>
+        <Card variant={false} className={`${styles.supportCard} ${styles.supportCardStrong}`}>
             <Title level={4} className={styles.cardTitle}>
                 {t.contactTitle}
             </Title>
 
-            <Space orientation="vertical" size={8} className={styles.infoBlock}>
-                {/* Company name */}
-                <Text strong>{t.companyName}</Text>
+            <Space direction="vertical" size={12} className={styles.infoBlock}>
+                <Text strong className={styles.companyName}>
+                    {t.companyName}
+                </Text>
 
-                {/* Address */}
-                <Space align="start">
+                <Space align="start" className={styles.contactRow}>
                     <EnvironmentOutlined className={styles.icon} />
                     <div>
                         <Text strong>{t.hcmBranch}:</Text> <Text>{t.hcmAddress}</Text>
@@ -29,15 +29,13 @@ export default function ContactCard({ t, isEn }) {
                     </div>
                 </Space>
 
-                {/* Email */}
-                <Space>
+                <Space className={styles.contactRow}>
                     <MailOutlined className={styles.icon} />
                     <a href="mailto:contact@iky.vn">contact@iky.vn</a>
                 </Space>
 
-                {/* Phones */}
-                <Space orientation="vertical" size={4} className={styles.phoneBlock}>
-                    <Space>
+                <Space direction="vertical" size={6} className={styles.phoneBlock}>
+                    <Space className={styles.contactRow}>
                         <PhoneOutlined className={styles.icon} />
                         <a href="tel:+842862801999">(+84) 8 628 01 999</a>
                     </Space>
@@ -60,9 +58,8 @@ export default function ContactCard({ t, isEn }) {
                 </Space>
             </Space>
 
-            <Divider />
+            <Divider className={styles.cardDivider} />
 
-            {/* Area hotline */}
             <Title level={5} className={styles.areaHotlineTitle}>
                 {t.areaHotlineTitle}
             </Title>

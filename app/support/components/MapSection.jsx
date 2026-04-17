@@ -13,8 +13,7 @@ export default function MapSection({ t, mapLocation, setMapLocation }) {
         <Row gutter={[20, 20]} className={styles.bottomRow}>
             <Col xs={24}>
                 <Card
-                    variant={false}
-                    className={styles.mapCard}
+                    className={`${styles.supportCard} ${styles.mapCard}`}
                     title={
                         <Space>
                             <EnvironmentOutlined />
@@ -22,19 +21,23 @@ export default function MapSection({ t, mapLocation, setMapLocation }) {
                         </Space>
                     }
                 >
-                    <div className={styles.mapSwitch}>
-                        <Segmented
-                            size="small"
-                            value={mapLocation}
-                            onChange={(val) => setMapLocation(val)}
-                            options={[
-                                { label: t.mapHCM, value: 'hcm' },
-                                { label: t.mapHN, value: 'hanoi' },
-                            ]}
-                        />
+                    <div className={styles.mapSectionTop}>
+                        <div className={styles.mapSwitch}>
+                            <Segmented
+                                size="middle"
+                                value={mapLocation}
+                                onChange={(val) => setMapLocation(val)}
+                                options={[
+                                    { label: t.mapHCM, value: 'hcm' },
+                                    { label: t.mapHN, value: 'hanoi' },
+                                ]}
+                            />
+                        </div>
                     </div>
 
-                    <Map4DView key={mapLocation} location={mapLocation} />
+                    <div className={styles.mapViewport}>
+                        <Map4DView key={mapLocation} location={mapLocation} />
+                    </div>
 
                     <Text type="secondary" className={styles.mapGuide}>
                         {t.mapGuide}
