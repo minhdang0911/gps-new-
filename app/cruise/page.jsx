@@ -138,6 +138,9 @@ const CruisePage = () => {
     const mapRef = useRef(null);
 
     const polylineRef = useRef(null);
+    const polylineCasingRef = useRef(null); // outer white casing (Grab/Be style)
+    const startMarkerRef = useRef(null);    // marker ??u hành trình
+    const endMarkerRef = useRef(null);      // marker cuối hành trình
     const movingMarkerRef = useRef(null);
     const highlightDotRef = useRef(null);
 
@@ -812,9 +815,21 @@ const CruisePage = () => {
         const map = mapRef.current;
         if (!map || !LMap) return;
 
+        if (polylineCasingRef.current) {
+            map.removeLayer(polylineCasingRef.current);
+            polylineCasingRef.current = null;
+        }
         if (polylineRef.current) {
             map.removeLayer(polylineRef.current);
             polylineRef.current = null;
+        }
+        if (startMarkerRef.current) {
+            map.removeLayer(startMarkerRef.current);
+            startMarkerRef.current = null;
+        }
+        if (endMarkerRef.current) {
+            map.removeLayer(endMarkerRef.current);
+            endMarkerRef.current = null;
         }
         if (movingMarkerRef.current) {
             map.removeLayer(movingMarkerRef.current);
@@ -846,13 +861,51 @@ const CruisePage = () => {
         }
         if (!latlngs.length) return;
 
-        polylineRef.current = LMap.polyline(latlngs, {
-            color: '#1677ff',
-            weight: 4,
-            opacity: 0.8,
+        // ✅ Grab/Be style: 2-layer casing polyline
+        // Layer 1: outer white casing (border) — dày hơn, trắng/xám nhạt
+        polylineCasingRef.current = LMap.polyline(latlngs, {
+            color: '#ffffff',
+            weight: 9,
+            opacity: 0.9,
             lineCap: 'round',
             lineJoin: 'round',
             interactive: false,
+            smoothFactor: 1.5,
+        }).addTo(map);
+
+        // Layer 2: inner dark line — đen đậm như Grab/Be
+        polylineRef.current = LMap.polyline(latlngs, {
+            color: '#1a1a2e',
+            weight: 5,
+            opacity: 1,
+            lineCap: 'round',
+            lineJoin: 'round',
+            interactive: false,
+            smoothFactor: 1.5,
+        }).addTo(map);
+
+        // ✅ Marker điểm bắt đầu (xanh lá — START)
+        const startLL = latlngs[0];
+        startMarkerRef.current = LMap.circleMarker(startLL, {
+            radius: 9,
+            weight: 3,
+            color: '#ffffff',
+            fillColor: '#16a34a',
+            fillOpacity: 1,
+            interactive: false,
+            pane: 'markerPane',
+        }).addTo(map);
+
+        // ✅ Marker điểm cuối (cam/đỏ — END)
+        const endLL = latlngs[latlngs.length - 1];
+        endMarkerRef.current = LMap.circleMarker(endLL, {
+            radius: 9,
+            weight: 3,
+            color: '#ffffff',
+            fillColor: '#ea580c',
+            fillOpacity: 1,
+            interactive: false,
+            pane: 'markerPane',
         }).addTo(map);
 
         const firstPoint = mapRouteData[firstRenderIdx];

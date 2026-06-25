@@ -55,6 +55,7 @@ const StatusBar = () => {
     else if (pathname.includes('/manage')) currentTitle = t.manage;
     else if (pathname.includes('/support')) currentTitle = t.support;
     else if (pathname.includes('/maintenance')) currentTitle = t.maintain;
+    else if (pathname.includes('/overview')) currentTitle = t.overview;
 
     // ----- CLOCK -----
     useEffect(() => {

@@ -14,6 +14,7 @@ import baocao from '../../assets/baocao.webp';
 import quanly from '../../assets/quanly.webp';
 import hotro from '../../assets/hotro.png';
 import logo from '../../assets/logo-iky.webp';
+import tongquan from '../../assets/tongquan.png';
 
 import flagVi from '../../assets/flag-vi.webp';
 import flagEn from '../../assets/flag-en.webp';
@@ -24,11 +25,11 @@ import { logoutApi } from '../../lib/api/auth';
 const navItems = [
     { key: 'monitor', labelVi: 'Giám Sát', labelEn: 'Monitor', img: giamsat, path: '/' },
     { key: 'route', labelVi: 'Hành Trình', labelEn: 'Cruise', img: hanhtrinh, path: '/cruise' },
+    { key: 'overview', labelVi: 'Tổng Quan', labelEn: 'Overview', img: tongquan, path: '/overview' },
     { key: 'report', labelVi: 'Báo cáo', labelEn: 'Report', img: baocao, path: '/report' },
     { key: 'manage', labelVi: 'Quản Lý', labelEn: 'Manage', img: quanly, path: '/manage' },
     { key: 'support', labelVi: 'Hỗ Trợ', labelEn: 'Support', img: hotro, path: '/support' },
 ];
-
 const Navbar = () => {
     const router = useRouter();
     const pathname = usePathname() || '/';

@@ -1,0 +1,149 @@
+.province-label span {
+    font-size: 11px;
+    color: #666;
+    font-weight: 500;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+/* ===== Province Label ===== */
+.vn-label {
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid #dbeafe;
+    border-radius: 4px;
+    padding: 2px 5px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #4b5563;
+    white-space: nowrap;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+    pointer-events: none;
+}
+
+/* bỏ nền mặc định leaflet */
+.vn-label.leaflet-tooltip {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+/* ===== Province name label inside map ===== */
+.vn-prov-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: #64748b;
+    text-align: center;
+    white-space: nowrap;
+    pointer-events: none;
+    text-shadow: 0 0 3px #fff, 0 0 3px #fff;
+}
+
+/* ===== Cluster nhỏ gọn ===== */
+.marker-cluster-small,
+.marker-cluster-medium,
+.marker-cluster-large {
+    background: transparent;
+}
+
+.marker-cluster div {
+    width: 36px !important;
+    height: 36px !important;
+    margin-left: 2px !important;
+    margin-top: 2px !important;
+    border-radius: 50%;
+    background: #2563eb;
+    border: 3px solid rgba(255, 255, 255, 0.9);
+    color: white;
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 10px rgba(37, 99, 235, 0.4);
+}
+
+.marker-cluster span {
+    line-height: normal !important;
+}
+
+/* ===== Leaflet Map ===== */
+.leaflet-container {
+    /* Màu nền bản đồ sạch — không có tile layer */
+    background: #f0f6ff !important;
+    cursor: grab;
+}
+
+/* Cursor khi đang kéo map */
+.leaflet-grab,
+.leaflet-container.leaflet-grab {
+    cursor: grab;
+}
+
+.leaflet-drag-target,
+.leaflet-container.leaflet-drag-target {
+    cursor: grabbing !important;
+}
+
+.leaflet-crosshair,
+.leaflet-container.leaflet-crosshair {
+    cursor: crosshair;
+}
+
+/* Không để GeoJSON polygon override cursor */
+.leaflet-interactive {
+    cursor: pointer;
+}
+
+/* ✅ Fix ô vuông đen: Ngăn browser tạo selection box khi drag trên map */
+.leaflet-container,
+.leaflet-container *,
+.leaflet-container svg,
+.leaflet-container path {
+    -webkit-user-select: none !important;
+    -moz-user-select: none !important;
+    -ms-user-select: none !important;
+    user-select: none !important;
+}
+
+/* Đảm bảo không có outline khi focus */
+.leaflet-container:focus,
+.leaflet-container *:focus {
+    outline: none !important;
+}
+
+/* ===== Device popup — cho phép copy text ===== */
+/* Leaflet set user-select:none trên toàn container */
+/* Cần !important để override */
+.ov-device-popup,
+.ov-device-popup * {
+    -webkit-user-select: text !important;
+    -moz-user-select: text !important;
+    -ms-user-select: text !important;
+    user-select: text !important;
+    cursor: text;
+}
+/* Nhưng button đóng vẫn là pointer */
+.ov-device-popup button {
+    cursor: pointer !important;
+}
+
+/* ===== Tile layer fade transition ===== */
+.leaflet-tile-container {
+    transition: opacity 0.4s ease;
+}
+
+/* ===== District tooltip đẹp hơn ===== */
+.vn-district-tip {
+    background: rgba(15, 23, 42, 0.88) !important;
+    border: 1px solid rgba(109, 40, 217, 0.5) !important;
+    border-radius: 6px !important;
+    color: #e2e8f0 !important;
+    font-size: 12px !important;
+    font-family: system-ui, sans-serif !important;
+    padding: 5px 10px !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3) !important;
+    backdrop-filter: blur(6px) !important;
+}
+.vn-district-tip::before {
+    border-top-color: rgba(109, 40, 217, 0.5) !important;
+}

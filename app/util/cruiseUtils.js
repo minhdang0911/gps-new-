@@ -72,52 +72,199 @@ export const normalizeAngle = (a) => ((a % 360) + 360) % 360;
 // ===============================
 // 🧠 Map downsample
 // ===============================
+
+/**
+ * Lọc noise điểm đứng yên (GPS drift starburst):
+ * Gom các điểm liên tiếp có khoảng cách < STILL_THRESHOLD_M thành 1 điểm đại diện.
+ * Điều này loại bỏ starburst pattern khi xe đậu/tắt máy.
+ *
+ * @param {Array} points - mảng GPS points [{lat, lon, ...}]
+ * @param {number} stillThresholdM - ngưỡng "coi là đứng yên" (mét), default 15m
+ * @returns {{ filtered: Array, rawIndices: Array<number> }}
+ */
+export const filterStationaryNoise = (points, stillThresholdM = 15) => {
+    if (!points || points.length === 0) return { filtered: [], rawIndices: [] };
+    const isValid = (p) => p && typeof p.lat === 'number' && typeof p.lon === 'number';
+
+    const filtered = [];
+    const rawIndices = [];
+
+    let i = 0;
+    while (i < points.length) {
+        const p = points[i];
+        if (!isValid(p)) { i++; continue; }
+
+        // Điểm p có tốc độ = 0 không? (acc=1 hoặc spd=0)
+        const pMoving = (p.spd != null ? Number(p.spd) : 0) > 2
+            || (p.velocityNum != null ? Number(p.velocityNum) : 0) > 2;
+
+        if (!pMoving) {
+            // Chế độ đứng yên: gom tất cả điểm trong bán kính stillThresholdM từ p
+            // hoặc cho đến khi xe bắt đầu di chuyển
+            let j = i + 1;
+            while (j < points.length) {
+                const q = points[j];
+                if (!isValid(q)) { j++; continue; }
+
+                const qMoving = (q.spd != null ? Number(q.spd) : 0) > 2
+                    || (q.velocityNum != null ? Number(q.velocityNum) : 0) > 2;
+
+                // Nếu xe bắt đầu di chuyển → kết thúc cluster
+                if (qMoving) break;
+
+                const d = distanceMeters({ lat: p.lat, lon: p.lon }, { lat: q.lat, lon: q.lon });
+                // Khi đứng yên, dùng threshold lớn hơn (GPS drift thực tế ~50-100m)
+                if (d > stillThresholdM * 3) break;
+                j++;
+            }
+
+            if (j - i > 1) {
+                // Cluster đứng yên: chỉ giữ điểm đầu
+                filtered.push(points[i]);
+                rawIndices.push(i);
+                i = j;
+            } else {
+                filtered.push(p);
+                rawIndices.push(i);
+                i++;
+            }
+        } else {
+            // Xe đang di chuyển: luôn giữ điểm
+            filtered.push(p);
+            rawIndices.push(i);
+            i++;
+        }
+    }
+
+    return { filtered, rawIndices };
+};
+
+/**
+ * Loại bỏ GPS outlier dạng "nhảy xa rồi về" (GPS multipath):
+ * Pattern: A(ở gần) → B(ở xa, speed≈0) → C(ở gần) → B là outlier.
+ * Đây là nguyên nhân chính tạo đường đi xuyên sông/tường.
+ *
+ * @param {Array} pts   - mảng GPS points đã lọc bước trước
+ * @param {number} maxJumpM - khoảng cách tối đa "bình thường" (mét)
+ */
+const removeGpsJumps = (pts, maxJumpM = 60) => {
+    if (!pts || pts.length < 2) return pts;
+    const isValid = (p) => p && typeof p.lat === 'number' && typeof p.lon === 'number';
+
+    const out = [pts[0]];
+
+    for (let i = 1; i < pts.length - 1; i++) {
+        const prev = out[out.length - 1];
+        const curr = pts[i];
+        const next = pts[i + 1];
+
+        if (!isValid(curr)) continue;
+        if (!isValid(prev) || !isValid(next)) { out.push(curr); continue; }
+
+        const currSpd = Number(curr.spd ?? curr.velocityNum ?? 0);
+
+        // Chỉ filter khi xe đứng yên hoặc chậm
+        if (currSpd > 5) { out.push(curr); continue; }
+
+        const dPrevCurr = distanceMeters(prev, curr);
+        const dPrevNext = distanceMeters(prev, next);
+
+        // Pattern outlier: nhảy xa rồi next về gần hơn
+        if (dPrevCurr > maxJumpM && dPrevNext < dPrevCurr * 0.85) {
+            continue;
+        }
+
+        out.push(curr);
+    }
+
+    // ✅ Kiểm tra điểm CUỐI: nếu nó cũng là outlier thì bỏ qua
+    const lastPoint = pts[pts.length - 1];
+    if (isValid(lastPoint)) {
+        const prevKept = out[out.length - 1];
+        const lastSpd = Number(lastPoint.spd ?? lastPoint.velocityNum ?? 0);
+        if (!isValid(prevKept) || lastSpd > 5) {
+            // Xe đang chạy hoặc không có điểm trước → giữ
+            out.push(lastPoint);
+        } else {
+            const dLast = distanceMeters(prevKept, lastPoint);
+            // Nếu điểm cuối xa quá và xe đứng yên → đây là outlier
+            if (dLast <= maxJumpM) {
+                out.push(lastPoint);
+            }
+            // Nếu dLast > maxJumpM và speed=0: bỏ qua (outlier cuối)
+        }
+    }
+
+    return out;
+};
+
 export const buildMapSample = (rawPoints, maxPoints = VISUAL_MAX_POINTS_ON_MAP, minDistM = MAP_MIN_SAMPLE_DIST_M) => {
     if (!rawPoints || rawPoints.length === 0) return { indices: [], points: [] };
     const isValid = (p) => p && typeof p.lat === 'number' && typeof p.lon === 'number';
 
-    let first = -1;
-    for (let i = 0; i < rawPoints.length; i++) {
-        if (isValid(rawPoints[i])) {
-            first = i;
-            break;
-        }
-    }
-    if (first === -1) return { indices: [], points: [] };
-
-    let last = first;
-    for (let i = rawPoints.length - 1; i >= 0; i--) {
-        if (isValid(rawPoints[i])) {
-            last = i;
-            break;
-        }
+    // Step 0a: Lo\u1ea1i GPS outlier "nh\u1ea3y xa r\u1ed3i v\u1ec1" (t\u1ea1o \u0111\u01b0\u1eddng xuy\u00ean s\u00f4ng)
+    // Ch\u1ea1y 3 pass \u0111\u1ec3 lo\u1ea1i chu\u1ed7i outlier li\u00ean ti\u1ebfp
+    let stage = rawPoints.slice();
+    for (let pass = 0; pass < 3; pass++) {
+        const before = stage.length;
+        stage = removeGpsJumps(stage, 45);
+        if (stage.length === before) break;
     }
 
-    const kept = [first];
-    let lastKept = rawPoints[first];
+    // Step 0b: L\u1ecdc starburst \u0111\u1ee9ng y\u00ean (GPS drift cluster)
+    const { filtered: noisyArr } = filterStationaryNoise(stage, 30);
 
-    for (let i = first + 1; i <= last; i++) {
-        const p = rawPoints[i];
+    // Step 1: Down-sample theo kho\u1ea3ng c\u00e1ch minDistM
+    const downsampled = [];
+    let lastKept = null;
+    for (const p of noisyArr) {
         if (!isValid(p)) continue;
-        const d = distanceMeters({ lat: lastKept.lat, lon: lastKept.lon }, { lat: p.lat, lon: p.lon });
+        if (!lastKept) {
+            downsampled.push(p);
+            lastKept = p;
+            continue;
+        }
+        const d = distanceMeters(lastKept, p);
         if (d >= minDistM) {
-            kept.push(i);
+            downsampled.push(p);
             lastKept = p;
         }
     }
-
-    if (kept[kept.length - 1] !== last) kept.push(last);
-
-    if (kept.length > maxPoints) {
-        const step = Math.ceil(kept.length / maxPoints);
-        const down = [];
-        for (let i = 0; i < kept.length; i += step) down.push(kept[i]);
-        if (down[down.length - 1] !== kept[kept.length - 1]) down.push(kept[kept.length - 1]);
-        return { indices: down, points: down.map((idx) => rawPoints[idx]) };
+    // Luôn giữ điểm cuối hợp lệ (chỉ nếu chưa được giữ - không force nếu là outlier)
+    const lastValidPt = [...noisyArr].reverse().find(isValid);
+    if (lastValidPt && downsampled.length > 0 && downsampled[downsampled.length - 1] !== lastValidPt) {
+        // Chỉ thêm nếu gần điểm trước (không phải outlier sót)
+        const prevPt = downsampled[downsampled.length - 1];
+        const dEnd = distanceMeters(prevPt, lastValidPt);
+        if (dEnd < 100) {
+            downsampled.push(lastValidPt);
+        }
     }
 
-    return { indices: kept, points: kept.map((idx) => rawPoints[idx]) };
+    // Step 2: N\u1ebfu v\u1eabn qu\u00e1 nhi\u1ec1u \u0111i\u1ec3m \u2192 stride
+    let finalPts = downsampled;
+    if (finalPts.length > maxPoints) {
+        const step = Math.ceil(finalPts.length / maxPoints);
+        const strided = [];
+        for (let i = 0; i < finalPts.length; i += step) strided.push(finalPts[i]);
+        const last = finalPts[finalPts.length - 1];
+        if (strided[strided.length - 1] !== last) strided.push(last);
+        finalPts = strided;
+    }
+
+    // Step 3: Map v\u1ec1 rawPoints indices b\u1eb1ng object reference
+    const rawIndexMap = new Map();
+    rawPoints.forEach((p, i) => rawIndexMap.set(p, i));
+
+    const indices = finalPts
+        .map((p) => rawIndexMap.get(p))
+        .filter((idx) => idx !== undefined);
+
+    const points = indices.map((i) => rawPoints[i]);
+
+    return { indices, points };
 };
+
 
 export const nearestRenderIndex = (renderToRaw, rawIdx) => {
     if (!renderToRaw || renderToRaw.length === 0) return -1;
