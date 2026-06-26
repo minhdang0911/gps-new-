@@ -37,6 +37,8 @@ import ReportPanel from '../../components/chart/ReportPanel';
 // ✅ NEW: adapter/config for THIS report
 import { buildLastCruiseReportConfig } from '../../features/lastCruiseReport/reportConfig';
 
+import ReportEmptyState from '../../components/report/ReportEmptyState';
+
 const { useBreakpoint } = Grid;
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -56,6 +58,7 @@ const LastCruiseReportPage = () => {
 
     const [viewMode, setViewMode] = useState('table');
     const [colModalOpen, setColModalOpen] = useState(false);
+    const [hasSearched, setHasSearched] = useState(false);
 
     // ✅ reset key for time preset picker (force remount to reset preset UI)
     const [timePresetResetKey, setTimePresetResetKey] = useState(0);
@@ -127,7 +130,7 @@ const LastCruiseReportPage = () => {
         return m;
     }, [allColsForModal]);
 
-    const customLocale = { emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu ' };
+    const customLocale = { emptyText: <ReportEmptyState hasSearched={hasSearched} isEn={isEn} /> };
 
     const rowSelection = useMemo(
         () => ({
@@ -170,6 +173,7 @@ const LastCruiseReportPage = () => {
                             form={form}
                             layout="vertical"
                             onFinish={() => {
+                                setHasSearched(true);
                                 onSearch();
                                 clearSelection();
                             }}

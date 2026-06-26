@@ -1,21 +1,10 @@
-'use client';
+import { redirect } from 'next/navigation';
 
-import { useEffect } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+// Server component — redirect ngay tại server, không cần JS client
+export default async function ReportHomePage({ searchParams }) {
+    const params = await searchParams;
+    const isEn = params?.lang === 'en';
 
-export default function ReportHomePage() {
-    const router = useRouter();
-    const pathname = usePathname() || '';
-
-    useEffect(() => {
-        // ['/','report','en'] hoặc ['/','report']...
-        const segments = pathname.split('/').filter(Boolean);
-        const last = segments[segments.length - 1];
-        const isEn = last === 'en';
-        const suffix = isEn ? '/en' : '';
-
-        router.replace(`/report/usage-session${suffix}`);
-    }, [pathname, router]);
-
-    return null;
+    redirect(isEn ? '/report/usage-session/en' : '/report/usage-session');
 }
+

@@ -26,8 +26,9 @@ const navItems = [
     { key: 'monitor', labelVi: 'Giám Sát', labelEn: 'Monitor', img: giamsat, path: '/' },
     { key: 'route', labelVi: 'Hành Trình', labelEn: 'Cruise', img: hanhtrinh, path: '/cruise' },
     { key: 'overview', labelVi: 'Tổng Quan', labelEn: 'Overview', img: tongquan, path: '/overview' },
-    { key: 'report', labelVi: 'Báo cáo', labelEn: 'Report', img: baocao, path: '/report' },
-    { key: 'manage', labelVi: 'Quản Lý', labelEn: 'Manage', img: quanly, path: '/manage' },
+    // href ≠ path: path dùng detect active (/report/*), href navigate thẳng đến trang đầu tiên
+    { key: 'report', labelVi: 'Báo cáo', labelEn: 'Report', img: baocao, path: '/report', href: '/report/usage-session' },
+    { key: 'manage', labelVi: 'Quản Lý', labelEn: 'Manage', img: quanly, path: '/manage', href: '/manage/devices' },
     { key: 'support', labelVi: 'Hỗ Trợ', labelEn: 'Support', img: hotro, path: '/support' },
 ];
 const Navbar = () => {
@@ -99,8 +100,11 @@ const Navbar = () => {
     const role = typeof window !== 'undefined' ? localStorage.getItem('role') : '';
 
     const handleClickItem = (item) => {
-        let targetPath = item.path;
-        if (isEn) targetPath = item.path === '/' ? '/en' : `${item.path}/en`;
+        // Dùng href (nếu có) thay vì path để navigate thẳng đến trang đầu tiên
+        // path vẫn dùng để detect active state (startsWith)
+        const basePath = item.href ?? item.path;
+        let targetPath = basePath;
+        if (isEn) targetPath = basePath === '/' ? '/en' : `${basePath}/en`;
         router.push(targetPath);
     };
 

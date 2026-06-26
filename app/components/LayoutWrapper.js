@@ -5,7 +5,6 @@ import Navbar from './Navbar/Navbar';
 import StatusBar from './StatusBar/StatusBar';
 import TokenRefresher from './TokenRefresher';
 import AppFooter from './Footer/AppFooter';
-import MqttConnector from './MqttConnector';
 
 export default function LayoutWrapper({ children }) {
     const pathname = usePathname();
@@ -20,7 +19,7 @@ export default function LayoutWrapper({ children }) {
     return (
         <>
             <TokenRefresher />
-            <MqttConnector />
+            {/* MqttConnector được mount trong MonitorPage với IMEI cụ thể */}
             <Navbar activeKey="monitor" />
             <StatusBar />
 

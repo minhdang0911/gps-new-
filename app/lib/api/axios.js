@@ -4,6 +4,7 @@ import { refreshTokenApi } from './auth';
 const api = axios.create({
     baseURL: process.env.NEXT_PUBLIC_API_URL,
     withCredentials: true,
+    timeout: 15000, // 15s timeout — tránh request treo vô thời hạn
 });
 
 /* ================= TOKEN UTILS ================= */
@@ -111,6 +112,26 @@ api.interceptors.response.use(
             } finally {
                 isRefreshing = false;
             }
+        }
+
+        // Xử lý lỗi timeout
+        if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+            console.error('⏱️ Request timeout:', originalRequest?.url);
+            return Promise.reject({
+                ...error,
+                isTimeout: true,
+                userMessage: 'Yêu cầu quá thời gian — kiểm tra kết nối mạng',
+            });
+        }
+
+        // Xử lý lỗi không có kết nối mạng
+        if (!error.response) {
+            console.error('📵 Network error (no response):', originalRequest?.url);
+            return Promise.reject({
+                ...error,
+                isNetworkError: true,
+                userMessage: 'Không có kết nối mạng',
+            });
         }
 
         return Promise.reject(error);

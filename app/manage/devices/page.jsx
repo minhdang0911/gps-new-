@@ -3,7 +3,7 @@
    ========================= */
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Form, message, Modal, DatePicker, Input } from 'antd';
 import dayjs from 'dayjs';
 import { usePathname } from 'next/navigation';
@@ -105,7 +105,24 @@ export default function ManageDevicesPage() {
 
     const t = isEn ? locales.en.manageDevices : locales.vi.manageDevices;
 
-    const [filters, setFilters] = useState({ phone_number: '', license_plate: '', imei: '', driver: '' });
+    const FILTER_SESSION_KEY = 'iky_manage_devices_filters';
+
+    const [filters, setFilters] = useState(() => {
+        // Khôi phục filter từ sessionStorage (tồn tại trong tab hiện tại)
+        if (typeof window === 'undefined') return { phone_number: '', license_plate: '', imei: '', driver: '' };
+        try {
+            const saved = sessionStorage.getItem(FILTER_SESSION_KEY);
+            return saved ? JSON.parse(saved) : { phone_number: '', license_plate: '', imei: '', driver: '' };
+        } catch {
+            return { phone_number: '', license_plate: '', imei: '', driver: '' };
+        }
+    });
+
+    // Lưu filter mỗi khi thay đổi
+    useEffect(() => {
+        try { sessionStorage.setItem(FILTER_SESSION_KEY, JSON.stringify(filters)); } catch {}
+    }, [filters]);
+
     const [viewMode, setViewMode] = useState('list');
     const [selectedDevice, setSelectedDevice] = useState(null);
 

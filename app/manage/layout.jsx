@@ -12,17 +12,19 @@ export default function ManageLayout({ children }) {
     const router = useRouter();
     const pathname = usePathname() || '';
 
-    // ==== quyền (demo) ====
-    const allowed = useMemo(() => {
-        if (typeof window === 'undefined') return null;
-        const role = localStorage.getItem('role');
-        if (!role) return null;
-        return role !== 'reporter';
-    }, []);
+    // ==== quyền: dùng useEffect để tránh SSR null stuck ====
+    const [allowed, setAllowed] = useState(null); // null = đang kiểm tra
 
     useEffect(() => {
-        if (allowed === false) router.replace('/');
-    }, [allowed, router]);
+        if (typeof window === 'undefined') return;
+        const role = localStorage.getItem('role');
+        // Không có role hoặc không đủ quyền → redirect về /
+        if (!role || role === 'reporter') {
+            router.replace('/');
+            return;
+        }
+        setAllowed(true);
+    }, [router]);
 
     // ==== detect lang ====
     const lang = useMemo(() => {
@@ -145,17 +147,14 @@ export default function ManageLayout({ children }) {
                 </div>
 
                 <Content style={{ padding: 20, minWidth: 0 }}>
-                    {allowed === null ? (
-                        <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
-                            <Spin />
-                        </div>
-                    ) : allowed ? (
-                        children
-                    ) : (
-                        <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
-                            <Spin />
-                        </div>
-                    )}
+                {allowed === null ? (
+                    // Đang kiểm tra quyền — hiện loading ngắn
+                    <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
+                        <Spin tip={isEn ? 'Checking permissions...' : 'Đang kiểm tra quyền...'} />
+                    </div>
+                ) : (
+                    children
+                )}
                 </Content>
             </Layout>
 

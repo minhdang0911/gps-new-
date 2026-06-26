@@ -31,6 +31,9 @@ import ReportSortSelect from '../../components/report/ReportSortSelect';
 import ReportCompareModal from '../../components/report/ReportCompareModal';
 import { buildUsageSessionInsight } from '../../features/usageSessionReport/compare/usageSessionCompareInsight';
 
+// empty state
+import ReportEmptyState from '../../components/report/ReportEmptyState';
+
 // extracted
 import { LOCKED_KEYS, STORAGE_KEY } from '../../features/usageSessionReport/constants';
 import { useLangFromPath } from '../../features/usageSessionReport/locale';
@@ -133,6 +136,8 @@ export default function UsageSessionReportPage() {
 
     // preset
     const [presetKey, setPresetKey] = useState('none');
+    const [hasSearched, setHasSearched] = useState(false);
+
     const applyPreset = (key) => {
         setPresetKey(key);
         const range = buildPresetRange(key);
@@ -141,6 +146,7 @@ export default function UsageSessionReportPage() {
     };
 
     const onFinish = () => {
+        setHasSearched(true);
         setPagination((p) => ({ ...p, current: 1 }));
         if (needFullData) fetchAll();
         else fetchPaged(1, pagination.pageSize);
@@ -470,7 +476,9 @@ export default function UsageSessionReportPage() {
                                 }}
                                 dataSource={tableData}
                                 loading={loading}
-                                locale={{ emptyText: isEn ? 'No data' : 'Không tìm thấy dữ liệu' }}
+                                locale={{
+                                    emptyText: <ReportEmptyState hasSearched={hasSearched} isEn={isEn} />,
+                                }}
                                 rowSelection={rowSelection}
                                 pagination={{
                                     current: pagination.current,

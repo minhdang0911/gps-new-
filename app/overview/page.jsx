@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Skeleton } from 'antd';
 
 import VietnamMapDrillDown from './VietnamMapDrillDown';
+import { exportOverviewExcel } from './useOverviewExcel';
 import './map.css';
 
 import { getDevices } from '../lib/api/devices';
@@ -67,11 +68,117 @@ const IcRefresh = ({ spinning }) => (
         <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
     </svg>
 );
+const IcExcel = () => (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/>
+    </svg>
+);
+const IcChevron = () => (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+        <polyline points="6 9 12 15 18 9"/>
+    </svg>
+);
+
+// ── Excel Dropdown ──────────────────────────────────────────────
+const ExcelDropdown = ({ onExport, disabled }) => {
+    const [open, setOpen] = useState(false);
+    const ref = useRef(null);
+
+    useEffect(() => {
+        const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    const options = [
+        { mode: 'all',     label: 'Xuất toàn bộ',         color: '#1677ff' },
+        { mode: 'online',  label: 'Xuất thiết bị Online',  color: '#16a34a' },
+        { mode: 'offline', label: 'Xuất thiết bị Offline', color: '#dc2626' },
+    ];
+
+    return (
+        <div ref={ref} style={{ position: 'relative' }}>
+            <button
+                className="ov-refresh-btn"
+                onClick={() => setOpen((p) => !p)}
+                disabled={disabled}
+                style={{ color: '#16a34a', borderColor: '#bbf7d0', gap: 6 }}
+            >
+                <IcExcel />
+                Xuất Excel
+                <IcChevron />
+            </button>
+            {open && (
+                <div style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 6px)',
+                    right: 0,
+                    background: '#fff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 10,
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+                    overflow: 'hidden',
+                    zIndex: 9999,
+                    minWidth: 210,
+                }}>
+                    {options.map((opt) => (
+                        <button
+                            key={opt.mode}
+                            onClick={() => { onExport(opt.mode); setOpen(false); }}
+                            style={{
+                                width: '100%',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 10,
+                                padding: '10px 16px',
+                                background: 'none',
+                                border: 'none',
+                                cursor: 'pointer',
+                                fontSize: 13,
+                                color: '#334155',
+                                fontWeight: 500,
+                                textAlign: 'left',
+                                transition: 'background .12s',
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                        >
+                            <span style={{
+                                width: 8, height: 8, borderRadius: '50%',
+                                background: opt.color, flexShrink: 0,
+                                boxShadow: `0 0 0 2px ${opt.color}33`,
+                            }} />
+                            {opt.label}
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
 
 // ── Stat Card ────────────────────────────────────────────────
-const StatCard = ({ icon, label, value, sub, accentColor, loading: cardLoading }) => (
-    <div className="ov-stat-card">
+const StatCard = ({ icon, label, value, sub, accentColor, loading: cardLoading, onClick, active }) => (
+    <div
+        className="ov-stat-card"
+        onClick={onClick}
+        style={{
+            cursor: onClick ? 'pointer' : 'default',
+            outline: active ? `2px solid ${accentColor}` : '2px solid transparent',
+            outlineOffset: -2,
+        }}
+    >
         <div className="ov-stat-accent" style={{ background: accentColor }} />
+        {active && (
+            <div style={{
+                position: 'absolute', inset: 0,
+                background: accentColor + '0D',
+                borderRadius: 14,
+                pointerEvents: 'none',
+            }} />
+        )}
         <div className="ov-stat-body">
             <div className="ov-stat-label">{label}</div>
             {cardLoading ? (
@@ -86,17 +193,26 @@ const StatCard = ({ icon, label, value, sub, accentColor, loading: cardLoading }
         <div className="ov-stat-icon" style={{ color: accentColor, background: accentColor + '18' }}>
             {icon}
         </div>
+        {onClick && !cardLoading && (
+            <div style={{
+                position: 'absolute', bottom: 8, right: 12,
+                fontSize: 10, color: accentColor + 'bb', fontWeight: 500,
+            }}>
+                {active ? '✕ Bỏ lọc' : 'Xem trên bản đồ →'}
+            </div>
+        )}
     </div>
 );
 
 // ── Main page ─────────────────────────────────────────────────
 const OverviewPage = () => {
-    const [devices, setDevices] = useState([]);
+    const [devices, setDevices]           = useState([]);
     const [cruiseByImei, setCruiseByImei] = useState({});
-    const [loading, setLoading] = useState(true);
-    const [isEn, setIsEn] = useState(false);
-    const [lastUpdated, setLastUpdated] = useState(null);
-    const [refreshing, setRefreshing] = useState(false);
+    const [loading, setLoading]           = useState(true);
+    const [isEn, setIsEn]                 = useState(false);
+    const [lastUpdated, setLastUpdated]   = useState(null);
+    const [refreshing, setRefreshing]     = useState(false);
+    const [mapFilter, setMapFilter]       = useState('all'); // 'all' | 'online' | 'offline'
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -135,7 +251,20 @@ const OverviewPage = () => {
         }
     };
 
+    const fetchAllRef = useRef(fetchAll);
+    useEffect(() => { fetchAllRef.current = fetchAll; });
+
+    // Fetch lần đầu khi mount
     useEffect(() => { fetchAll(); }, []);
+
+    // Auto-refresh mỗi 5 phút (silent — không hiện loading toàn trang)
+    const AUTO_REFRESH_MS = 5 * 60 * 1000;
+    useEffect(() => {
+        const id = setInterval(() => {
+            fetchAllRef.current(true);
+        }, AUTO_REFRESH_MS);
+        return () => clearInterval(id);
+    }, []);
 
     const totalDevices = devices.length;
     const onlineDevices = useMemo(
@@ -143,7 +272,18 @@ const OverviewPage = () => {
         [devices, cruiseByImei],
     );
     const offlineDevices = totalDevices - onlineDevices;
-    const expiringSoon = useMemo(() => devices.filter(isExpiringSoon).length, [devices]);
+    const expiringSoon   = useMemo(() => devices.filter(isExpiringSoon).length, [devices]);
+
+    // Devices shown on map based on active filter
+    const filteredDevices = useMemo(() => {
+        if (mapFilter === 'online')  return devices.filter((d) => isOnline(cruiseByImei[d.imei]));
+        if (mapFilter === 'offline') return devices.filter((d) => !isOnline(cruiseByImei[d.imei]));
+        return devices;
+    }, [devices, cruiseByImei, mapFilter]);
+
+    const toggleFilter = (mode) => setMapFilter((cur) => cur === mode ? 'all' : mode);
+
+    const handleExport = (mode) => exportOverviewExcel({ devices, cruiseByImei, mode });
 
     const t = (vi, en) => (isEn ? en : vi);
 
@@ -231,10 +371,17 @@ const OverviewPage = () => {
                 @media (max-width: 560px)  { .ov-stats-row { grid-template-columns: 1fr; } }
 
                 /* ── Stat Card ──────────────── */
+                /* ── Header actions ─────────── */
+                .ov-header-actions {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                }
+
                 .ov-stat-card {
                     background: #fff;
                     border-radius: 14px;
-                    padding: 18px 20px 16px;
+                    padding: 18px 20px 28px;
                     display: flex;
                     align-items: center;
                     gap: 16px;
@@ -242,8 +389,7 @@ const OverviewPage = () => {
                     border: 1px solid rgba(0,0,0,0.045);
                     position: relative;
                     overflow: hidden;
-                    transition: transform .18s, box-shadow .18s;
-                    cursor: default;
+                    transition: transform .18s, box-shadow .18s, outline .15s;
                 }
                 .ov-stat-card:hover {
                     transform: translateY(-2px);
@@ -341,14 +487,20 @@ const OverviewPage = () => {
                         </div>
                     </div>
                 </div>
-                <button
-                    className="ov-refresh-btn"
-                    onClick={() => fetchAll(true)}
-                    disabled={refreshing || loading}
-                >
-                    <IcRefresh spinning={refreshing} />
-                    {t('Làm mới', 'Refresh')}
-                </button>
+                <div className="ov-header-actions">
+                    <ExcelDropdown
+                        onExport={handleExport}
+                        disabled={loading || devices.length === 0}
+                    />
+                    <button
+                        className="ov-refresh-btn"
+                        onClick={() => fetchAll(true)}
+                        disabled={refreshing || loading}
+                    >
+                        <IcRefresh spinning={refreshing} />
+                        {t('Làm mới', 'Refresh')}
+                    </button>
+                </div>
             </div>
 
             {/* Stat cards */}
@@ -359,6 +511,8 @@ const OverviewPage = () => {
                     value={loading ? '—' : totalDevices.toLocaleString()}
                     accentColor="#1677ff"
                     loading={loading}
+                    onClick={() => setMapFilter('all')}
+                    active={mapFilter === 'all'}
                 />
                 <StatCard
                     icon={<IcWifiOn />}
@@ -367,6 +521,8 @@ const OverviewPage = () => {
                     sub={t('Cập nhật trong 24h', 'Updated < 24h')}
                     accentColor="#16a34a"
                     loading={loading}
+                    onClick={() => setMapFilter((c) => c === 'online' ? 'all' : 'online')}
+                    active={mapFilter === 'online'}
                 />
                 <StatCard
                     icon={<IcWifiOff />}
@@ -375,6 +531,8 @@ const OverviewPage = () => {
                     sub={t('Không cập nhật 24h', 'No update > 24h')}
                     accentColor="#dc2626"
                     loading={loading}
+                    onClick={() => setMapFilter((c) => c === 'offline' ? 'all' : 'offline')}
+                    active={mapFilter === 'offline'}
                 />
                 <StatCard
                     icon={<IcClock />}
@@ -393,8 +551,38 @@ const OverviewPage = () => {
                         <IcMap />
                     </div>
                     <span className="ov-map-title">{t('Bản đồ thiết bị', 'Device Map')}</span>
-                    {!loading && (
-                        <span className="ov-map-hint">
+
+                    {/* Active filter badge */}
+                    {mapFilter !== 'all' && !loading && (
+                        <span style={{
+                            marginLeft: 'auto',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            padding: '3px 10px',
+                            borderRadius: 20,
+                            fontSize: 12,
+                            fontWeight: 600,
+                            background: mapFilter === 'online' ? '#dcfce7' : '#fee2e2',
+                            color: mapFilter === 'online' ? '#166534' : '#991b1b',
+                            border: `1px solid ${mapFilter === 'online' ? '#86efac' : '#fca5a5'}`,
+                        }}>
+                            <span style={{
+                                width: 6, height: 6, borderRadius: '50%',
+                                background: mapFilter === 'online' ? '#16a34a' : '#dc2626',
+                            }} />
+                            Đang lọc: {mapFilter === 'online'
+                                ? `${onlineDevices} Online`
+                                : `${offlineDevices} Offline`}
+                            <button
+                                onClick={() => setMapFilter('all')}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 0 4px', fontSize: 13, color: 'inherit', fontWeight: 700, lineHeight: 1 }}
+                            >✕</button>
+                        </span>
+                    )}
+
+                    {!loading && mapFilter === 'all' && (
+                        <span className="ov-map-hint" style={{ marginLeft: 'auto' }}>
                             {t('Click cụm → quận/huyện → xe', 'Click cluster → district → device')}
                         </span>
                     )}
@@ -416,10 +604,11 @@ const OverviewPage = () => {
                     </div>
                 ) : (
                     <VietnamMapDrillDown
-                        devices={devices}
+                        devices={filteredDevices}
                         cruiseByImei={cruiseByImei}
                         loading={false}
                         height={640}
+                        forceAllDevices={mapFilter !== 'all'}
                     />
                 )}
             </div>

@@ -34,23 +34,50 @@ const { confirm } = Modal;
 /** =========================
  *  Persist SOC (pin list bên trái)
  *  ========================= */
-const SOC_BY_IMEI_KEY = 'iky_monitor_soc_by_imei_v1';
+const SOC_BY_IMEI_KEY = 'iky_monitor_soc_by_imei_v2'; // v2: có TTL
+const SOC_TTL_MS = 24 * 60 * 60 * 1000; // 24 giờ
 
+/**
+ * Cache format v2: { [imei]: { soc: number, ts: number } }
+ * - ts: timestamp khi lưu
+ * - entries > 24h sẽ bị bỏ qua khi load
+ */
 const loadSocCache = () => {
     if (typeof window === 'undefined') return {};
     try {
         const raw = localStorage.getItem(SOC_BY_IMEI_KEY);
         const obj = raw ? JSON.parse(raw) : {};
-        return obj && typeof obj === 'object' ? obj : {};
+        if (!obj || typeof obj !== 'object') return {};
+
+        const now = Date.now();
+        const result = {};
+        for (const [imei, entry] of Object.entries(obj)) {
+            // Hỗ trợ cả format cũ (number trực tiếp) và format mới ({soc, ts})
+            if (typeof entry === 'number') {
+                result[imei] = entry; // format cũ — giữ lại, không có TTL
+            } else if (entry && typeof entry === 'object' && entry.ts) {
+                if (now - entry.ts < SOC_TTL_MS) {
+                    result[imei] = entry.soc;
+                }
+                // entries quá 24h bị drop (không thêm vào result)
+            }
+        }
+        return result;
     } catch {
         return {};
     }
 };
 
-const saveSocCache = (obj) => {
+const saveSocCache = (socMap) => {
     if (typeof window === 'undefined') return;
     try {
-        localStorage.setItem(SOC_BY_IMEI_KEY, JSON.stringify(obj));
+        const now = Date.now();
+        // Lưu dạng { [imei]: { soc, ts } }
+        const stored = {};
+        for (const [imei, soc] of Object.entries(socMap)) {
+            stored[imei] = { soc, ts: now };
+        }
+        localStorage.setItem(SOC_BY_IMEI_KEY, JSON.stringify(stored));
     } catch {}
 };
 

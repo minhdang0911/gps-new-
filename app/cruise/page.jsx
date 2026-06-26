@@ -46,6 +46,7 @@ import {
     toInputDateTime,
     toApiDateTime,
 } from '../util/cruiseUtils';
+import { smoothMoveTo, easeOutCubic, easeLinear, easeOutQuart } from '../util/smoothMarker';
 import { UpOutlined } from '@ant-design/icons';
 
 const locales = { vi, en };
@@ -157,6 +158,8 @@ const CruisePage = () => {
 
     const animationFrameRef = useRef(null);
     const pendingRenderIdxRef = useRef(0);
+    // Ref riêng cho smooth animate click/slider (tách biệt playback loop)
+    const smoothMoveRafRef = useRef(null);
 
     const vlistRef = useRef(null);
     const popupRef = useRef(null);
@@ -551,9 +554,19 @@ const CruisePage = () => {
         if (rIdx >= 0) {
             const p = mapRouteData[rIdx];
             if (p?.lat != null && p?.lon != null) {
-                movingMarkerRef.current?.setLatLng([p.lat, p.lon]);
-                highlightDotRef.current?.setLatLng([p.lat, p.lon]);
-                mapRef.current?.panTo([p.lat, p.lon], { animate: true, duration: 0.25 });
+                // Smooth animate thay vì nhảy instant
+                smoothMoveTo(movingMarkerRef.current, p.lat, p.lon, {
+                    durationMs: 350,
+                    easingFn: easeOutCubic,
+                    rafRef: smoothMoveRafRef,
+                    onUpdate: (lat, lon) => {
+                        highlightDotRef.current?.setLatLng([lat, lon]);
+                    },
+                });
+                mapRef.current?.setView([p.lat, p.lon], mapRef.current?.getZoom?.() ?? 15, {
+                    animate: true,
+                    duration: 0.4,
+                });
             }
         }
 
@@ -919,6 +932,14 @@ const CruisePage = () => {
         movingMarkerRef.current = LMap.marker([firstPoint.lat, firstPoint.lon], { icon: customIcon }).addTo(map);
         movingMarkerRef.current.setZIndexOffset(15000);
 
+        // 🔑 CSS transition trên marker element — GPU-accelerated, giống Grab/Uber
+        // Browser tự smooth sub-frame giữa các lần setLatLng
+        const markerEl = movingMarkerRef.current.getElement();
+        if (markerEl) {
+            markerEl.style.transition = 'transform 80ms linear';
+            markerEl.style.willChange = 'transform';
+        }
+
         highlightDotRef.current = LMap.circleMarker([firstPoint.lat, firstPoint.lon], {
             radius: 7,
             weight: 2,
@@ -982,7 +1003,7 @@ const CruisePage = () => {
         let segIdx = Math.max(0, Math.min(mapRouteData.length - 2, activeRenderIndex));
         let lastTime = performance.now();
         let lastUi = 0;
-        let lastFollow = 0;
+        // lastFollow đã bỏ — camera lerp chạy mọi frame trong step loop
 
         const step = (now) => {
             if (!isPlayingRef.current) return;
@@ -1000,9 +1021,12 @@ const CruisePage = () => {
                     movingMarkerRef.current.setLatLng([pLast.lat, pLast.lon]);
                     highlightDotRef.current?.setLatLng([pLast.lat, pLast.lon]);
 
-                    // ✅ follow at end
+                    // Snap đến cuối lộ trình: dùng panTo 1 lần duy nhất OK
                     if (followMode && mapRef.current) {
-                        mapRef.current.panTo([pLast.lat, pLast.lon], { animate: true, duration: 0.25 });
+                        mapRef.current.setView([pLast.lat, pLast.lon], mapRef.current.getZoom(), {
+                            animate: true,
+                            duration: 0.5,
+                        });
                     }
                 }
 
@@ -1036,13 +1060,22 @@ const CruisePage = () => {
             const lat = a.lat + (b.lat - a.lat) * t01;
             const lon = a.lon + (b.lon - a.lon) * t01;
 
+            // Playback: marker đã được interpolate bởi step loop rồi
+            // Chỉ cần setLatLng trực tiếp (không dùng smoothMoveTo — tránh double animation)
             movingMarkerRef.current.setLatLng([lat, lon]);
             highlightDotRef.current?.setLatLng([lat, lon]);
 
-            // ✅ follow mode (throttle)
-            if (followMode && mapRef.current && now - lastFollow > 180) {
-                lastFollow = now;
-                mapRef.current.panTo([lat, lon], { animate: true, duration: 0.18 });
+            // 🌐 Camera smooth follow — lerp trong cùng RAF loop, không dùng panTo
+            // panTo có animation queue riêng conflict với marker → giật
+            if (followMode && mapRef.current) {
+                const center = mapRef.current.getCenter();
+                // Lerp factor 0.06: camera "kéo theo" marker mượt như Grab
+                const LERP = 0.06;
+                const cLat = center.lat + (lat - center.lat) * LERP;
+                const cLon = center.lng + (lon - center.lng) * LERP;
+                mapRef.current.setView([cLat, cLon], mapRef.current.getZoom(), {
+                    animate: false, // tự mhình control, không dùng Leaflet animate
+                });
             }
 
             const bearing = getBearing(a.lat, a.lon, b.lat, b.lon);
@@ -1087,8 +1120,15 @@ const CruisePage = () => {
 
         const p = mapRouteData[renderIdx];
         if (p?.lat != null && p?.lon != null) {
-            movingMarkerRef.current?.setLatLng([p.lat, p.lon]);
-            highlightDotRef.current?.setLatLng([p.lat, p.lon]);
+            // Drag slider: animate nhẹ nhàng, duration ngắn để responsive
+            smoothMoveTo(movingMarkerRef.current, p.lat, p.lon, {
+                durationMs: 150,
+                easingFn: easeLinear,
+                rafRef: smoothMoveRafRef,
+                onUpdate: (lat, lon) => {
+                    highlightDotRef.current?.setLatLng([lat, lon]);
+                },
+            });
         }
     };
 
@@ -1103,7 +1143,19 @@ const CruisePage = () => {
 
         const p = mapRouteData[renderIdx];
         if (p?.lat != null && p?.lon != null) {
-            mapRef.current?.panTo([p.lat, p.lon], { animate: true, duration: 0.25 });
+            // Thả slider: animate đến vị trí chính xác
+            smoothMoveTo(movingMarkerRef.current, p.lat, p.lon, {
+                durationMs: 300,
+                easingFn: easeOutQuart,
+                rafRef: smoothMoveRafRef,
+                onUpdate: (lat, lon) => {
+                    highlightDotRef.current?.setLatLng([lat, lon]);
+                },
+            });
+            mapRef.current?.setView([p.lat, p.lon], mapRef.current?.getZoom?.() ?? 15, {
+                animate: true,
+                duration: 0.4,
+            });
         }
         if (typeof rawIdx === 'number') vlistRef.current?.scrollToItem(rawIdx, 'center');
     };
@@ -1249,9 +1301,19 @@ const CruisePage = () => {
 
         const p = mapRouteData[idx];
         if (p?.lat != null && p?.lon != null) {
-            movingMarkerRef.current?.setLatLng([p.lat, p.lon]);
-            highlightDotRef.current?.setLatLng([p.lat, p.lon]);
-            mapRef.current?.panTo([p.lat, p.lon], { animate: true, duration: 0.25 });
+            // Smooth dọn — smoothMoveTo + camera follow
+            smoothMoveTo(movingMarkerRef.current, p.lat, p.lon, {
+                durationMs: 350,
+                easingFn: easeOutCubic,
+                rafRef: smoothMoveRafRef,
+                onUpdate: (la, lo) => {
+                    highlightDotRef.current?.setLatLng([la, lo]);
+                },
+            });
+            mapRef.current?.setView([p.lat, p.lon], mapRef.current?.getZoom?.() ?? 15, {
+                animate: true,
+                duration: 0.4,
+            });
         }
 
         vlistRef.current?.scrollToItem(rawIdx, 'center');

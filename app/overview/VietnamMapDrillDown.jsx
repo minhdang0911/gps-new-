@@ -1,6 +1,6 @@
-'use client';
+﻿'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import * as turf from '@turf/turf';
 
 // ✅ Module-level GeoJSON cache — dữ liệu tĩnh, không bao giờ thay đổi → cache suốt session
@@ -427,36 +427,41 @@ const Breadcrumb = ({ province, district, onClickRoot, onClickProvince }) => (
 // ============================================================
 // LEGEND
 // ============================================================
-const Legend = ({ level }) => (
+const Legend = ({ level, isMobile }) => (
     <div
         style={{
             position: 'absolute',
-            bottom: 70,
-            left: 12,
+            bottom: isMobile ? 8 : 70,
+            right: isMobile ? 8 : 'auto',
+            left: isMobile ? 'auto' : 12,
             zIndex: 1000,
             background: 'rgba(15,23,42,0.78)',
             backdropFilter: 'blur(8px)',
             WebkitBackdropFilter: 'blur(8px)',
             borderRadius: 8,
-            padding: '8px 13px',
+            padding: isMobile ? '5px 9px' : '8px 13px',
             boxShadow: '0 2px 12px rgba(0,0,0,0.22)',
             fontSize: 11,
             fontFamily: 'system-ui,sans-serif',
             border: '1px solid rgba(255,255,255,0.1)',
         }}
     >
-        <div style={{ marginBottom: 5, fontWeight: 600, color: '#94a3b8', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-            {level === 'province' && 'Cụm tỉnh'}
-            {level === 'district' && 'Cụm quận/huyện'}
-            {level === 'device' && 'Thiết bị'}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+        {!isMobile && (
+            <div style={{ marginBottom: 5, fontWeight: 600, color: '#94a3b8', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                {level === 'province' && 'Cụm tỉnh'}
+                {level === 'district' && 'Cụm quận/huyện'}
+                {level === 'device' && 'Thiết bị'}
+            </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: isMobile ? 0 : 4, flexDirection: isMobile ? 'row' : 'row' }}>
             <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#4ade80', boxShadow: '0 0 4px #4ade80' }} />
-            <span style={{ color: '#d1fae5', fontWeight: 500 }}>Online</span>
+            {!isMobile && <span style={{ color: '#d1fae5', fontWeight: 500 }}>Online</span>}
+            {isMobile && <span style={{ color: '#d1fae5', fontWeight: 500, fontSize: 10 }}>On</span>}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: isMobile ? 2 : 0 }}>
             <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#f87171', boxShadow: '0 0 4px #f87171' }} />
-            <span style={{ color: '#fee2e2', fontWeight: 500 }}>Offline</span>
+            {!isMobile && <span style={{ color: '#fee2e2', fontWeight: 500 }}>Offline</span>}
+            {isMobile && <span style={{ color: '#fee2e2', fontWeight: 500, fontSize: 10 }}>Off</span>}
         </div>
     </div>
 );
@@ -464,9 +469,12 @@ const Legend = ({ level }) => (
 // ============================================================
 // ZONE STATS PANEL
 // ============================================================
-const ZoneStatsPanel = ({ zones, level, onClickZone, selectedId, onGoRoot, provinceName, onGoProvince }) => {
+const ZoneStatsPanel = ({ zones, level, onClickZone, selectedId, onGoRoot, provinceName, onGoProvince, isMobile }) => {
     const [collapsed, setCollapsed] = React.useState(false);
     if (!zones || zones.length === 0) return null;
+
+    // On mobile: auto-collapse
+    const isCollapsed = isMobile ? true : collapsed;
 
     const levelLabel =
         level === 'province' ? 'Thống kê theo tỉnh' :
@@ -479,8 +487,8 @@ const ZoneStatsPanel = ({ zones, level, onClickZone, selectedId, onGoRoot, provi
             left: 12,
             top: 12,
             zIndex: 1001,
-            width: 236,
-            maxHeight: 'calc(100% - 80px)',
+            width: isMobile ? 180 : 236,
+            maxHeight: isMobile ? 'calc(100% - 60px)' : 'calc(100% - 80px)',
             display: 'flex',
             flexDirection: 'column',
             fontFamily: 'system-ui,sans-serif',
@@ -539,43 +547,45 @@ const ZoneStatsPanel = ({ zones, level, onClickZone, selectedId, onGoRoot, provi
 
             {/* Header */}
             <div
-                onClick={() => setCollapsed(!collapsed)}
+                onClick={() => !isMobile && setCollapsed(!collapsed)}
                 style={{
                     background: 'rgba(15,23,42,0.88)',
                     backdropFilter: 'blur(8px)',
                     WebkitBackdropFilter: 'blur(8px)',
                     borderRadius: level === 'province'
-                        ? (collapsed ? 10 : '10px 10px 0 0')
-                        : (collapsed ? '0 0 10px 10px' : 0),
+                        ? (isCollapsed ? 10 : '10px 10px 0 0')
+                        : (isCollapsed ? '0 0 10px 10px' : 0),
                     padding: '7px 12px',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
-                    cursor: 'pointer',
+                    cursor: isMobile ? 'default' : 'pointer',
                     border: '1px solid rgba(255,255,255,0.1)',
                     borderTop: (level === 'district' || level === 'device') ? 'none' : '1px solid rgba(255,255,255,0.1)',
-                    borderBottom: collapsed ? '1px solid rgba(255,255,255,0.1)' : 'none',
+                    borderBottom: isCollapsed ? '1px solid rgba(255,255,255,0.1)' : 'none',
                     userSelect: 'none',
                     gap: 8,
                     flexShrink: 0,
                 }}
             >
-                <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.3px', textTransform: 'uppercase' }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.3px', textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {levelLabel}
                 </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                     <span style={{ fontSize: 10, color: '#334155', background: 'rgba(255,255,255,0.07)', borderRadius: 4, padding: '1px 6px', fontWeight: 600 }}>
                         {zones.length} vùng
                     </span>
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2.5"
-                        style={{ transition: 'transform .2s', transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>
-                        <polyline points="6 9 12 15 18 9"/>
-                    </svg>
+                    {!isMobile && (
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2.5"
+                            style={{ transition: 'transform .2s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>
+                            <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                    )}
                 </div>
             </div>
 
             {/* Body */}
-            {!collapsed && (
+            {!isCollapsed && (
                 <div style={{
                     background: 'rgba(15,23,42,0.82)',
                     backdropFilter: 'blur(8px)',
@@ -797,7 +807,7 @@ const DistrictListPanel = ({ zones, selectedDistrictId, onClickZone, mapRef }) =
 // ============================================================
 // MAIN COMPONENT
 // ============================================================
-const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false, height = 580 }) => {
+const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false, height = 580, forceAllDevices = false }) => {
     const mapRef = useRef(null);
     const leafletMapRef = useRef(null);
     const markersLayerRef = useRef(null);
@@ -818,8 +828,23 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
     const [popupDevice, setPopupDevice] = useState(null);
     const [popupCruise, setPopupCruise] = useState(null);
     const [zoneStats, setZoneStats] = useState([]); // [{id,name,total,online,offline,lat,lon}]
+    const [containerWidth, setContainerWidth] = useState(800);
+    const isMobile = containerWidth < 480;
 
     // ── Init Leaflet ─────────────────────────────────────────
+    useEffect(() => {
+        const container = mapRef.current?.parentElement;
+        if (!container) return;
+        const ro = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                setContainerWidth(entry.contentRect.width);
+            }
+        });
+        ro.observe(container);
+        setContainerWidth(container.offsetWidth);
+        return () => ro.disconnect();
+    }, []);
+
     useEffect(() => {
         let cancelled = false;
         const init = async () => {
@@ -1130,8 +1155,9 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
         if (labelsLayerRef.current) labelsLayerRef.current.eachLayer((l) => { if (l._icon) l._icon.style.display = ''; });
     }, []);
 
-    // ── Grouping helpers (haversine) ──────────────────────────
-    const groupByProvince = useCallback(() => {
+    // ── Grouping helpers (haversine) — dùng useMemo để cache kết quả ──────────────────────────
+    // groupByProvince: tính 1 lần mỗi khi provinces/devices/cruiseByImei thay đổi
+    const provinceGroups = useMemo(() => {
         if (!provinces.length || !devices.length) return {};
         const groups = {};
         for (const d of devices) {
@@ -1146,48 +1172,46 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
         return groups;
     }, [provinces, devices, cruiseByImei]);
 
-    const groupByDistrict = useCallback(
-        (districtList) => {
-            if (!districtList.length || !devices.length) return {};
-            const provinceDevices = devices.filter((d) => {
-                const cruise = cruiseByImei[d.imei];
-                if (!cruise?.lat || !cruise?.lon) return false;
-                const prov = findNearest(cruise.lat, cruise.lon, provinces);
-                return prov?.id === selectedProvince?.id;
-            });
-            const groups = {};
-            for (const d of provinceDevices) {
-                const cruise = cruiseByImei[d.imei];
+    // groupByDistrict: tính lại khi province/district/cruiseByImei thay đổi
+    const districtGroups = useMemo(() => {
+        if (!districts.length || !devices.length || !selectedProvince) return {};
+        const provinceDevices = devices.filter((d) => {
+            const cruise = cruiseByImei[d.imei];
+            if (!cruise?.lat || !cruise?.lon) return false;
+            const prov = findNearest(cruise.lat, cruise.lon, provinces);
+            return prov?.id === selectedProvince?.id;
+        });
+        const groups = {};
+        for (const d of provinceDevices) {
+            const cruise = cruiseByImei[d.imei];
 
-                const districtFeature = findDistrictByPoint(
-                    cruise.lat,
-                    cruise.lon,
-                    districtGeoJson,
-                    selectedProvince.full_name,
-                );
+            const districtFeature = findDistrictByPoint(
+                cruise.lat,
+                cruise.lon,
+                districtGeoJson,
+                selectedProvince.full_name,
+            );
 
-                if (!districtFeature) {
-                    console.log('NOT FOUND', selectedProvince.full_name, cruise.lat, cruise.lon);
-                    continue;
-                }
-                const key = districtFeature.properties.ma_huyen;
-
-                if (!groups[key]) {
-                    groups[key] = {
-                        district: districtFeature,
-                        items: [],
-                    };
-                }
-
-                groups[key].items.push({
-                    device: d,
-                    cruise,
-                });
+            if (!districtFeature) {
+                console.log('NOT FOUND', selectedProvince.full_name, cruise.lat, cruise.lon);
+                continue;
             }
-            return groups;
-        },
-        [devices, cruiseByImei, provinces, selectedProvince, districtGeoJson],
-    );
+            const key = districtFeature.properties.ma_huyen;
+
+            if (!groups[key]) {
+                groups[key] = {
+                    district: districtFeature,
+                    items: [],
+                };
+            }
+
+            groups[key].items.push({
+                device: d,
+                cruise,
+            });
+        }
+        return groups;
+    }, [districts, devices, cruiseByImei, provinces, selectedProvince, districtGeoJson]);
 
     const getDistrictName = (district) => {
         return `${district.properties.loai} ${district.properties.ten_huyen}`;
@@ -1200,7 +1224,7 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
         if (!L || !leafletMapRef.current) return;
         clearMarkers();
         clearDistrictBoundaries();
-        const groups = groupByProvince();
+        const groups = provinceGroups; // dùng memo value thay vì gọi hàm
 
         Object.values(groups).forEach(({ province, items }) => {
             const online = items.filter((i) => isOnline(i.cruise)).length;
@@ -1249,13 +1273,13 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
             });
             markersLayerRef.current.addLayer(marker);
         });
-    }, [L, groupByProvince, clearMarkers, clearDistrictBoundaries, drawDistrictBoundaries]);
+    }, [L, provinceGroups, clearMarkers, clearDistrictBoundaries, drawDistrictBoundaries]);
 
     // ── Draw: district clusters ───────────────────────────────
     const drawDistrictLevel = useCallback(() => {
         if (!L || !leafletMapRef.current || !districts.length) return;
         clearMarkers();
-        const groups = groupByDistrict(districts);
+        const groups = districtGroups; // dùng memo value thay vì gọi hàm
 
         Object.values(groups).forEach(({ district, items }) => {
             const online = items.filter((i) => isOnline(i.cruise)).length;
@@ -1283,7 +1307,7 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
             });
             markersLayerRef.current.addLayer(marker);
         });
-    }, [L, districts, groupByDistrict, clearMarkers]);
+    }, [L, districtGroups, clearMarkers]);
 
     // ── Draw: individual device pins ──────────────────────────
     const drawDeviceLevel = useCallback(() => {
@@ -1341,28 +1365,123 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
         });
     }, [L, devices, cruiseByImei, selectedDistrict, districts, clearMarkers]);
 
+    // ── Draw: all devices as individual pins (forceAllDevices mode) ─────────
+    const drawAllDevicesLevel = useCallback(() => {
+        if (!L || !leafletMapRef.current) return;
+        clearMarkers();
+        showTile();
+
+        const bounds = [];
+
+        // Jitter: nhóm các thiết bị có cùng tọa độ → xếp thành vòng xoắn
+        // để tránh chồng pin khi nhiều xe đậu cùng chỗ
+        const coordGroups = {};
+        devices.forEach((d) => {
+            const cruise = cruiseByImei[d.imei];
+            if (!cruise?.lat || !cruise?.lon) return;
+            const key = `${cruise.lat.toFixed(5)},${cruise.lon.toFixed(5)}`;
+            if (!coordGroups[key]) coordGroups[key] = [];
+            coordGroups[key].push({ device: d, cruise });
+        });
+
+        Object.values(coordGroups).forEach((group) => {
+            group.forEach(({ device: d, cruise }, idx) => {
+                const online = isOnline(cruise);
+                const color = online ? '#22c55e' : '#ef4444';
+
+                // Spiral jitter: idx=0 ở giữa, các cái sau ra vòng xoắn
+                let lat = cruise.lat;
+                let lon = cruise.lon;
+                if (idx > 0) {
+                    // Vòng xoắn Archimedes: mỗi 6 pins lên 1 vòng
+                    const ring   = Math.ceil(idx / 6);
+                    const angle  = (idx % 6) * (Math.PI / 3) + ring * 0.5;
+                    const radius = 0.000035 * ring; // ~3.5m mỗi vòng
+                    lat = cruise.lat + radius * Math.cos(angle);
+                    lon = cruise.lon + radius * Math.sin(angle) / Math.cos((cruise.lat * Math.PI) / 180);
+                }
+
+                const svgHtml = `<svg width="26" height="34" viewBox="0 0 36 47" xmlns="http://www.w3.org/2000/svg">
+        <path d="M18 0C8.06 0 0 8.06 0 18c0 12.5 18 29 18 29S36 30.5 36 18C36 8.06 27.94 0 18 0z" fill="${color}" stroke="white" stroke-width="2"/>
+        <circle cx="18" cy="18" r="8" fill="white"/>
+        <circle cx="18" cy="18" r="4.5" fill="${color}"/>
+      </svg>`;
+
+                const icon = L.divIcon({
+                    className: '',
+                    iconSize: [26, 34],
+                    iconAnchor: [13, 34],
+                    html: svgHtml,
+                });
+
+                const marker = L.marker([lat, lon], { icon });
+                marker.bindTooltip(
+                    `<b>${d.license_plate || d.imei}</b><br>${online ? '🟢 Online' : '🔴 Offline'}`,
+                    { direction: 'top', offset: [0, -35] },
+                );
+                marker.on('click', () => {
+                    setPopupDevice(d);
+                    setPopupCruise(cruise);
+                });
+                markersLayerRef.current.addLayer(marker);
+                bounds.push([lat, lon]);
+            });
+        });
+
+        // Auto-fit to all device pins
+        if (bounds.length > 0 && leafletMapRef.current) {
+            try {
+                leafletMapRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 19, animate: true });
+            } catch (_) {}
+        }
+    }, [L, devices, cruiseByImei, clearMarkers, showTile]);
+
     // ── Trigger redraws ───────────────────────────────────────
     useEffect(() => {
         if (!L || !provinces.length) return;
+        if (forceAllDevices) return; // skip — handled by forceAllDevices effect below
         if (level === 'province') drawProvinceLevel();
-    }, [L, level, provinces, devices, cruiseByImei, drawProvinceLevel]);
+    }, [L, level, provinces, devices, cruiseByImei, drawProvinceLevel, forceAllDevices]);
 
     useEffect(() => {
         if (!L || level !== 'district' || !districts.length) return;
+        if (forceAllDevices) return;
         drawDistrictLevel();
-    }, [L, level, districts, devices, cruiseByImei, drawDistrictLevel]);
+    }, [L, level, districts, devices, cruiseByImei, drawDistrictLevel, forceAllDevices]);
 
     useEffect(() => {
         if (!L || level !== 'device' || !selectedDistrict) return;
+        if (forceAllDevices) return;
         drawDeviceLevel();
-    }, [L, level, selectedDistrict, devices, cruiseByImei, drawDeviceLevel]);
+    }, [L, level, selectedDistrict, devices, cruiseByImei, drawDeviceLevel, forceAllDevices]);
+
+    // forceAllDevices: show all devices as pins regardless of level
+    useEffect(() => {
+        if (!L) return;
+        if (forceAllDevices) {
+            drawAllDevicesLevel();
+        } else {
+            // Restore normal province view + reset map to full Vietnam view
+            hideTile();
+            setLevel('province');
+            setSelectedProvince(null);
+            setSelectedDistrict(null);
+            if (provinces.length) drawProvinceLevel();
+            // Fit back to Vietnam bounds
+            if (_vnBoundsCache && leafletMapRef.current) {
+                try {
+                    leafletMapRef.current.fitBounds(_vnBoundsCache, { padding: [10, 10], animate: true });
+                } catch (_) {}
+            }
+        }
+    }, [L, forceAllDevices, devices, cruiseByImei, drawAllDevicesLevel, drawProvinceLevel, hideTile, provinces]);
 
     // ── Compute zone stats ─────────────────────────────────────
     useEffect(() => {
         if (!provinces.length || !devices.length) return;
 
         if (level === 'province') {
-            const groups = groupByProvince();
+            const groups = provinceGroups; // dùng memo value
             const stats = Object.values(groups)
                 .map(({ province, items }) => ({
                     id: province.id,
@@ -1377,7 +1496,7 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
                 .sort((a, b) => b.total - a.total);
             setZoneStats(stats);
         } else if (level === 'district' && districts.length) {
-            const groups = groupByDistrict(districts);
+            const groups = districtGroups; // dùng memo value
             const stats = Object.values(groups)
                 .map(({ district, items }) => {
                     // Lấy centroid từ GeoJSON feature, fallback về avg lat/lon của thiết bị
@@ -1408,7 +1527,7 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
             // Ở device level, giữ lại stats của district level
             // (không reset — user vẫn thấy list quận)
         }
-    }, [level, provinces, devices, cruiseByImei, districts, groupByProvince, groupByDistrict]);
+    }, [level, provinces, devices, cruiseByImei, districts, provinceGroups, districtGroups]);
 
     // ── Navigation ────────────────────────────────────────────
     const goRoot = () => {
@@ -1449,7 +1568,7 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
             style={{
                 position: 'relative',
                 width: '100%',
-                height,
+                height, 
                 borderRadius: 12,
                 overflow: 'hidden',
                 boxShadow: '0 2px 12px rgba(0,0,0,0.10)',
@@ -1482,7 +1601,7 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
             {/* Reset về toàn quốc */}
             <ResetViewBtn onClick={goRoot} />
 
-            <Legend level={level} />
+            <Legend level={level} isMobile={isMobile} />
 
             {/* Bottom stats bar */}
             <div style={{
@@ -1503,20 +1622,20 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
                     backdropFilter: 'blur(8px)',
                     WebkitBackdropFilter: 'blur(8px)',
                     borderRadius: 10,
-                    padding: '6px 13px',
+                    padding: isMobile ? '5px 10px' : '6px 13px',
                     display: 'flex',
-                    gap: 10,
+                    gap: isMobile ? 7 : 10,
                     alignItems: 'center',
                     border: '1px solid rgba(255,255,255,0.12)',
                     fontFamily: 'system-ui,sans-serif',
                 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: '#e2e8f0' }}>{devices.length} thiết bị</span>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: '#4ade80' }}>● {totalOnline}</span>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: '#f87171' }}>● {totalOffline}</span>
+                    <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: '#e2e8f0' }}>{devices.length} thiết bị</span>
+                    <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: '#4ade80' }}>● {totalOnline}</span>
+                    <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: '#f87171' }}>● {totalOffline}</span>
                 </div>
 
-                {/* Province level: pills theo từng tỉnh */}
-                {level === 'province' && zoneStats.length > 0 && (
+                {/* Province level: pills theo từng tỉnh — ẩn trên mobile */}
+                {level === 'province' && zoneStats.length > 0 && !isMobile && (
                     <div style={{
                         flex: 1,
                         overflowX: 'auto',
@@ -1572,8 +1691,8 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
                     </div>
                 )}
 
-                {/* District/device level: summary card */}
-                {(level === 'district' || level === 'device') && selectedProvince && (() => {
+                {/* District/device level: summary card — ẩn trên mobile */}
+                {(level === 'district' || level === 'device') && selectedProvince && !isMobile && (() => {
                     // Ở device level + có quận được chọn → hiện stats quận đó
                     const activeZone = level === 'device' && selectedDistrict
                         ? zoneStats.find(z => z.id === selectedDistrict.properties?.ma_huyen)
@@ -1648,8 +1767,8 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
                 })()}
             </div>
 
-            {/* Hint pills */}
-            {level === 'province' && !loading && devices.length > 0 && (
+            {/* Hint pills — ẩn trên mobile */}
+            {level === 'province' && !loading && devices.length > 0 && !isMobile && (
                 <div
                     style={{
                         position: 'absolute',

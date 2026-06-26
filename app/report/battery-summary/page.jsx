@@ -12,6 +12,8 @@ import en from '../../locales/en.json';
 import ReportCompareModal from '../../components/report/ReportCompareModal';
 import { buildBatteryInsight } from '../../features/batteryReport/compare/batteryCompareInsight';
 
+import ReportEmptyState from '../../components/report/ReportEmptyState';
+
 // reusable
 import ReportSortSelect from '../../components/report/ReportSortSelect';
 import ColumnManagerModal from '../../components/report/ColumnManagerModal';
@@ -58,6 +60,7 @@ const BatterySummaryReportPage = () => {
 
     // ✅ view mode
     const [viewMode, setViewMode] = useState('table');
+    const [hasSearched, setHasSearched] = useState(false);
 
     // ✅ reset key for time preset picker (force remount to reset preset UI)
     const [timePresetResetKey, setTimePresetResetKey] = useState(0);
@@ -215,9 +218,7 @@ const BatterySummaryReportPage = () => {
                             form={form}
                             layout="vertical"
                             onFinish={async () => {
-                                // ✅ option: ép refresh device map khi search (nếu bạn muốn chắc chắn hết dính cache)
-                                // await refreshDeviceMap();
-
+                                setHasSearched(true);
                                 onSearch();
                                 clearSelection();
                             }}
@@ -350,7 +351,7 @@ const BatterySummaryReportPage = () => {
                     >
                         {viewMode === 'table' ? (
                             <Table
-                                locale={customLocale}
+                                locale={{ emptyText: <ReportEmptyState hasSearched={hasSearched} isEn={isEn} /> }}
                                 rowKey={(record) =>
                                     record._id || `${record.imei}-${record.date}-${record.batteryId || ''}`
                                 }

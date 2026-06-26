@@ -3,6 +3,7 @@ import 'antd/dist/reset.css';
 import { AntdRegistry } from '@ant-design/nextjs-registry';
 import { Geist, Geist_Mono } from 'next/font/google';
 import LayoutWrapper from './components/LayoutWrapper';
+import ErrorBoundary from './components/ErrorBoundary';
 import SWRProvider from './providers/SWRProvider';
 import 'leaflet/dist/leaflet.css';
 import { Analytics } from '@vercel/analytics/next';
@@ -70,7 +71,9 @@ export default function RootLayout({ children }) {
 
                 <AntdRegistry>
                     <SWRProvider>
-                        <LayoutWrapper>{children}</LayoutWrapper>
+                        <ErrorBoundary>
+                            <LayoutWrapper>{children}</LayoutWrapper>
+                        </ErrorBoundary>
                     </SWRProvider>
                 </AntdRegistry>
             </body>
