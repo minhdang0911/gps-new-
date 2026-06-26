@@ -150,7 +150,7 @@ export default function ManageLayout({ children }) {
                 {allowed === null ? (
                     // Đang kiểm tra quyền — hiện loading ngắn
                     <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
-                        <Spin tip={isEn ? 'Checking permissions...' : 'Đang kiểm tra quyền...'} />
+                        <Spin tip={lang === 'en' ? 'Checking permissions...' : 'Đang kiểm tra quyền...'} />
                     </div>
                 ) : (
                     children
