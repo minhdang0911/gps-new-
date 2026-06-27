@@ -1,7 +1,14 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Skeleton } from 'antd';
+import {
+    SearchOutlined,
+    CloseOutlined,
+    EnvironmentOutlined,
+    StopOutlined,
+} from '@ant-design/icons';
+import Fuse from 'fuse.js';
 
 import VietnamMapDrillDown from './VietnamMapDrillDown';
 import { exportOverviewExcel } from './useOverviewExcel';
@@ -159,6 +166,189 @@ const ExcelDropdown = ({ onExport, disabled }) => {
     );
 };
 
+// ── Search Box ────────────────────────────────────────────────
+const SearchBox = ({ devices, cruiseByImei, onSelect, isEn }) => {
+    const [query, setQuery] = useState('');
+    const [open, setOpen] = useState(false);
+    const [focused, setFocused] = useState(false);
+    const wrapRef = useRef(null);
+
+    const fuse = useMemo(() => new Fuse(devices, {
+        keys: [
+            { name: 'license_plate', weight: 2 },
+            { name: 'imei',          weight: 1 },
+            { name: 'driver',        weight: 1 },
+        ],
+        threshold: 0.35,
+        includeScore: true,
+        minMatchCharLength: 1,
+    }), [devices]);
+
+    const results = useMemo(() => {
+        const q = query.trim();
+        if (!q) return [];
+        return fuse.search(q).slice(0, 8).map(r => r.item);
+    }, [fuse, query]);
+
+    // Close dropdown on outside click
+    useEffect(() => {
+        const handler = (e) => {
+            if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+                setOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    const handleSelect = useCallback((device) => {
+        setQuery(device.license_plate || device.imei || '');
+        setOpen(false);
+        onSelect(device);
+    }, [onSelect]);
+
+    const handleClear = () => {
+        setQuery('');
+        setOpen(false);
+        onSelect(null);
+    };
+
+    const placeholder = isEn ? 'Search plate / IMEI / driver…' : 'Tìm biển số / IMEI / lái xe…';
+    const hasResults = results.length > 0;
+
+    return (
+        <div ref={wrapRef} style={{ position: 'relative', width: 260, flexShrink: 0 }}>
+            {/* Input */}
+            <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                background: focused ? '#fff' : '#f8fafc',
+                border: `1.5px solid ${focused ? '#1677ff' : '#e2e8f0'}`,
+                borderRadius: 9,
+                padding: '6px 10px',
+                transition: 'border-color .15s, background .15s, box-shadow .15s',
+                boxShadow: focused ? '0 0 0 3px rgba(22,119,255,0.12)' : '0 1px 3px rgba(0,0,0,0.05)',
+            }}>
+                {/* Search icon */}
+                <SearchOutlined style={{
+                    fontSize: 13,
+                    color: focused ? '#1677ff' : '#94a3b8',
+                    flexShrink: 0,
+                    transition: 'color .15s',
+                }} />
+                <input
+                    value={query}
+                    onChange={e => { setQuery(e.target.value); setOpen(true); }}
+                    onFocus={() => { setFocused(true); if (query.trim()) setOpen(true); }}
+                    onBlur={() => setFocused(false)}
+                    placeholder={placeholder}
+                    style={{
+                        border: 'none', outline: 'none', background: 'transparent',
+                        fontSize: 12.5, color: '#1e293b', width: '100%', fontFamily: 'inherit',
+                    }}
+                />
+                {/* Clear button */}
+                {query && (
+                    <button onClick={handleClear} style={{
+                        border: 'none', background: 'none', cursor: 'pointer',
+                        padding: 0, display: 'flex', alignItems: 'center', flexShrink: 0,
+                        color: '#94a3b8', lineHeight: 1,
+                    }}>
+                        <CloseOutlined style={{ fontSize: 12 }} />
+                    </button>
+                )}
+            </div>
+
+            {/* Dropdown results */}
+            {open && hasResults && (
+                <div style={{
+                    position: 'absolute', top: 'calc(100% + 5px)', left: 0, right: 0,
+                    background: '#fff', borderRadius: 10, zIndex: 2000,
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.14)',
+                    border: '1px solid #e2e8f0',
+                    overflow: 'hidden',
+                    maxHeight: 320, overflowY: 'auto',
+                }}>
+                    {results.map((d, i) => {
+                        const cruise = cruiseByImei[d.imei];
+                        const online = isOnline(cruise);
+                        const hasGps = !!(cruise?.lat && cruise?.lon);
+                        return (
+                            <div
+                                key={d._id || d.imei}
+                                onMouseDown={() => handleSelect(d)}
+                                style={{
+                                    padding: '9px 14px',
+                                    borderBottom: i < results.length - 1 ? '1px solid #f1f5f9' : 'none',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 10,
+                                    transition: 'background .1s',
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                                onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+                            >
+                                {/* Status dot */}
+                                <div style={{
+                                    width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                                    background: online ? '#22c55e' : '#ef4444',
+                                    boxShadow: online ? '0 0 0 2px rgba(34,197,94,0.2)' : '0 0 0 2px rgba(239,68,68,0.2)',
+                                }} />
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
+                                        {d.license_plate || d.imei}
+                                    </div>
+                                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>
+                                        {d.driver ? `${d.driver} · ` : ''}{d.imei}
+                                    </div>
+                                </div>
+                                {/* GPS badge */}
+                                {hasGps ? (
+                                    <div style={{
+                                        fontSize: 10, fontWeight: 600, padding: '2px 7px',
+                                        borderRadius: 20, background: '#eff6ff',
+                                        color: '#3b82f6', border: '1px solid #bfdbfe',
+                                        flexShrink: 0, whiteSpace: 'nowrap',
+                                        display: 'flex', alignItems: 'center', gap: 4,
+                                    }}>
+                                        <EnvironmentOutlined style={{ fontSize: 10 }} /> GPS
+                                    </div>
+                                ) : (
+                                    <div style={{
+                                        fontSize: 10, fontWeight: 600, padding: '2px 7px',
+                                        borderRadius: 20, background: '#f8fafc',
+                                        color: '#94a3b8', border: '1px solid #e2e8f0',
+                                        flexShrink: 0, whiteSpace: 'nowrap',
+                                        display: 'flex', alignItems: 'center', gap: 4,
+                                    }}>
+                                        <StopOutlined style={{ fontSize: 10 }} /> No GPS
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* No result */}
+            {open && query.trim() && !hasResults && (
+                <div style={{
+                    position: 'absolute', top: 'calc(100% + 5px)', left: 0, right: 0,
+                    background: '#fff', borderRadius: 10, zIndex: 2000,
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.14)',
+                    border: '1px solid #e2e8f0',
+                    padding: '16px 14px',
+                    textAlign: 'center', fontSize: 12.5, color: '#94a3b8',
+                }}>
+                    {isEn ? 'No devices found' : 'Không tìm thấy thiết bị'}
+                </div>
+            )}
+        </div>
+    );
+};
+
 // ── Stat Card ────────────────────────────────────────────────
 const StatCard = ({ icon, label, value, sub, accentColor, loading: cardLoading, onClick, active }) => (
     <div
@@ -213,6 +403,7 @@ const OverviewPage = () => {
     const [lastUpdated, setLastUpdated]   = useState(null);
     const [refreshing, setRefreshing]     = useState(false);
     const [mapFilter, setMapFilter]       = useState('all'); // 'all' | 'online' | 'offline'
+    const [highlightDevice, setHighlightDevice] = useState(null);
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -227,13 +418,17 @@ const OverviewPage = () => {
             const token =
                 typeof window !== 'undefined' ? localStorage.getItem('accessToken') || '' : '';
 
-            const devRes = await getDevices({ limit: 200000 });
-            const devList = devRes?.devices || [];
+            // ✅ Fetch song song thay vì tuần tự — giảm ~50% thời gian chờ
+            const [devRes, cruiseRes] = await Promise.all([
+                getDevices({ limit: 200000 }),
+                api.get('last-cruise-list', {
+                    headers: { Authorization: `Bearer ${token}` },
+                }),
+            ]);
 
-            const cruiseRes = await api.get('last-cruise-list', {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const devList   = devRes?.devices || [];
             const cruiseList = cruiseRes?.data?.data || [];
+
 
             const byImei = {};
             cruiseList.forEach((c) => {
@@ -552,6 +747,16 @@ const OverviewPage = () => {
                     </div>
                     <span className="ov-map-title">{t('Bản đồ thiết bị', 'Device Map')}</span>
 
+                    {/* Search box */}
+                    {!loading && devices.length > 0 && (
+                        <SearchBox
+                            devices={devices}
+                            cruiseByImei={cruiseByImei}
+                            onSelect={(device) => setHighlightDevice(device ? { ...device, _ts: Date.now() } : null)}
+                            isEn={isEn}
+                        />
+                    )}
+
                     {/* Active filter badge */}
                     {mapFilter !== 'all' && !loading && (
                         <span style={{
@@ -609,6 +814,7 @@ const OverviewPage = () => {
                         loading={false}
                         height={640}
                         forceAllDevices={mapFilter !== 'all'}
+                        highlightDevice={highlightDevice}
                     />
                 )}
             </div>

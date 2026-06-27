@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import * as turf from '@turf/turf';
@@ -807,7 +807,7 @@ const DistrictListPanel = ({ zones, selectedDistrictId, onClickZone, mapRef }) =
 // ============================================================
 // MAIN COMPONENT
 // ============================================================
-const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false, height = 580, forceAllDevices = false }) => {
+const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false, height = 580, forceAllDevices = false, highlightDevice = null }) => {
     const mapRef = useRef(null);
     const leafletMapRef = useRef(null);
     const markersLayerRef = useRef(null);
@@ -824,6 +824,8 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
     const [districts, setDistricts] = useState([]);
     const [loadingDistricts, setLoadingDistricts] = useState(false);
     const [districtGeoJson, setDistrictGeoJson] = useState(null);
+    const [provinceGroups, setProvinceGroups] = useState({});
+    const workerRef = useRef(null);
 
     const [popupDevice, setPopupDevice] = useState(null);
     const [popupCruise, setPopupCruise] = useState(null);
@@ -1155,21 +1157,71 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
         if (labelsLayerRef.current) labelsLayerRef.current.eachLayer((l) => { if (l._icon) l._icon.style.display = ''; });
     }, []);
 
-    // ── Grouping helpers (haversine) — dùng useMemo để cache kết quả ──────────────────────────
-    // groupByProvince: tính 1 lần mỗi khi provinces/devices/cruiseByImei thay đổi
-    const provinceGroups = useMemo(() => {
-        if (!provinces.length || !devices.length) return {};
-        const groups = {};
-        for (const d of devices) {
-            const cruise = cruiseByImei[d.imei];
-            if (!cruise?.lat || !cruise?.lon) continue;
-            const prov = findNearest(cruise.lat, cruise.lon, provinces);
-            if (!prov) continue;
-            const key = prov.id;
-            if (!groups[key]) groups[key] = { province: prov, items: [] };
-            groups[key].items.push({ device: d, cruise });
+    // ── Grouping helpers (haversine) — Web Worker nếu có, fallback sync ─────────────
+    // Worker chạy off main thread: không block UI dù 50k+ devices
+    useEffect(() => {
+        if (!provinces.length || !devices.length) {
+            setProvinceGroups({});
+            return;
         }
-        return groups;
+
+        // Build cruiseByImei plain object để transfer sang worker
+        const cruiseData = {};
+        devices.forEach(d => {
+            const c = cruiseByImei[d.imei];
+            if (c) cruiseData[d.imei] = c;
+        });
+
+        if (typeof Worker !== 'undefined') {
+            // Tạo worker mới mỗi lần (đơn giản, tránh stale closure)
+            if (workerRef.current) workerRef.current.terminate();
+            const worker = new Worker('/workers/clusterWorker.js');
+            workerRef.current = worker;
+
+            worker.onmessage = ({ data }) => {
+                if (data.type === 'GROUP_BY_PROVINCE_RESULT') {
+                    setProvinceGroups(data.groups);
+                    worker.terminate();
+                    workerRef.current = null;
+                }
+            };
+            worker.onerror = (err) => {
+                console.warn('[ClusterWorker] error, falling back to sync:', err);
+                // Fallback sync
+                const groups = {};
+                for (const d of devices) {
+                    const cruise = cruiseData[d.imei];
+                    if (!cruise?.lat || !cruise?.lon) continue;
+                    const prov = findNearest(cruise.lat, cruise.lon, provinces);
+                    if (!prov) continue;
+                    if (!groups[prov.id]) groups[prov.id] = { province: prov, items: [] };
+                    groups[prov.id].items.push({ device: d, cruise });
+                }
+                setProvinceGroups(groups);
+            };
+
+            worker.postMessage({ type: 'GROUP_BY_PROVINCE', devices, cruiseByImei: cruiseData, provinces });
+        } else {
+            // Fallback sync (Safari cũ, etc.)
+            const groups = {};
+            for (const d of devices) {
+                const cruise = cruiseData[d.imei];
+                if (!cruise?.lat || !cruise?.lon) continue;
+                const prov = findNearest(cruise.lat, cruise.lon, provinces);
+                if (!prov) continue;
+                if (!groups[prov.id]) groups[prov.id] = { province: prov, items: [] };
+                groups[prov.id].items.push({ device: d, cruise });
+            }
+            setProvinceGroups(groups);
+        }
+
+        return () => {
+            // Cleanup nếu deps thay đổi khi worker đang chạy
+            if (workerRef.current) {
+                workerRef.current.terminate();
+                workerRef.current = null;
+            }
+        };
     }, [provinces, devices, cruiseByImei]);
 
     // groupByDistrict: tính lại khi province/district/cruiseByImei thay đổi
@@ -1353,10 +1405,10 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
             });
 
             const marker = L.marker([cruise.lat, cruise.lon], { icon });
-            marker.bindTooltip(`<b>${d.license_plate || d.imei}</b><br>${online ? '🟢 Online' : '🔴 Offline'}`, {
-                direction: 'top',
-                offset: [0, -43],
-            });
+            marker.bindTooltip(
+                `<b>${d.license_plate || d.imei}</b><br><svg width="8" height="8" viewBox="0 0 8 8" style="vertical-align:middle;margin-right:3px"><circle cx="4" cy="4" r="4" fill="${online ? '#22c55e' : '#ef4444'}"/></svg>${online ? 'Online' : 'Offline'}`,
+                { direction: 'top', offset: [0, -43] },
+            );
             marker.on('click', () => {
                 setPopupDevice(d);
                 setPopupCruise(cruise);
@@ -1416,7 +1468,7 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
 
                 const marker = L.marker([lat, lon], { icon });
                 marker.bindTooltip(
-                    `<b>${d.license_plate || d.imei}</b><br>${online ? '🟢 Online' : '🔴 Offline'}`,
+                    `<b>${d.license_plate || d.imei}</b><br><svg width="8" height="8" viewBox="0 0 8 8" style="vertical-align:middle;margin-right:3px"><circle cx="4" cy="4" r="4" fill="${online ? '#22c55e' : '#ef4444'}"/></svg>${online ? 'Online' : 'Offline'}`,
                     { direction: 'top', offset: [0, -35] },
                 );
                 marker.on('click', () => {
@@ -1474,7 +1526,36 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
                 } catch (_) {}
             }
         }
-    }, [L, forceAllDevices, devices, cruiseByImei, drawAllDevicesLevel, drawProvinceLevel, hideTile, provinces]);
+    }, [L, forceAllDevices, drawAllDevicesLevel, drawProvinceLevel, hideTile, provinces]);
+
+    // ── highlightDevice: pan/zoom + show popup khi search từ page.jsx ────
+    useEffect(() => {
+        if (!highlightDevice || !L || !leafletMapRef.current) return;
+
+        const cruise = cruiseByImei[highlightDevice.imei];
+        if (!cruise?.lat || !cruise?.lon) {
+            // Thiết bị không có tọa độ — chỉ hiện popup không có vị trí
+            setPopupDevice(highlightDevice);
+            setPopupCruise(null);
+            return;
+        }
+
+        const lat = cruise.lat;
+        const lon = cruise.lon;
+
+        // Bật tile layer nếu chưa bật, zoom đến xe
+        showTile();
+        leafletMapRef.current.setView([lat, lon], 16, { animate: true });
+
+        // Show popup sau khi animation xong
+        const timer = setTimeout(() => {
+            setPopupDevice(highlightDevice);
+            setPopupCruise(cruise);
+        }, 450);
+
+        return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [highlightDevice]);
 
     // ── Compute zone stats ─────────────────────────────────────
     useEffect(() => {
