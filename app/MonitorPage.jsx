@@ -222,6 +222,12 @@ const MonitorPage = () => {
     const [liveTelemetry, setLiveTelemetry] = useState(null);
     const mqttClientRef = useRef(null);
 
+    // ✅ RAF ref: throttle setMarkerScreenPos để tránh re-render toàn page khi kéo map
+    const popupRafRef = useRef(null);
+
+    // ✅ Debounce timer cho localStorage write (saveSocCache)
+    const socWriteTimerRef = useRef(null);
+
     // ✅ SOC list (persist)
     const [socByImei, setSocByImei] = useState(() => loadSocCache());
 
@@ -233,7 +239,9 @@ const MonitorPage = () => {
         setSocByImei((prev) => {
             if (prev[imei] === next) return prev;
             const merged = { ...prev, [imei]: next };
-            saveSocCache(merged);
+            // ✅ Debounce localStorage write 5s — tránh ghi disk mỗi MQTT packet
+            clearTimeout(socWriteTimerRef.current);
+            socWriteTimerRef.current = setTimeout(() => saveSocCache(merged), 5000);
             return merged;
         });
     };
@@ -326,8 +334,13 @@ const MonitorPage = () => {
         markerRef.current = marker;
 
         const updatePopupPosition = () => {
-            const point = map.latLngToContainerPoint(marker.getLatLng());
-            setMarkerScreenPos(point);
+            // ✅ RAF throttle: tối đa 1 setState/frame thay vì hàng chục lần/frame khi kéo map
+            if (popupRafRef.current) cancelAnimationFrame(popupRafRef.current);
+            popupRafRef.current = requestAnimationFrame(() => {
+                const point = map.latLngToContainerPoint(marker.getLatLng());
+                setMarkerScreenPos(point);
+                popupRafRef.current = null;
+            });
         };
 
         updatePopupPosition();
@@ -361,6 +374,11 @@ const MonitorPage = () => {
         window.addEventListener('resize', handleResize);
 
         return () => {
+            // ✅ Cancel RAF pending khi unmount
+            if (popupRafRef.current) {
+                cancelAnimationFrame(popupRafRef.current);
+                popupRafRef.current = null;
+            }
             window.removeEventListener('resize', handleResize);
             map.off('move', updatePopupPosition);
             map.off('zoom', updatePopupPosition);
@@ -398,15 +416,14 @@ const MonitorPage = () => {
         enabled: !!token,
         queryFn: () => getDevices(token),
 
-        // ✅ KHÔNG CACHE
-        staleTime: 0,
+        // ✅ Cache 1 phút — tránh refetch liên tục gây flash UI
+        staleTime: 60_000,
+        gcTime: 5 * 60_000,
 
-        gcTime: 0, // nếu m dùng react-query v4 thì đổi thành cacheTime: 0
-
-        // ✅ luôn gọi lại khi vào page / focus tab / reconnect
-        refetchOnMount: 'always',
-        refetchOnWindowFocus: 'always',
-        refetchOnReconnect: 'always',
+        // ✅ refetch khi mount + reconnect, KHÔNG refetch khi focus window (gây lag khi alt+tab)
+        refetchOnMount: true,
+        refetchOnWindowFocus: false,
+        refetchOnReconnect: true,
     });
 
     const deviceList = devicesQuery.data?.devices || [];

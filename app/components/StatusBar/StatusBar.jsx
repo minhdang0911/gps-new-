@@ -17,9 +17,34 @@ const { Text } = Typography;
 
 const locales = { vi, en };
 
+// ✅ Tách Clock ra memo component — chỉ bản thân nó re-render mỗi giây, không cascade lên StatusBar
+const Clock = React.memo(function Clock() {
+    const [time, setTime] = useState('');
+
+    useEffect(() => {
+        const updateClock = () => {
+            const now = new Date();
+            const formatted = now
+                .toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: true,
+                })
+                .toUpperCase();
+            const date = now.toLocaleDateString('vi-VN');
+            setTime(`${formatted} ${date}`);
+        };
+        updateClock();
+        const timer = setInterval(updateClock, 1000);
+        return () => clearInterval(timer);
+    }, []);
+
+    return <Text className="iky-status__time">{time}</Text>;
+});
+
 const StatusBar = () => {
     const pathname = usePathname() || '/';
-    const [time, setTime] = useState('');
     const [isEn, setIsEn] = useState(false);
 
     // Detect EN từ pathname (/xxx/en)
@@ -57,29 +82,6 @@ const StatusBar = () => {
     else if (pathname.includes('/maintenance')) currentTitle = t.maintain;
     else if (pathname.includes('/overview')) currentTitle = t.overview;
 
-    // ----- CLOCK -----
-    useEffect(() => {
-        const updateClock = () => {
-            const now = new Date();
-
-            // 12h + AM/PM viết hoa
-            const formatted = now
-                .toLocaleTimeString('en-US', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hour12: true,
-                })
-                .toUpperCase();
-
-            const date = now.toLocaleDateString('vi-VN');
-            setTime(`${formatted} ${date}`);
-        };
-
-        updateClock();
-        const timer = setInterval(updateClock, 1000);
-        return () => clearInterval(timer);
-    }, []);
 
     if (pathname === '/login' || pathname === '/login/en') return null;
 
@@ -128,7 +130,7 @@ const StatusBar = () => {
                 <Badge count={0} overflowCount={99} size="small" className="iky-status__badge" showZero>
                     <span className="iky-status__notify-label">{t.notify}</span>
                 </Badge>
-                <Text className="iky-status__time">{time}</Text>
+                <Clock />
             </div>
         </div>
     );
