@@ -110,8 +110,11 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
     const [provSearch, setProvSearch]       = useState('');
     const [showExportMenu, setShowExportMenu] = useState(false);
     const [distSearch, setDistSearch]         = useState('');
+    // Track what's currently APPLIED (shown as tags), separate from checkedProvs (in-panel draft)
+    const [appliedProvIds, setAppliedProvIds] = useState(new Set());
     const ref = useRef(null);
     const exportMenuRef = useRef(null);
+    const TAG_LIMIT = 3; // max tags shown before "+N"
 
     // ─ Count devices per province
     const deviceCountByProv = useMemo(() => {
@@ -186,15 +189,43 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
     };
 
     const handleApply = () => {
-        onApply(checkedProvs.size ? { checkedProvs: new Set(checkedProvs), checkedDists: { ...checkedDists }, districtCache } : null);
+        const hasFilter = checkedProvs.size > 0;
+        setAppliedProvIds(new Set(checkedProvs));
+        onApply(hasFilter ? { checkedProvs: new Set(checkedProvs), checkedDists: { ...checkedDists }, districtCache } : null);
         setOpen(false);
     };
 
     const handleReset = () => {
         setCheckedProvs(new Set());
         setCheckedDists({});
+        setAppliedProvIds(new Set());
         onApply(null);
         setOpen(false);
+    };
+
+    // Remove a single applied province tag → auto-apply immediately
+    const handleRemoveTag = (e, provId) => {
+        e.stopPropagation();
+        const nextApplied = new Set(appliedProvIds);
+        nextApplied.delete(provId);
+        setAppliedProvIds(nextApplied);
+
+        const nextChecked = new Set(checkedProvs);
+        nextChecked.delete(provId);
+        setCheckedProvs(nextChecked);
+
+        // Also clear district selection for this province
+        setCheckedDists(prev => { const n = { ...prev }; delete n[provId]; return n; });
+
+        if (nextApplied.size === 0) {
+            // All removed → reset to show everything
+            onApply(null);
+        } else {
+            // Re-apply with remaining
+            const nextDists = { ...checkedDists };
+            delete nextDists[provId];
+            onApply({ checkedProvs: nextChecked, checkedDists: nextDists, districtCache });
+        }
     };
 
     const handleExport = async (mode = 'all') => {
@@ -245,23 +276,89 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
         userSelect: 'none',
     });
 
+    // Tags to display on the trigger button
+    const appliedProvList = provinces.filter(p => appliedProvIds.has(p.id));
+    const visibleTags = appliedProvList.slice(0, TAG_LIMIT);
+    const hiddenCount = appliedProvList.length - visibleTags.length;
+
     return (
         <div ref={ref} style={{ position: 'relative' }}>
-            {/* Trigger button */}
+            {/* Trigger button — TopCV style: shows selected province tags */}
             <button
                 className="ov-refresh-btn"
-                onClick={() => setOpen(o => !o)}
+                onClick={() => { if (!disabled && !exporting) setOpen(o => !o); }}
                 disabled={disabled || exporting}
-                style={{ color: '#0f766e', borderColor: selectedCount > 0 ? '#0f766e' : '#99f6e4', gap: 6 }}
+                style={{
+                    color: '#0f766e',
+                    borderColor: appliedProvIds.size > 0 ? '#0f766e' : '#99f6e4',
+                    background: appliedProvIds.size > 0 ? '#f0fdfa' : undefined,
+                    gap: 5,
+                    flexWrap: 'nowrap',
+                    maxWidth: 420,
+                    height: 'auto',
+                    minHeight: 32,
+                    padding: '4px 10px',
+                }}
             >
-                {exporting ? <Loader2 size={14} style={{ animation: 'ov-spin .65s linear infinite' }} /> : <MapPin size={14} />}
-                {exporting ? 'Đang xuất…' : 'Theo khu vực'}
-                {selectedCount > 0 && (
-                    <span style={{ background: '#0f766e', color: '#fff', borderRadius: 99, padding: '1px 7px', fontSize: 10, fontWeight: 700 }}>
-                        {selectedCount}
+                {/* Pin icon or spinner */}
+                {exporting
+                    ? <Loader2 size={13} style={{ animation: 'ov-spin .65s linear infinite', flexShrink: 0 }} />
+                    : <MapPin size={13} style={{ flexShrink: 0 }} />
+                }
+
+                {appliedProvIds.size === 0 ? (
+                    // No filter active → plain label
+                    <span style={{ fontSize: 12.5, fontWeight: 500 }}>
+                        {exporting ? 'Đang xuất…' : 'Theo khu vực'}
+                    </span>
+                ) : (
+                    // Applied tags — max TAG_LIMIT, then +N
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'nowrap', overflow: 'hidden' }}>
+                        {visibleTags.map(prov => (
+                            <span
+                                key={prov.id}
+                                style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 3,
+                                    background: '#0f766e', color: '#fff',
+                                    borderRadius: 99, padding: '2px 8px 2px 9px',
+                                    fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
+                                    lineHeight: 1.4,
+                                }}
+                            >
+                                {/* Short name: strip "Tỉnh/Thành phố" prefix */}
+                                {prov.full_name.replace(/^(Tỉnh|Thành phố)\s+/i, '')}
+                                <span
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={(e) => handleRemoveTag(e, prov.id)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleRemoveTag(e, prov.id)}
+                                    style={{
+                                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                        width: 13, height: 13, borderRadius: '50%',
+                                        background: 'rgba(255,255,255,0.25)',
+                                        cursor: 'pointer', flexShrink: 0,
+                                        fontSize: 9, fontWeight: 900, lineHeight: 1,
+                                        transition: 'background .12s',
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.45)'}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.25)'}
+                                >✕</span>
+                            </span>
+                        ))}
+                        {hiddenCount > 0 && (
+                            <span style={{
+                                display: 'inline-flex', alignItems: 'center',
+                                background: '#ccfbf1', color: '#0f766e',
+                                borderRadius: 99, padding: '2px 8px',
+                                fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+                            }}>
+                                +{hiddenCount}
+                            </span>
+                        )}
                     </span>
                 )}
-                <ChevronDown size={12} strokeWidth={2.5} />
+
+                <ChevronDown size={11} strokeWidth={2.5} style={{ flexShrink: 0, marginLeft: 2, opacity: 0.7 }} />
             </button>
 
             {open && (
@@ -418,7 +515,7 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
                     {/* Footer */}
                     <div style={{ padding: '10px 15px', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8, background: '#f8fafc', flexShrink: 0 }}>
                         <span style={{ flex: 1, fontSize: 12, color: '#64748b' }}>
-                            {selectedCount > 0 ? `Đã chọn ${selectedCount} tỉnh/thành` : 'Chưa chọn khu vực nào'}
+                            {checkedProvs.size > 0 ? `Đã chọn ${checkedProvs.size} tỉnh/thành` : 'Chưa chọn khu vực nào'}
                         </span>
                         <button onClick={handleReset} style={{ padding: '6px 12px', borderRadius: 7, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', fontSize: 12, color: '#64748b', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5 }}>
                             <RotateCcw size={12} /> Đặt lại
@@ -427,9 +524,9 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
                         {/* Export dropdown */}
                         <div ref={exportMenuRef} style={{ position: 'relative' }}>
                             <button
-                                onClick={() => selectedCount && !exporting && setShowExportMenu(m => !m)}
-                                disabled={!selectedCount || exporting}
-                                style={{ padding: '6px 12px', borderRadius: 7, border: '1px solid #99f6e4', background: '#fff', cursor: selectedCount ? 'pointer' : 'not-allowed', fontSize: 12, color: '#0f766e', fontWeight: 600, opacity: selectedCount ? 1 : 0.5, display: 'flex', alignItems: 'center', gap: 5 }}
+                                onClick={() => checkedProvs.size && !exporting && setShowExportMenu(m => !m)}
+                                disabled={!checkedProvs.size || exporting}
+                                style={{ padding: '6px 12px', borderRadius: 7, border: '1px solid #99f6e4', background: '#fff', cursor: checkedProvs.size ? 'pointer' : 'not-allowed', fontSize: 12, color: '#0f766e', fontWeight: 600, opacity: checkedProvs.size ? 1 : 0.5, display: 'flex', alignItems: 'center', gap: 5 }}
                             >
                                 {exporting ? <Loader2 size={12} style={{ animation: 'ov-spin .65s linear infinite' }} /> : <FileDown size={12} />}
                                 Xuất Excel
@@ -457,8 +554,8 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
 
                         <button
                             onClick={handleApply}
-                            disabled={!selectedCount}
-                            style={{ padding: '6px 16px', borderRadius: 7, border: 'none', background: selectedCount ? '#0f766e' : '#e2e8f0', cursor: selectedCount ? 'pointer' : 'not-allowed', fontSize: 12, color: selectedCount ? '#fff' : '#94a3b8', fontWeight: 700 }}
+                            disabled={!checkedProvs.size}
+                            style={{ padding: '6px 16px', borderRadius: 7, border: 'none', background: checkedProvs.size ? '#0f766e' : '#e2e8f0', cursor: checkedProvs.size ? 'pointer' : 'not-allowed', fontSize: 12, color: checkedProvs.size ? '#fff' : '#94a3b8', fontWeight: 700 }}
                         >
                             Áp dụng
                         </button>
