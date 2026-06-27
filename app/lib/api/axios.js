@@ -90,8 +90,6 @@ api.interceptors.response.use(
             isRefreshing = true;
 
             try {
-                console.log('🔄 Refresh token...');
-
                 const data = await refreshTokenApi(refreshToken);
 
                 saveTokens(data.accessToken, data.refreshToken);
@@ -102,11 +100,19 @@ api.interceptors.response.use(
 
                 return api(originalRequest);
             } catch (err) {
-                console.error('❌ Refresh token thất bại');
+                const status = err?.response?.status;
 
                 processQueue(err, null);
-                clearTokens();
-                window.location.href = '/login';
+
+                // ✅ Chỉ redirect login khi refresh token thực sự hết hạn (401/403)
+                // Không redirect khi lỗi mạng tạm thời (500, network error, timeout)
+                if (status === 401 || status === 403) {
+                    console.warn('[axios] Refresh token expired — redirecting to login');
+                    clearTokens();
+                    window.location.href = '/login';
+                } else {
+                    console.warn('[axios] Refresh failed (status:', status, ') — NOT redirecting (network issue?)');
+                }
 
                 return Promise.reject(err);
             } finally {
@@ -137,5 +143,39 @@ api.interceptors.response.use(
         return Promise.reject(error);
     },
 );
+
+/* ================= PROACTIVE REFRESH (shared lock) ================= */
+// Dùng chung isRefreshing + failedQueue với interceptor
+// → tránh double-refresh khi TokenRefresher và axios cùng fire một lúc
+export const proactiveRefresh = async () => {
+    // Đang có request đang refresh → bỏ qua, interceptor sẽ handle
+    if (isRefreshing) return;
+
+    const { refreshToken } = getTokens();
+    if (!refreshToken) {
+        clearTokens();
+        window.location.href = '/login';
+        return;
+    }
+
+    isRefreshing = true;
+    try {
+        const data = await refreshTokenApi(refreshToken);
+        saveTokens(data.accessToken, data.refreshToken);
+        // Giải phóng queue (nếu có request nào đang đợi)
+        processQueue(null, data.accessToken);
+    } catch (err) {
+        const status = err?.response?.status;
+        processQueue(err, null);
+        if (status === 401 || status === 403) {
+            clearTokens();
+            window.location.href = '/login';
+        }
+        // Lỗi mạng/500 → không redirect, TokenRefresher sẽ retry
+        throw err;
+    } finally {
+        isRefreshing = false;
+    }
+};
 
 export default api;
