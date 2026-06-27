@@ -900,11 +900,23 @@ const OverviewPage = () => {
     const [highlightDevice, setHighlightDevice] = useState(null);
     const [provinces, setProvinces]       = useState([]);   // esgoo province list
     const [regionFilter, setRegionFilter] = useState(null); // applied region filter
+    const [mapHeight, setMapHeight]       = useState(640);  // responsive map height
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
             setIsEn(localStorage.getItem('iky_lang') === 'en');
         }
+    }, []);
+
+    // Responsive map height
+    useEffect(() => {
+        const updateHeight = () => {
+            const w = window.innerWidth;
+            setMapHeight(w < 560 ? 340 : w < 768 ? 460 : 640);
+        };
+        updateHeight();
+        window.addEventListener('resize', updateHeight);
+        return () => window.removeEventListener('resize', updateHeight);
     }, []);
 
     const fetchAll = async (silent = false) => {
@@ -1025,6 +1037,9 @@ const OverviewPage = () => {
                     min-height: calc(100vh - 100px);
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
                 }
+                @media (max-width: 768px) {
+                    .ov-page { padding: 14px 14px 24px; }
+                }
 
                 /* ── Header ─────────────────── */
                 .ov-header {
@@ -1032,6 +1047,15 @@ const OverviewPage = () => {
                     align-items: flex-start;
                     justify-content: space-between;
                     margin-bottom: 20px;
+                    gap: 12px;
+                }
+                @media (max-width: 768px) {
+                    .ov-header {
+                        flex-direction: column;
+                        align-items: stretch;
+                        gap: 10px;
+                        margin-bottom: 14px;
+                    }
                 }
                 .ov-title-row {
                     display: flex;
@@ -1089,15 +1113,29 @@ const OverviewPage = () => {
                     gap: 14px;
                     margin-bottom: 18px;
                 }
-                @media (max-width: 1024px) { .ov-stats-row { grid-template-columns: repeat(2, 1fr); } }
-                @media (max-width: 560px)  { .ov-stats-row { grid-template-columns: 1fr; } }
+                @media (max-width: 1024px) { .ov-stats-row { grid-template-columns: repeat(2, 1fr); gap: 12px; } }
+                @media (max-width: 560px)  { .ov-stats-row { grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; } }
+                @media (max-width: 380px)  { .ov-stats-row { grid-template-columns: 1fr; gap: 8px; } }
 
-                /* ── Stat Card ──────────────── */
                 /* ── Header actions ─────────── */
                 .ov-header-actions {
                     display: flex;
                     align-items: center;
                     gap: 8px;
+                    flex-wrap: wrap;
+                }
+                @media (max-width: 768px) {
+                    .ov-header-actions {
+                        justify-content: flex-start;
+                        gap: 6px;
+                    }
+                    .ov-header-actions .ov-refresh-btn {
+                        flex: 1;
+                        justify-content: center;
+                        min-width: 0;
+                        font-size: 12px;
+                        padding: 7px 10px;
+                    }
                 }
 
                 .ov-stat-card {
@@ -1116,6 +1154,15 @@ const OverviewPage = () => {
                 .ov-stat-card:hover {
                     transform: translateY(-2px);
                     box-shadow: 0 4px 16px rgba(0,0,0,0.10);
+                }
+                @media (max-width: 560px) {
+                    .ov-stat-card {
+                        padding: 14px 14px 22px;
+                        gap: 12px;
+                        border-radius: 12px;
+                    }
+                    .ov-stat-value { font-size: 24px !important; }
+                    .ov-stat-icon { width: 38px !important; height: 38px !important; border-radius: 10px !important; }
                 }
                 .ov-stat-accent {
                     position: absolute;
@@ -1160,16 +1207,26 @@ const OverviewPage = () => {
                     box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
                     border: 1px solid rgba(0,0,0,0.045);
                 }
+                @media (max-width: 768px) {
+                    .ov-map-card { padding: 14px 12px 14px; border-radius: 12px; }
+                }
                 .ov-map-card-header {
                     display: flex;
                     align-items: center;
                     gap: 8px;
                     margin-bottom: 14px;
+                    flex-wrap: wrap;
+                    row-gap: 8px;
+                }
+                @media (max-width: 768px) {
+                    .ov-map-card-header { margin-bottom: 10px; }
+                    .ov-map-hint { display: none; }
                 }
                 .ov-map-title {
                     font-size: 14px;
                     font-weight: 700;
                     color: #0f172a;
+                    white-space: nowrap;
                 }
                 .ov-map-hint {
                     margin-left: auto;
@@ -1285,12 +1342,14 @@ const OverviewPage = () => {
 
                     {/* Search box */}
                     {!loading && devices.length > 0 && (
-                        <SearchBox
-                            devices={devices}
-                            cruiseByImei={cruiseByImei}
-                            onSelect={(device) => setHighlightDevice(device ? { ...device, _ts: Date.now() } : null)}
-                            isEn={isEn}
-                        />
+                        <div className="ov-map-search-wrap">
+                            <SearchBox
+                                devices={devices}
+                                cruiseByImei={cruiseByImei}
+                                onSelect={(device) => setHighlightDevice(device ? { ...device, _ts: Date.now() } : null)}
+                                isEn={isEn}
+                            />
+                        </div>
                     )}
 
                     {/* Active filter badge */}
@@ -1348,7 +1407,7 @@ const OverviewPage = () => {
                         devices={regionFilteredDevices}
                         cruiseByImei={cruiseByImei}
                         loading={false}
-                        height={640}
+                        height={mapHeight}
                         forceAllDevices={mapFilter !== 'all' || !!regionFilter}
                         highlightDevice={highlightDevice}
                     />
