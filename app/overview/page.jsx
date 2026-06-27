@@ -8,14 +8,21 @@ import {
     EnvironmentOutlined,
     StopOutlined,
 } from '@ant-design/icons';
+import {
+    MapPin, X, ChevronDown, FileSpreadsheet,
+    Loader2, RotateCcw, FileDown, Check,
+} from 'lucide-react';
 import Fuse from 'fuse.js';
 
 import VietnamMapDrillDown from './VietnamMapDrillDown';
-import { exportOverviewExcel } from './useOverviewExcel';
+import { exportOverviewExcel, exportByRegion } from './useOverviewExcel';
 import './map.css';
 
 import { getDevices } from '../lib/api/devices';
 import api from '../lib/api/axios';
+
+const PROVINCE_API = 'https://esgoo.net/api-tinhthanh/1/0.htm';
+const DISTRICT_API = (provinceId) => `https://esgoo.net/api-tinhthanh/2/${provinceId}.htm`;
 
 const isOnline = (cruiseItem) => {
     if (!cruiseItem) return false;
@@ -69,27 +76,401 @@ const IcMap = () => (
     </svg>
 );
 const IcRefresh = ({ spinning }) => (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
-        style={{ animation: spinning ? 'ov-spin .65s linear infinite' : 'none' }}>
-        <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
-        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-    </svg>
+    <RotateCcw size={14} style={{ animation: spinning ? 'ov-spin .65s linear infinite' : 'none' }} />
 );
-const IcExcel = () => (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-        <polyline points="14 2 14 8 20 8"/>
-        <line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/>
-    </svg>
-);
-const IcChevron = () => (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-        <polyline points="6 9 12 15 18 9"/>
-    </svg>
-);
+const IcExcel = () => <FileSpreadsheet size={15} />;
+const IcChevron = () => <ChevronDown size={12} strokeWidth={2.5} />;
+
+// ── Geo helper (province-level device filtering) ────────────────
+const _haversine = (lat1, lon1, lat2, lon2) => {
+    const R = 6371;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+const _findNearest = (lat, lon, list) => {
+    let best = null, bestDist = Infinity;
+    for (const item of list) {
+        const d = _haversine(lat, lon, parseFloat(item.latitude), parseFloat(item.longitude));
+        if (d < bestDist) { bestDist = d; best = item; }
+    }
+    return best;
+};
+
+// ── Region Filter Panel (TopCV-style) ─────────────────────────────
+const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled }) => {
+    const [open, setOpen]                   = useState(false);
+    const [hoveredProv, setHoveredProv]     = useState(null);
+    const [checkedProvs, setCheckedProvs]   = useState(new Set());
+    const [districtCache, setDistrictCache] = useState({});
+    const [checkedDists, setCheckedDists]   = useState({});
+    const [loadingDist, setLoadingDist]     = useState(false);
+    const [exporting, setExporting]         = useState(false);
+    const [provSearch, setProvSearch]       = useState('');
+    const [showExportMenu, setShowExportMenu] = useState(false);
+    const [distSearch, setDistSearch]         = useState('');
+    const ref = useRef(null);
+    const exportMenuRef = useRef(null);
+
+    // ─ Count devices per province
+    const deviceCountByProv = useMemo(() => {
+        if (!provinces.length) return {};
+        const counts = {};
+        Object.values(cruiseByImei).forEach(cruise => {
+            if (!cruise?.lat || !cruise?.lon) return;
+            const nearest = _findNearest(cruise.lat, cruise.lon, provinces);
+            if (nearest) counts[nearest.id] = (counts[nearest.id] || 0) + 1;
+        });
+        return counts;
+    }, [provinces, cruiseByImei]);
+
+    // ─ Count devices per district (haversine nearest-district approx — fast & sync)
+    const districtDeviceCounts = useMemo(() => {
+        if (!hoveredProv) return {};
+        const dists = districtCache[hoveredProv.id];
+        if (!dists?.length) return {};
+        const counts = {};
+        Object.values(cruiseByImei).forEach(cruise => {
+            if (!cruise?.lat || !cruise?.lon) return;
+            // Only consider devices belonging to this province
+            const nearestProv = _findNearest(cruise.lat, cruise.lon, provinces);
+            if (nearestProv?.id !== hoveredProv.id) return;
+            const nearestDist = _findNearest(cruise.lat, cruise.lon, dists);
+            if (nearestDist) counts[nearestDist.id] = (counts[nearestDist.id] || 0) + 1;
+        });
+        return counts;
+    }, [hoveredProv, districtCache, cruiseByImei, provinces]);
+
+    useEffect(() => {
+        const handler = (e) => {
+            if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+            if (exportMenuRef.current && !exportMenuRef.current.contains(e.target)) setShowExportMenu(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+
+    // Click province → fetch + cache districts, reset district search
+    const handleHoverProv = async (prov) => {
+        setHoveredProv(prov);
+        setDistSearch('');
+        if (!districtCache[prov.id]) {
+            setLoadingDist(true);
+            try {
+                const res  = await fetch(DISTRICT_API(prov.id));
+                const data = await res.json();
+                setDistrictCache(prev => ({ ...prev, [prov.id]: data.data || [] }));
+            } catch (e) { console.error(e); }
+            finally { setLoadingDist(false); }
+        }
+    };
+
+    const toggleProv = (provId) => {
+        setCheckedProvs(prev => {
+            const next = new Set(prev);
+            if (next.has(provId)) next.delete(provId); else next.add(provId);
+            return next;
+        });
+    };
+
+    const toggleDist = (provId, distId) => {
+        // Selecting a district also auto-checks the province
+        if (!checkedProvs.has(provId)) setCheckedProvs(prev => new Set([...prev, provId]));
+        setCheckedDists(prev => {
+            const set = new Set(prev[provId] || []);
+            if (set.has(distId)) set.delete(distId); else set.add(distId);
+            return { ...prev, [provId]: set };
+        });
+    };
+
+    const handleApply = () => {
+        onApply(checkedProvs.size ? { checkedProvs: new Set(checkedProvs), checkedDists: { ...checkedDists }, districtCache } : null);
+        setOpen(false);
+    };
+
+    const handleReset = () => {
+        setCheckedProvs(new Set());
+        setCheckedDists({});
+        onApply(null);
+        setOpen(false);
+    };
+
+    const handleExport = async (mode = 'all') => {
+        if (!checkedProvs.size) return;
+        setExporting(true);
+        setShowExportMenu(false);
+        try {
+            // Pre-filter devices by mode
+            const devicesToExport = mode === 'online'
+                ? devices.filter(d => isOnline(cruiseByImei[d.imei]))
+                : mode === 'offline'
+                ? devices.filter(d => !isOnline(cruiseByImei[d.imei]))
+                : devices;
+            for (const provId of checkedProvs) {
+                const prov = provinces.find(p => p.id === provId);
+                if (!prov) continue;
+                const dists = checkedDists[provId];
+                if (dists && dists.size > 0) {
+                    for (const distId of dists) {
+                        const distList = districtCache[provId] || [];
+                        const dist = distList.find(d => d.id === distId);
+                        if (dist) await exportByRegion({ devices: devicesToExport, cruiseByImei, province: prov, district: { properties: { ma_huyen: dist.id, ten_huyen: dist.name, loai: dist.full_name?.split(' ')[0] || '' } }, provinces });
+                    }
+                } else {
+                    await exportByRegion({ devices: devicesToExport, cruiseByImei, province: prov, district: null, provinces });
+                }
+            }
+        } finally { setExporting(false); }
+    };
+
+    const selectedCount = checkedProvs.size;
+    // Sort provinces: most devices first
+    const filteredProvs = provinces
+        .filter(p => !provSearch || p.full_name.toLowerCase().includes(provSearch.toLowerCase()))
+        .sort((a, b) => (deviceCountByProv[b.id] || 0) - (deviceCountByProv[a.id] || 0));
+    // Filter + sort districts: search → most devices first
+    const sortedDistricts = [...(districtCache[hoveredProv?.id] || [])]
+        .filter(d => !distSearch || (d.full_name || d.name).toLowerCase().includes(distSearch.toLowerCase()))
+        .sort((a, b) => (districtDeviceCounts[b.id] || 0) - (districtDeviceCounts[a.id] || 0));
+
+    const colStyle = { overflowY: 'auto', flex: 1 };
+    const rowStyle = (isHovered) => ({
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '7px 12px', cursor: 'pointer',
+        background: isHovered ? '#f0fdfa' : 'transparent',
+        borderLeft: isHovered ? '2px solid #0f766e' : '2px solid transparent',
+        transition: 'background .1s',
+        userSelect: 'none',
+    });
+
+    return (
+        <div ref={ref} style={{ position: 'relative' }}>
+            {/* Trigger button */}
+            <button
+                className="ov-refresh-btn"
+                onClick={() => setOpen(o => !o)}
+                disabled={disabled || exporting}
+                style={{ color: '#0f766e', borderColor: selectedCount > 0 ? '#0f766e' : '#99f6e4', gap: 6 }}
+            >
+                {exporting ? <Loader2 size={14} style={{ animation: 'ov-spin .65s linear infinite' }} /> : <MapPin size={14} />}
+                {exporting ? 'Đang xuất…' : 'Theo khu vực'}
+                {selectedCount > 0 && (
+                    <span style={{ background: '#0f766e', color: '#fff', borderRadius: 99, padding: '1px 7px', fontSize: 10, fontWeight: 700 }}>
+                        {selectedCount}
+                    </span>
+                )}
+                <ChevronDown size={12} strokeWidth={2.5} />
+            </button>
+
+            {open && (
+                <div style={{
+                    position: 'absolute', top: 'calc(100% + 6px)', right: 0,
+                    background: '#fff', border: '1px solid #e2e8f0',
+                    borderRadius: 12, boxShadow: '0 10px 36px rgba(0,0,0,0.16)',
+                    zIndex: 9999, width: 500, overflow: 'hidden',
+                    display: 'flex', flexDirection: 'column',
+                }}>
+                    {/* Panel header */}
+                    <div style={{ padding: '10px 15px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', flexShrink: 0 }}>
+                        <span style={{ fontWeight: 700, fontSize: 13, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <MapPin size={14} color="#0f766e" /> Lọc &amp; xuất theo khu vực
+                        </span>
+                        <button onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 2, display: 'flex', alignItems: 'center' }}>
+                            <X size={16} />
+                        </button>
+                    </div>
+
+                    {/* 2-col body */}
+                    <div style={{ display: 'flex', height: 320 }}>
+
+                        {/* LEFT: Provinces */}
+                        <div style={{ width: 220, borderRight: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column' }}>
+                            <div style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', flexShrink: 0 }}>
+                                <input
+                                    value={provSearch}
+                                    onChange={e => setProvSearch(e.target.value)}
+                                    placeholder="Tìm tỉnh/thành…"
+                                    style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: 6, padding: '4px 8px', fontSize: 11.5, outline: 'none', color: '#334155', boxSizing: 'border-box' }}
+                                />
+                            </div>
+                            <div style={colStyle}>
+                                {filteredProvs.map(prov => {
+                                    const isHov = hoveredProv?.id === prov.id;
+                                    const isChk = checkedProvs.has(prov.id);
+                                    const distCount = checkedDists[prov.id]?.size || 0;
+                                    const devCount = deviceCountByProv[prov.id] || 0;
+                                    return (
+                                        <div
+                                            key={prov.id}
+                                            style={{ ...rowStyle(isHov), cursor: 'pointer' }}
+                                            onClick={() => {
+                                                // Click anywhere on row: load districts
+                                                handleHoverProv(prov);
+                                                // Also toggle check
+                                                toggleProv(prov.id);
+                                            }}
+                                        >
+                                            {/* Checkbox purely visual — click handled by row */}
+                                            <input
+                                                type="checkbox"
+                                                checked={isChk}
+                                                onChange={() => {}}
+                                                style={{ accentColor: '#0f766e', cursor: 'pointer', flexShrink: 0, pointerEvents: 'none' }}
+                                            />
+                                            <span style={{ fontSize: 12, color: isHov ? '#0f766e' : isChk ? '#0f766e' : '#334155', fontWeight: isChk || isHov ? 600 : 400, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {prov.full_name}
+                                            </span>
+                                            {devCount > 0 && (
+                                                <span style={{ fontSize: 10, color: isChk ? '#0f766e' : '#94a3b8', fontWeight: 600, flexShrink: 0 }}>
+                                                    ({devCount})
+                                                </span>
+                                            )}
+                                            {distCount > 0 && (
+                                                <span style={{ fontSize: 9, background: '#0f766e', color: '#fff', borderRadius: 99, padding: '1px 5px', fontWeight: 700, flexShrink: 0 }}>{distCount}</span>
+                                            )}
+                                            <ChevronDown size={8} strokeWidth={2.5} style={{ transform: 'rotate(-90deg)', color: isHov ? '#0f766e' : '#94a3b8', flexShrink: 0 }} />
+                                        </div>
+                                    );
+                                })}
+
+                            </div>
+                        </div>
+
+                        {/* RIGHT: Districts */}
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                            {hoveredProv ? (
+                                <>
+                                    <div style={{ padding: '8px 12px', borderBottom: '1px solid #f1f5f9', fontSize: 11, fontWeight: 700, color: '#0f766e', background: '#f0fdfa', flexShrink: 0 }}>
+                                        {hoveredProv.full_name}
+                                    </div>
+                                    {/* District search input */}
+                                    <div style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', flexShrink: 0 }}>
+                                        <input
+                                            value={distSearch}
+                                            onChange={e => setDistSearch(e.target.value)}
+                                            placeholder="Tìm quận/huyện…"
+                                            style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: 6, padding: '4px 8px', fontSize: 11.5, outline: 'none', color: '#334155', boxSizing: 'border-box' }}
+                                        />
+                                    </div>
+                                    {/* Chọn toàn tỉnh — ẩn khi đang search */}
+                                    {!distSearch && (
+                                    <div
+                                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', background: '#fafafa', flexShrink: 0 }}
+                                        onClick={() => { toggleProv(hoveredProv.id); setCheckedDists(prev => ({ ...prev, [hoveredProv.id]: new Set() })); }}
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={checkedProvs.has(hoveredProv.id) && !(checkedDists[hoveredProv.id]?.size > 0)}
+                                            onChange={() => {}}
+                                            style={{ accentColor: '#0f766e', cursor: 'pointer', flexShrink: 0 }}
+                                        />
+                                        <span style={{ fontSize: 12, color: '#0f766e', fontWeight: 700, fontStyle: 'italic' }}>Tất cả ({hoveredProv.full_name})</span>
+                                    </div>
+                                    )}
+                                    <div style={colStyle}>
+                                        {loadingDist ? (
+                                            <div style={{ padding: 14, textAlign: 'center', color: '#94a3b8', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                                                <Loader2 size={12} style={{ animation: 'ov-spin .65s linear infinite' }} /> Đang tải…
+                                            </div>
+                                        ) : (
+                                            sortedDistricts.map(dist => {
+                                                const distDevCount = districtDeviceCounts[dist.id] || 0;
+                                                return (
+                                                    <div
+                                                        key={dist.id}
+                                                        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', cursor: 'pointer' }}
+                                                        onMouseEnter={e => { e.currentTarget.style.background = '#f8fafc'; }}
+                                                        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+                                                        onClick={() => toggleDist(hoveredProv.id, dist.id)}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={checkedDists[hoveredProv.id]?.has(dist.id) || false}
+                                                            onChange={() => {}}
+                                                            style={{ accentColor: '#0f766e', cursor: 'pointer', flexShrink: 0 }}
+                                                        />
+                                                        <span style={{ fontSize: 12, color: '#334155', flex: 1 }}>{dist.full_name || dist.name}</span>
+                                                        {distDevCount > 0 && (
+                                                            <span style={{ fontSize: 10, color: checkedDists[hoveredProv.id]?.has(dist.id) ? '#0f766e' : '#94a3b8', fontWeight: 600, flexShrink: 0 }}>
+                                                                ({distDevCount})
+                                                            </span>
+                                                        )}
+                                                        {checkedDists[hoveredProv.id]?.has(dist.id) && (
+                                                            <Check size={12} color="#0f766e" />
+                                                        )}
+                                                    </div>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+                                </>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#94a3b8', fontSize: 12, gap: 8 }}>
+                                    <MapPin size={28} color="#cbd5e1" strokeWidth={1.5} />
+                                    Click vào tỉnh để chọn quận/huyện
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Footer */}
+                    <div style={{ padding: '10px 15px', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8, background: '#f8fafc', flexShrink: 0 }}>
+                        <span style={{ flex: 1, fontSize: 12, color: '#64748b' }}>
+                            {selectedCount > 0 ? `Đã chọn ${selectedCount} tỉnh/thành` : 'Chưa chọn khu vực nào'}
+                        </span>
+                        <button onClick={handleReset} style={{ padding: '6px 12px', borderRadius: 7, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', fontSize: 12, color: '#64748b', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <RotateCcw size={12} /> Đặt lại
+                        </button>
+
+                        {/* Export dropdown */}
+                        <div ref={exportMenuRef} style={{ position: 'relative' }}>
+                            <button
+                                onClick={() => selectedCount && !exporting && setShowExportMenu(m => !m)}
+                                disabled={!selectedCount || exporting}
+                                style={{ padding: '6px 12px', borderRadius: 7, border: '1px solid #99f6e4', background: '#fff', cursor: selectedCount ? 'pointer' : 'not-allowed', fontSize: 12, color: '#0f766e', fontWeight: 600, opacity: selectedCount ? 1 : 0.5, display: 'flex', alignItems: 'center', gap: 5 }}
+                            >
+                                {exporting ? <Loader2 size={12} style={{ animation: 'ov-spin .65s linear infinite' }} /> : <FileDown size={12} />}
+                                Xuất Excel
+                                <ChevronDown size={10} strokeWidth={2.5} />
+                            </button>
+                            {showExportMenu && (
+                                <div style={{ position: 'absolute', bottom: 'calc(100% + 6px)', right: 0, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, boxShadow: '0 6px 20px rgba(0,0,0,0.12)', overflow: 'hidden', minWidth: 200, zIndex: 99999 }}>
+                                    {[
+                                        { mode: 'all',     label: 'Xuất tất cả (khu vực)',  dot: '#0f766e' },
+                                        { mode: 'online',  label: 'Xuất Online',            dot: '#16a34a' },
+                                        { mode: 'offline', label: 'Xuất Offline',           dot: '#dc2626' },
+                                    ].map(opt => (
+                                        <button key={opt.mode} onClick={() => handleExport(opt.mode)}
+                                            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12.5, color: '#334155', fontWeight: 500, textAlign: 'left' }}
+                                            onMouseEnter={e => e.currentTarget.style.background = '#f0fdfa'}
+                                            onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                                        >
+                                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: opt.dot, flexShrink: 0 }} />
+                                            {opt.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <button
+                            onClick={handleApply}
+                            disabled={!selectedCount}
+                            style={{ padding: '6px 16px', borderRadius: 7, border: 'none', background: selectedCount ? '#0f766e' : '#e2e8f0', cursor: selectedCount ? 'pointer' : 'not-allowed', fontSize: 12, color: selectedCount ? '#fff' : '#94a3b8', fontWeight: 700 }}
+                        >
+                            Áp dụng
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
 
 // ── Excel Dropdown ──────────────────────────────────────────────
-const ExcelDropdown = ({ onExport, disabled }) => {
+const ExcelDropdown = ({ onExport, disabled, regionActive, regionCount }) => {
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
 
@@ -99,11 +480,17 @@ const ExcelDropdown = ({ onExport, disabled }) => {
         return () => document.removeEventListener('mousedown', handler);
     }, []);
 
-    const options = [
-        { mode: 'all',     label: 'Xuất toàn bộ',         color: '#1677ff' },
-        { mode: 'online',  label: 'Xuất thiết bị Online',  color: '#16a34a' },
-        { mode: 'offline', label: 'Xuất thiết bị Offline', color: '#dc2626' },
-    ];
+    const options = regionActive
+        ? [
+            { mode: 'all',     label: `Xuất khu vực (${regionCount} thiết bị)`, color: '#0f766e' },
+            { mode: 'online',  label: 'Xuất Online trong khu vực',               color: '#16a34a' },
+            { mode: 'offline', label: 'Xuất Offline trong khu vực',              color: '#dc2626' },
+        ]
+        : [
+            { mode: 'all',     label: 'Xuất toàn bộ',         color: '#1677ff' },
+            { mode: 'online',  label: 'Xuất thiết bị Online',  color: '#16a34a' },
+            { mode: 'offline', label: 'Xuất thiết bị Offline', color: '#dc2626' },
+        ];
 
     return (
         <div ref={ref} style={{ position: 'relative' }}>
@@ -111,10 +498,15 @@ const ExcelDropdown = ({ onExport, disabled }) => {
                 className="ov-refresh-btn"
                 onClick={() => setOpen((p) => !p)}
                 disabled={disabled}
-                style={{ color: '#16a34a', borderColor: '#bbf7d0', gap: 6 }}
+                style={{ color: regionActive ? '#0f766e' : '#16a34a', borderColor: regionActive ? '#99f6e4' : '#bbf7d0', gap: 6 }}
             >
                 <IcExcel />
                 Xuất Excel
+                {regionActive && (
+                    <span style={{ background: '#0f766e', color: '#fff', borderRadius: 99, padding: '1px 6px', fontSize: 10, fontWeight: 700 }}>
+                        {regionCount}
+                    </span>
+                )}
                 <IcChevron />
             </button>
             {open && (
@@ -128,8 +520,13 @@ const ExcelDropdown = ({ onExport, disabled }) => {
                     boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
                     overflow: 'hidden',
                     zIndex: 9999,
-                    minWidth: 210,
+                    minWidth: 240,
                 }}>
+                    {regionActive && (
+                        <div style={{ padding: '6px 16px', fontSize: 10.5, color: '#0f766e', fontWeight: 600, background: '#f0fdfa', borderBottom: '1px solid #ccfbf1' }}>
+                            📍 Đang lọc theo khu vực
+                        </div>
+                    )}
                     {options.map((opt) => (
                         <button
                             key={opt.mode}
@@ -404,6 +801,8 @@ const OverviewPage = () => {
     const [refreshing, setRefreshing]     = useState(false);
     const [mapFilter, setMapFilter]       = useState('all'); // 'all' | 'online' | 'offline'
     const [highlightDevice, setHighlightDevice] = useState(null);
+    const [provinces, setProvinces]       = useState([]);   // esgoo province list
+    const [regionFilter, setRegionFilter] = useState(null); // applied region filter
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -452,6 +851,11 @@ const OverviewPage = () => {
     // Fetch lần đầu khi mount
     useEffect(() => { fetchAll(); }, []);
 
+    // Fetch provinces (cached once — dùng chung cho RegionFilterPanel + map filter)
+    useEffect(() => {
+        fetch(PROVINCE_API).then(r => r.json()).then(d => setProvinces(d.data || [])).catch(console.error);
+    }, []);
+
     // Auto-refresh mỗi 5 phút (silent — không hiện loading toàn trang)
     const AUTO_REFRESH_MS = 5 * 60 * 1000;
     useEffect(() => {
@@ -469,16 +873,42 @@ const OverviewPage = () => {
     const offlineDevices = totalDevices - onlineDevices;
     const expiringSoon   = useMemo(() => devices.filter(isExpiringSoon).length, [devices]);
 
-    // Devices shown on map based on active filter
+    // Devices shown on map based on online/offline filter
     const filteredDevices = useMemo(() => {
         if (mapFilter === 'online')  return devices.filter((d) => isOnline(cruiseByImei[d.imei]));
         if (mapFilter === 'offline') return devices.filter((d) => !isOnline(cruiseByImei[d.imei]));
         return devices;
     }, [devices, cruiseByImei, mapFilter]);
 
+    // Devices filtered further by selected region (province + district level)
+    const regionFilteredDevices = useMemo(() => {
+        if (!regionFilter || !regionFilter.checkedProvs.size || !provinces.length) return filteredDevices;
+        return filteredDevices.filter(d => {
+            const cruise = cruiseByImei[d.imei];
+            if (!cruise?.lat || !cruise?.lon) return false;
+            // Step 1: province filter
+            const nearest = _findNearest(cruise.lat, cruise.lon, provinces);
+            if (!nearest || !regionFilter.checkedProvs.has(nearest.id)) return false;
+            // Step 2: district filter (if specific districts selected for this province)
+            const provId = nearest.id;
+            const selectedDists = regionFilter.checkedDists?.[provId];
+            if (!selectedDists || selectedDists.size === 0) return true; // no district filter → keep
+            const distList = regionFilter.districtCache?.[provId];
+            if (!distList?.length) return true; // no district data → keep
+            const nearestDist = _findNearest(cruise.lat, cruise.lon, distList);
+            return nearestDist && selectedDists.has(nearestDist.id);
+        });
+    }, [filteredDevices, regionFilter, provinces, cruiseByImei]);
+
+
     const toggleFilter = (mode) => setMapFilter((cur) => cur === mode ? 'all' : mode);
 
-    const handleExport = (mode) => exportOverviewExcel({ devices, cruiseByImei, mode });
+    // Khi region filter active → ExcelDropdown cũng xuất theo khu vực đã chọn
+    const handleExport = (mode) => exportOverviewExcel({
+        devices: regionFilter ? regionFilteredDevices : devices,
+        cruiseByImei,
+        mode,
+    });
 
     const t = (vi, en) => (isEn ? en : vi);
 
@@ -683,9 +1113,18 @@ const OverviewPage = () => {
                     </div>
                 </div>
                 <div className="ov-header-actions">
+                    <RegionFilterPanel
+                        provinces={provinces}
+                        devices={devices}
+                        cruiseByImei={cruiseByImei}
+                        onApply={setRegionFilter}
+                        disabled={loading || devices.length === 0}
+                    />
                     <ExcelDropdown
                         onExport={handleExport}
                         disabled={loading || devices.length === 0}
+                        regionActive={!!regionFilter}
+                        regionCount={regionFilteredDevices.length}
                     />
                     <button
                         className="ov-refresh-btn"
@@ -809,11 +1248,11 @@ const OverviewPage = () => {
                     </div>
                 ) : (
                     <VietnamMapDrillDown
-                        devices={filteredDevices}
+                        devices={regionFilteredDevices}
                         cruiseByImei={cruiseByImei}
                         loading={false}
                         height={640}
-                        forceAllDevices={mapFilter !== 'all'}
+                        forceAllDevices={mapFilter !== 'all' || !!regionFilter}
                         highlightDevice={highlightDevice}
                     />
                 )}
