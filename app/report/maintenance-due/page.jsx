@@ -492,7 +492,8 @@ export default function MaintenanceDueReportPage() {
                         rowKey={(row) => row?._id || row?.imei}
                         columns={columns}
                         dataSource={data}
-                        scroll={{ x: 1300 }}
+                        virtual
+                        scroll={{ x: 1300, y: 600 }}
                         pagination={{ pageSize: 10, showSizeChanger: false }}
                     />
                 )}

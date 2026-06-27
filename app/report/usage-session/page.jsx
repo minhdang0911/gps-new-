@@ -490,7 +490,8 @@ export default function UsageSessionReportPage() {
                                     showQuickJumper: true,
                                 }}
                                 onChange={handleTableChange}
-                                scroll={{ x: 2400 }}
+                                virtual
+                                scroll={{ x: 2400, y: 600 }}
                                 expandable={
                                     groupBy !== 'none' ? { defaultExpandAllRows: false, indentSize: 18 } : undefined
                                 }

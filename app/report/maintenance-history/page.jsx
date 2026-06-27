@@ -852,7 +852,8 @@ export default function MaintenanceHistoryReportPage() {
                         }
                         columns={columns}
                         dataSource={pagedData}
-                        scroll={{ x: 980 }}
+                        virtual
+                        scroll={{ x: 980, y: 600 }}
                         onChange={onTableChange}
                         pagination={{
                             current: page,

@@ -405,7 +405,8 @@ const ChargingSessionReportPage = () => {
                                     showQuickJumper: true,
                                 }}
                                 onChange={handleTableChange}
-                                scroll={{ x: 1400 }}
+                                virtual
+                                scroll={{ x: 1400, y: 600 }}
                             />
                         ) : (
                             <ReportPanel

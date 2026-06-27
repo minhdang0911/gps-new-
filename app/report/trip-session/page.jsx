@@ -494,7 +494,8 @@ const TripSessionReportPage = () => {
                                         showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
                                     }}
                                     onChange={handleTableChange}
-                                    scroll={{ x: 1400 }}
+                                    virtual
+                                    scroll={{ x: 1400, y: 600 }}
                                 />
                             </>
                         ) : (
