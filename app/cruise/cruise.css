@@ -898,3 +898,205 @@
     cursor: not-allowed;
     transform: none;
 }
+
+/* =========================
+ *  CINEMA REPLAY BAR
+ * ========================= */
+.iky-cruise__replaybar {
+    position: absolute;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(8, 8, 20, 0.82);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 60px;
+    padding: 10px 20px;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255,255,255,0.04);
+    color: #fff;
+    min-width: 520px;
+    max-width: calc(100% - 40px);
+    user-select: none;
+}
+
+/* Icon buttons */
+.iky-cruise__rb-btn {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.75);
+    cursor: pointer;
+    padding: 5px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s;
+    flex-shrink: 0;
+    line-height: 1;
+}
+.iky-cruise__rb-btn:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+.iky-cruise__rb-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+/* Big play/pause button */
+.iky-cruise__rb-btn--play {
+    width: 38px;
+    height: 38px;
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 50%;
+}
+.iky-cruise__rb-btn--play:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.22);
+    color: #fff;
+}
+
+/* Follow button active state */
+.iky-cruise__rb-btn--follow-on {
+    color: #86efac;
+    background: rgba(34, 197, 94, 0.15) !important;
+}
+
+/* Time label */
+.iky-cruise__rb-time {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.6);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    min-width: 36px;
+}
+.iky-cruise__rb-time--current {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+/* Progress track */
+.iky-cruise__rb-track {
+    flex: 1;
+    position: relative;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    min-width: 100px;
+    cursor: pointer;
+}
+
+/* Colored fill behind the handle */
+.iky-cruise__rb-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #22c55e 0%, #facc15 60%, #ef4444 100%);
+    pointer-events: none;
+    transition: width 0.08s linear;
+}
+
+/* Invisible native range input on top (handles mouse events) */
+.iky-cruise__rb-slider {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+    z-index: 2;
+    margin: 0;
+    padding: 0;
+    /* expand hit area vertically */
+    top: -10px;
+    height: calc(100% + 20px);
+}
+
+/* Speed pills */
+.iky-cruise__rb-speeds {
+    display: flex;
+    gap: 3px;
+    flex-shrink: 0;
+}
+.iky-cruise__rb-speed {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid transparent;
+    color: rgba(255, 255, 255, 0.55);
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 20px;
+    transition: all 0.15s;
+    line-height: 1.4;
+}
+.iky-cruise__rb-speed:hover {
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+}
+.iky-cruise__rb-speed--active {
+    background: rgba(34, 197, 94, 0.2);
+    border-color: rgba(34, 197, 94, 0.35);
+    color: #86efac;
+}
+
+/* Separator */
+.iky-cruise__rb-sep {
+    width: 1px;
+    height: 18px;
+    background: rgba(255, 255, 255, 0.12);
+    flex-shrink: 0;
+}
+
+/* =========================
+ *  OSRM SNAP TOGGLE
+ * ========================= */
+.iky-cruise__snap-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 14px;
+    background: rgba(8, 8, 20, 0.82);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+.iky-cruise__snap-toggle:hover:not(:disabled) {
+    background: rgba(30, 30, 60, 0.9);
+    color: #fff;
+}
+.iky-cruise__snap-toggle:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+.iky-cruise__snap-toggle--active {
+    background: rgba(37, 99, 235, 0.3);
+    border-color: rgba(96, 165, 250, 0.45);
+    color: #93c5fd;
+}
+
+/* Spinner for Loader2 icon */
+@keyframes iky-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+.iky-cruise__spin {
+    animation: iky-spin 0.8s linear infinite;
+    display: inline-block;
+    vertical-align: middle;
+}
+

@@ -48,6 +48,12 @@ import {
 } from '../util/cruiseUtils';
 import { smoothMoveTo, easeOutCubic, easeLinear, easeOutQuart } from '../util/smoothMarker';
 import { UpOutlined } from '@ant-design/icons';
+import {
+    SkipBack, Play, Pause, SkipForward,
+    Navigation2, Navigation2Off,
+    Gauge,
+    Loader2, Map as MapIcon, Crosshair,
+} from 'lucide-react';
 
 const locales = { vi, en };
 
@@ -146,8 +152,17 @@ const CruisePage = () => {
     const highlightDotRef = useRef(null);
 
     // dots canvas layer
-    const pointLayerRef = useRef(null);
-    const dotRendererRef = useRef(null);
+    const pointLayerRef   = useRef(null);
+    const dotRendererRef  = useRef(null);
+
+    // OSRM-snapped polyline layers
+    const snappedCasingRef   = useRef(null);
+    const snappedPolylineRef = useRef(null);
+
+    // OSRM snap state
+    const [snappedLatLngs, setSnappedLatLngs] = useState(null);  // [[lat,lon],…]
+    const [isSnapping,     setIsSnapping]     = useState(false);
+    const [useSnapped,     setUseSnapped]     = useState(false);
     const dotCacheRef = useRef([]);
     const drawDotsRafRef = useRef(null);
 
@@ -671,6 +686,145 @@ const CruisePage = () => {
         handlePointClickRaw(rawIdx);
     };
 
+    // ── Replay bar helpers ──────────────────────────────────────────
+    const formatReplayMs = (ms) => {
+        if (!Number.isFinite(ms) || ms < 0) return '00:00';
+        const totalSec = Math.floor(ms / 1000);
+        const h = Math.floor(totalSec / 3600);
+        const m = Math.floor((totalSec % 3600) / 60);
+        const s = totalSec % 60;
+        if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    };
+
+    const replayTimeBounds = useMemo(() => {
+        if (!rawRouteData.length) return { startMs: 0, endMs: 0, totalMs: 0 };
+        const first = rawRouteData[0]?.__timeMs;
+        const last  = rawRouteData[rawRouteData.length - 1]?.__timeMs;
+        if (!Number.isFinite(first) || !Number.isFinite(last)) return { startMs: 0, endMs: 0, totalMs: 0 };
+        return { startMs: first, endMs: last, totalMs: Math.max(0, last - first) };
+    }, [rawRouteData]);
+
+    // Helper: format timestamp as dd/MM HH:MM:SS
+    const fmtTs = (ms, showSec = true) => {
+        if (!Number.isFinite(ms)) return '--/-- --:--';
+        const d = new Date(ms);
+        const dd = String(d.getDate()).padStart(2, '0');
+        const mo = String(d.getMonth() + 1).padStart(2, '0');
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        const ss = String(d.getSeconds()).padStart(2, '0');
+        return showSec ? `${dd}/${mo} ${hh}:${mm}:${ss}` : `${dd}/${mo} ${hh}:${mm}`;
+    };
+
+    // Current point: full dd/MM HH:MM:SS
+    const currentActualTimeStr = useMemo(() => {
+        const p = rawRouteData[activeIndex];
+        if (!p || !Number.isFinite(p.__timeMs)) return '--/-- --:--:--';
+        return fmtTs(p.__timeMs, true);
+    }, [rawRouteData, activeIndex]);
+
+    // Route end: dd/MM HH:MM
+    const routeEndTimeStr = useMemo(() => {
+        if (!replayTimeBounds.endMs) return '--/-- --:--';
+        return fmtTs(replayTimeBounds.endMs, false);
+    }, [replayTimeBounds]);
+
+    const handleSkipEnd = () => {
+        if (!mapRouteData.length) return;
+        stopPlaying();
+        const last = mapRouteData.length - 1;
+        pendingRenderIdxRef.current = last;
+        setActiveRenderIndex(last);
+        setSliderValue(last);
+        const rawLast = mapToRawIndexRef.current?.[last];
+        if (typeof rawLast === 'number') setActiveIndex(rawLast);
+        const p = mapRouteData[last];
+        if (p?.lat != null && p?.lon != null) {
+            smoothMoveTo(movingMarkerRef.current, p.lat, p.lon, {
+                durationMs: 350, easingFn: easeOutCubic, rafRef: smoothMoveRafRef,
+                onUpdate: (la, lo) => { highlightDotRef.current?.setLatLng([la, lo]); },
+            });
+            mapRef.current?.setView([p.lat, p.lon], mapRef.current?.getZoom?.() ?? 15, { animate: true, duration: 0.4 });
+        }
+    };
+
+    // ================================
+    // OSRM Map Matching
+    // ================================
+    const OSRM_BATCH = 10;  // public server hard limit
+
+    const OSRM_BASE  = 'https://router.project-osrm.org';
+
+    const snapRouteToRoad = async (points) => {
+        const valid = points.filter(p =>
+            typeof p.lat === 'number' && typeof p.lon === 'number' &&
+            Number.isFinite(p.lat) && Number.isFinite(p.lon)
+        );
+        if (valid.length < 2) return null;
+
+        // Deduplicate: keep one point per minDist meters.
+        // Large threshold (100m) collapses GPS parking-drift into a single point,
+        // preventing the "star web" pattern that OSRM creates from nearby drift points.
+        const dedup = (pts, minDist) => {
+            const out = []; let last = null;
+            for (const p of pts) {
+                const d = last ? distanceMeters(last, p) : Infinity;
+                if (!last || d >= minDist) { out.push(p); last = p; }
+            }
+            return out;
+        };
+
+        // 100m → 50m → 20m cascade — never fall back to raw (could be 10k+ points)
+        let filtered = dedup(valid, 100);
+        if (filtered.length < 4) filtered = dedup(valid, 50);
+        if (filtered.length < 4) filtered = dedup(valid, 20);
+        if (filtered.length < 2) return null;
+
+        const allLatLngs = [];
+
+        for (let i = 0; i < filtered.length; i += (OSRM_BATCH - 1)) {
+            const batch = filtered.slice(i, i + OSRM_BATCH);
+            if (batch.length < 2) break;
+
+            const coordStr = batch.map(p => `${p.lon.toFixed(6)},${p.lat.toFixed(6)}`).join(';');
+            const tsStr    = batch.map(p =>
+                Math.floor((Number.isFinite(p.__timeMs) ? p.__timeMs : Date.now()) / 1000)
+            ).join(';');
+            // radiuses=30 → snap GPS within 30m off-road to nearest road
+            const radiiStr = batch.map(() => '30').join(';');
+
+            const url = `${OSRM_BASE}/match/v1/driving/${coordStr}?overview=full&geometries=geojson&timestamps=${tsStr}&radiuses=${radiiStr}`;
+
+            const ctrl = new AbortController();
+            const tid  = setTimeout(() => ctrl.abort(), 10000);
+            try {
+                const res  = await fetch(url, { signal: ctrl.signal });
+                clearTimeout(tid);
+                if (!res.ok) continue;
+                const data = await res.json();
+                if (data.code !== 'Ok' || !data.matchings?.length) continue;
+
+                for (const matching of data.matchings) {
+                    const coords = matching.geometry?.coordinates;
+                    if (!coords) continue;
+                    for (const [lon, lat] of coords) allLatLngs.push([lat, lon]);
+                }
+            } catch (e) {
+                clearTimeout(tid);
+                console.warn('OSRM batch failed:', e.message);
+            }
+
+            if (i + OSRM_BATCH - 1 < filtered.length) {
+                await new Promise(r => setTimeout(r, 220));
+            }
+        }
+
+        return allLatLngs.length >= 2 ? allLatLngs : null;
+    };
+
+
+
     // ===============================
     // build segment distances for playback
     // ===============================
@@ -828,6 +982,10 @@ const CruisePage = () => {
         const map = mapRef.current;
         if (!map || !LMap) return;
 
+        // Clean up snapped overlays whenever raw route changes
+        if (snappedCasingRef.current)   { map.removeLayer(snappedCasingRef.current);   snappedCasingRef.current   = null; }
+        if (snappedPolylineRef.current) { map.removeLayer(snappedPolylineRef.current); snappedPolylineRef.current = null; }
+
         if (polylineCasingRef.current) {
             map.removeLayer(polylineCasingRef.current);
             polylineCasingRef.current = null;
@@ -965,6 +1123,41 @@ const CruisePage = () => {
         scheduleDrawDots();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mapRouteData, LMap]);
+
+    // useEffect: render snapped (OSRM-matched) polyline layer
+    useEffect(() => {
+        const map = mapRef.current;
+        if (!map || !LMap) return;
+
+        // Remove old snapped layers
+        if (snappedCasingRef.current)   { map.removeLayer(snappedCasingRef.current);   snappedCasingRef.current   = null; }
+        if (snappedPolylineRef.current) { map.removeLayer(snappedPolylineRef.current); snappedPolylineRef.current = null; }
+
+        // Show/hide raw GPS line
+        const rawVis = (!snappedLatLngs || !useSnapped) ? 1 : 0;
+        polylineCasingRef.current?.setStyle?.({ opacity: rawVis });
+        polylineRef.current?.setStyle?.({ opacity: rawVis });
+
+        if (!snappedLatLngs || !useSnapped) return;
+
+        // Draw road-matched casing + inner line (blue style)
+        snappedCasingRef.current = LMap.polyline(snappedLatLngs, {
+            color: '#ffffff', weight: 9, opacity: 0.9,
+            lineCap: 'round', lineJoin: 'round', interactive: false, smoothFactor: 1,
+        }).addTo(map);
+
+        snappedPolylineRef.current = LMap.polyline(snappedLatLngs, {
+            color: '#2563eb', weight: 5, opacity: 1,
+            lineCap: 'round', lineJoin: 'round', interactive: false, smoothFactor: 1,
+        }).addTo(map);
+
+        // Bring markers to top
+        startMarkerRef.current?.bringToFront?.();
+        endMarkerRef.current?.bringToFront?.();
+        highlightDotRef.current?.bringToFront?.();
+        movingMarkerRef.current?.bringToFront?.();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [snappedLatLngs, useSnapped, LMap]);
 
     // redraw dots when map move/zoom end
     useEffect(() => {
@@ -1194,6 +1387,11 @@ const CruisePage = () => {
             setActiveRenderIndex(0);
             setSliderValue(0);
 
+            // Reset snap state
+            setSnappedLatLngs(null);
+            setUseSnapped(false);
+            setIsSnapping(false);
+
             setActiveTab('route');
             setStatsOpen(false);
 
@@ -1271,6 +1469,18 @@ const CruisePage = () => {
 
             const firstValid = mapped.find((p) => typeof p.lat === 'number' && typeof p.lon === 'number');
             if (firstValid) ensureAddress(firstValid.lat, firstValid.lon);
+
+            // ── OSRM Map Matching (background, non-blocking) ──────────────
+            setSnappedLatLngs(null);
+            setUseSnapped(false);
+            setIsSnapping(true);
+            snapRouteToRoad(mapped)
+                .then(latlngs => {
+                    setSnappedLatLngs(latlngs);
+                    if (latlngs) setUseSnapped(true); // auto-switch to road view on success
+                })
+                .catch(e => console.warn('OSRM match error:', e))
+                .finally(() => setIsSnapping(false));
         } catch (e) {
             console.error(e);
             setError(t.error.loadFailed);
@@ -1684,45 +1894,8 @@ const CruisePage = () => {
                                 </span>
                             </div>
 
-                            <div className="iky-cruise__controls">
-                                <button onClick={handleStart} disabled={isPlaying || !mapRouteData.length}>
-                                    ▶
-                                </button>
-                                <button onClick={handlePause} disabled={!isPlaying}>
-                                    ⏸
-                                </button>
-                                <button onClick={handleReset} disabled={!mapRouteData.length}>
-                                    ⏹
-                                </button>
-
-                                {/* ✅ Follow toggle */}
-                                <div className="iky-cruise__follow">
-                                    <Tooltip
-                                        title={
-                                            isEn
-                                                ? 'Follow marker (auto pan while playing)'
-                                                : 'Bám theo xe (tự pan khi chạy)'
-                                        }
-                                    >
-                                        <span className="iky-cruise__follow-label">{isEn ? 'Follow' : 'Bám'}</span>
-                                    </Tooltip>
-                                    <Switch size="small" checked={followMode} onChange={(v) => setFollowMode(v)} />
-                                </div>
-
-                                <select
-                                    value={playbackRate}
-                                    onChange={(e) => setPlaybackRate(Number(e.target.value))}
-                                    className="iky-cruise__rate"
-                                >
-                                    <option value={0.5}>0.5x</option>
-                                    <option value={1}>1x</option>
-                                    <option value={1.5}>1.5x</option>
-                                    <option value={2}>2x</option>
-                                    <option value={3}>3x</option>
-                                    <option value={5}>5x</option>
-                                    <option value={10}>10x</option>
-                                </select>
-
+                            {/* Slider mini — still syncs position, hidden behind replay bar */}
+                            <div style={{ display: 'none' }}>
                                 <input
                                     type="range"
                                     min={0}
@@ -1731,6 +1904,7 @@ const CruisePage = () => {
                                     onChange={handleSliderChange}
                                     onMouseUp={commitSlider}
                                     onTouchEnd={commitSlider}
+                                    readOnly
                                 />
                             </div>
 
@@ -1772,6 +1946,54 @@ const CruisePage = () => {
             {/* MAP */}
             <div className="iky-cruise__map">
                 <div id="iky-cruise-map" className="iky-cruise__map-inner" />
+
+                {/* ── OSRM Snap toggle button ─────────────────────── */}
+                {rawRouteData.length > 0 && (
+                    <Tooltip title={
+                        isSnapping
+                            ? (isEn ? 'Matching GPS to roads via OSRM…' : 'Đang khớp GPS lên đường thực (OSRM)…')
+                            : snappedLatLngs
+                                ? (useSnapped
+                                    ? (isEn ? 'Showing road-matched route — click for raw GPS' : 'Đang hiện đường thực — click để xem GPS thô')
+                                    : (isEn ? 'Showing raw GPS — click for road view' : 'Đang hiện GPS thô — click để xem đường thực'))
+                                : (isEn ? 'Road matching unavailable (OSRM failed)' : 'Không thể khớp đường (OSRM thất bại)')
+                    }>
+                        <button
+                            type="button"
+                            className={`iky-cruise__snap-toggle${useSnapped ? ' iky-cruise__snap-toggle--active' : ''}`}
+                            onClick={() => snappedLatLngs && setUseSnapped(v => !v)}
+                            disabled={isSnapping || !snappedLatLngs}
+                            style={{ position: 'absolute', top: 12, left: 50, zIndex: 900 }}
+                        >
+                            
+                        </button>
+                    </Tooltip>
+                )}
+
+                {/* Map legend — start/end dots */}
+                {mapRouteData.length > 0 && (
+                    <div style={{
+                        position: 'absolute', bottom: 80, right: 12, zIndex: 900,
+                        background: 'rgba(8,8,20,0.78)', backdropFilter: 'blur(12px)',
+                        border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10,
+                        padding: '7px 12px', display: 'flex', flexDirection: 'column', gap: 5,
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                            <span style={{ width: 12, height: 12, borderRadius: '50%', background: '#16a34a', border: '2px solid #fff', flexShrink: 0 }} />
+                            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)', fontWeight: 500 }}>
+                                {isEn ? 'Start' : 'Điểm đầu'}
+                                {replayTimeBounds.startMs ? ` — ${fmtTs(replayTimeBounds.startMs, false)}` : ''}
+                            </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                            <span style={{ width: 12, height: 12, borderRadius: '50%', background: '#ea580c', border: '2px solid #fff', flexShrink: 0 }} />
+                            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)', fontWeight: 500 }}>
+                                {isEn ? 'End' : 'Điểm cuối'}
+                                {replayTimeBounds.endMs ? ` — ${routeEndTimeStr}` : ''}
+                            </span>
+                        </div>
+                    </div>
+                )}
 
                 {/* ✅ Fixed current point info panel */}
                 {rawRouteData.length > 0 && currentInfo && (
@@ -1843,6 +2065,112 @@ const CruisePage = () => {
                                 )}
                             </span>
                         </div>
+                    </div>
+                )}
+
+                {/* ══ CINEMA REPLAY BAR ══════════════════════════════════ */}
+                {rawRouteData.length > 0 && (
+                    <div className="iky-cruise__replaybar">
+                        {/* Skip to start */}
+                        <button
+                            type="button"
+                            className="iky-cruise__rb-btn"
+                            onClick={handleReset}
+                            disabled={!mapRouteData.length}
+                            title={isEn ? 'Back to start' : 'Về đầu'}
+                        >
+                            <SkipBack size={16} />
+                        </button>
+
+                        {/* Play / Pause */}
+                        <button
+                            type="button"
+                            className="iky-cruise__rb-btn iky-cruise__rb-btn--play"
+                            onClick={isPlaying ? handlePause : handleStart}
+                            disabled={!mapRouteData.length}
+                            title={isPlaying ? (isEn ? 'Pause' : 'Tạm dừng') : (isEn ? 'Play' : 'Phát')}
+                        >
+                            {isPlaying ? <Pause size={16} /> : <Play size={16} />}
+                        </button>
+
+                        {/* Skip to end */}
+                        <button
+                            type="button"
+                            className="iky-cruise__rb-btn"
+                            onClick={handleSkipEnd}
+                            disabled={!mapRouteData.length}
+                            title={isEn ? 'Skip to end' : 'Về cuối'}
+                        >
+                            <SkipForward size={16} />
+                        </button>
+
+                        <div className="iky-cruise__rb-sep" />
+
+                        {/* Current actual time */}
+                        <span className="iky-cruise__rb-time iky-cruise__rb-time--current">
+                            {currentActualTimeStr}
+                        </span>
+
+                        {/* Progress track */}
+                        <div className="iky-cruise__rb-track">
+                            <div
+                                className="iky-cruise__rb-fill"
+                                style={{
+                                    width: `${mapRouteData.length > 1
+                                        ? (sliderValue / (mapRouteData.length - 1)) * 100
+                                        : 0}%`,
+                                }}
+                            />
+                            <input
+                                type="range"
+                                className="iky-cruise__rb-slider"
+                                min={0}
+                                max={Math.max(0, mapRouteData.length - 1)}
+                                value={sliderValue}
+                                onChange={handleSliderChange}
+                                onMouseUp={commitSlider}
+                                onTouchEnd={commitSlider}
+                            />
+                        </div>
+
+                        {/* Route end time */}
+                        <span className="iky-cruise__rb-time">
+                            {routeEndTimeStr}
+                        </span>
+
+                        <div className="iky-cruise__rb-sep" />
+
+                        {/* Speed pills */}
+                        <div className="iky-cruise__rb-speeds">
+                            {[1, 2, 5, 10].map(r => (
+                                <button
+                                    key={r}
+                                    type="button"
+                                    className={`iky-cruise__rb-speed${playbackRate === r ? ' iky-cruise__rb-speed--active' : ''}`}
+                                    onClick={() => setPlaybackRate(r)}
+                                >
+                                    {r}x
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="iky-cruise__rb-sep" />
+
+                        {/* Follow toggle */}
+                        <Tooltip title={followMode
+                            ? (isEn ? 'Following — click to disable' : 'Đang bám theo — nhấn để tắt')
+                            : (isEn ? 'Follow disabled — click to enable' : 'Bám theo tắt — nhấn để bật')
+                        }>
+                            <button
+                                type="button"
+                                className={`iky-cruise__rb-btn${followMode ? ' iky-cruise__rb-btn--follow-on' : ''}`}
+                                onClick={() => setFollowMode(v => !v)}
+                            >
+                                {followMode
+                                    ? <Navigation2 size={16} />
+                                    : <Navigation2Off size={16} />}
+                            </button>
+                        </Tooltip>
                     </div>
                 )}
 
