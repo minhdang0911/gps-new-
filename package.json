@@ -3,7 +3,7 @@
     "version": "0.1.0",
     "private": true,
     "scripts": {
-        "dev": "next dev",
+        "dev": "next dev --turbo",
         "build": "next build",
         "start": "next start",
         "lint": "eslint",
@@ -30,6 +30,7 @@
         "file-saver": "^2.0.5",
         "fuse.js": "^7.1.0",
         "html2canvas": "^1.4.1",
+        "idb-keyval": "^6.2.5",
         "intro.js": "^8.3.2",
         "jspdf": "^4.2.0",
         "jspdf-autotable": "^5.0.7",
