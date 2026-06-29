@@ -44,13 +44,30 @@ api.interceptors.request.use(
 
 let isRefreshing = false;
 let failedQueue = [];
+let refreshSafetyTimer = null; // safety: reset isRefreshing nếu bị treo
 
 const processQueue = (error, token = null) => {
-    failedQueue.forEach((prom) => {
+    const queue = failedQueue;
+    failedQueue = [];
+    queue.forEach((prom) => {
         if (error) prom.reject(error);
         else prom.resolve(token);
     });
-    failedQueue = [];
+};
+
+const setRefreshing = (value) => {
+    isRefreshing = value;
+    clearTimeout(refreshSafetyTimer);
+    if (value) {
+        // Safety: nếu isRefreshing bị stuck >20s → tự reset và reject queue
+        refreshSafetyTimer = setTimeout(() => {
+            if (isRefreshing) {
+                console.warn('[axios] isRefreshing stuck >20s — force reset');
+                isRefreshing = false;
+                processQueue(new Error('Refresh timeout'));
+            }
+        }, 20000);
+    }
 };
 
 api.interceptors.response.use(
@@ -87,7 +104,7 @@ api.interceptors.response.use(
                     .catch((err) => Promise.reject(err));
             }
 
-            isRefreshing = true;
+            setRefreshing(true);
 
             try {
                 const data = await refreshTokenApi(refreshToken);
@@ -116,7 +133,7 @@ api.interceptors.response.use(
 
                 return Promise.reject(err);
             } finally {
-                isRefreshing = false;
+                setRefreshing(false);
             }
         }
 
@@ -148,8 +165,13 @@ api.interceptors.response.use(
 // Dùng chung isRefreshing + failedQueue với interceptor
 // → tránh double-refresh khi TokenRefresher và axios cùng fire một lúc
 export const proactiveRefresh = async () => {
-    // Đang có request đang refresh → bỏ qua, interceptor sẽ handle
-    if (isRefreshing) return;
+    // Nếu đang có refresh → chờ nó xong (không bỏ qua)
+    // → TokenRefresher sẽ nhận được timing đúng sau khi xong
+    if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+            failedQueue.push({ resolve, reject });
+        }).then(() => { /* thành công, không cần làm gì thêm */ });
+    }
 
     const { refreshToken } = getTokens();
     if (!refreshToken) {
@@ -158,7 +180,7 @@ export const proactiveRefresh = async () => {
         return;
     }
 
-    isRefreshing = true;
+    setRefreshing(true);
     try {
         const data = await refreshTokenApi(refreshToken);
         saveTokens(data.accessToken, data.refreshToken);
@@ -174,7 +196,7 @@ export const proactiveRefresh = async () => {
         // Lỗi mạng/500 → không redirect, TokenRefresher sẽ retry
         throw err;
     } finally {
-        isRefreshing = false;
+        setRefreshing(false);
     }
 };
 

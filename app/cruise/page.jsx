@@ -267,6 +267,11 @@ const CruisePage = () => {
             maxZoom: 22,
         }).addTo(map);
 
+        // Đảm bảo map tính toán lại kích thước sau khi DOM ổn định (tránh lỗi bản đồ xám ở local/flexbox)
+        setTimeout(() => {
+            map.invalidateSize();
+        }, 100);
+
         dotRendererRef.current = LMap.canvas({ padding: 0.5 });
 
         return () => map.remove();

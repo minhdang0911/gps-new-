@@ -312,6 +312,11 @@ const MonitorPage = () => {
 
         LMap.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
+        // Đảm bảo map tính toán lại kích thước sau khi DOM ổn định (tránh lỗi bản đồ xám ở local/flexbox)
+        setTimeout(() => {
+            map.invalidateSize();
+        }, 100);
+
         const BASE_ANCHOR = [18, 36];
         const MOBILE_ANCHOR = [18, -15];
 

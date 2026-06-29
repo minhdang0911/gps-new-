@@ -101,43 +101,18 @@ const DevicePopup = ({ device, cruise, onClose }) => {
                 }}
             >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                    <div
-                        style={{
-                            width: 8,
-                            height: 8,
-                            borderRadius: '50%',
-                            background: '#fff',
-                            flexShrink: 0,
-                        }}
-                    />
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff', flexShrink: 0 }} />
                     <span style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>
                         {device.license_plate || device.imei}
                     </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                    <span
-                        style={{
-                            background: 'rgba(255,255,255,0.25)',
-                            color: '#fff',
-                            fontSize: 11,
-                            fontWeight: 600,
-                            padding: '2px 7px',
-                            borderRadius: 9,
-                        }}
-                    >
+                    <span style={{ background: 'rgba(255,255,255,0.25)', color: '#fff', fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 9 }}>
                         {online ? 'Online' : 'Offline'}
                     </span>
                     <button
                         onClick={onClose}
-                        style={{
-                            background: 'none',
-                            border: 'none',
-                            color: '#fff',
-                            fontSize: 17,
-                            cursor: 'pointer',
-                            lineHeight: 1,
-                            padding: '0 2px',
-                        }}
+                        style={{ background: 'none', border: 'none', color: '#fff', fontSize: 17, cursor: 'pointer', lineHeight: 1, padding: '0 2px' }}
                     >
                         ×
                     </button>
@@ -145,14 +120,7 @@ const DevicePopup = ({ device, cruise, onClose }) => {
             </div>
             <div style={{ padding: '10px 14px' }}>
                 {!cruise ? (
-                    <div
-                        style={{
-                            color: '#9ca3af',
-                            fontSize: 12,
-                            textAlign: 'center',
-                            padding: '12px 0',
-                        }}
-                    >
+                    <div style={{ color: '#9ca3af', fontSize: 12, textAlign: 'center', padding: '12px 0' }}>
                         Chưa có dữ liệu hành trình
                     </div>
                 ) : (
@@ -161,10 +129,7 @@ const DevicePopup = ({ device, cruise, onClose }) => {
                             ['IMEI', device.imei],
                             ['Lái xe', device.driver || '—'],
                             ['Loại xe', device.vehicle_category_id?.name || '—'],
-                            [
-                                'Tọa độ',
-                                cruise.lat && cruise.lon ? `${cruise.lat.toFixed(5)}, ${cruise.lon.toFixed(5)}` : '—',
-                            ],
+                            ['Tọa độ', cruise.lat && cruise.lon ? `${cruise.lat.toFixed(5)}, ${cruise.lon.toFixed(5)}` : '—'],
                             ['Tốc độ', cruise.spd != null ? `${cruise.spd} km/h` : '—'],
                             ['ODO', cruise.mil != null ? `${cruise.mil.toLocaleString()} km` : '—'],
                             ['ACC', cruise.acc === 1 ? 'Tắt máy' : 'Mở máy'],

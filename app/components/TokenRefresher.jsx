@@ -89,6 +89,12 @@ export default function TokenRefresher() {
                 const status = err?.response?.status;
                 if (status === 401 || status === 403) {
                     // Token thực sự hết hạn → logout
+                    localStorage.removeItem('accessToken');
+                    localStorage.removeItem('refreshToken');
+                    localStorage.removeItem('role');
+                    localStorage.removeItem('iky_user');
+                    localStorage.removeItem('currentUser');
+                    routerRef.current.replace('/login');
                     return;
                 }
                 // Lỗi mạng / server tạm thời → KHÔNG logout, retry sau 30s

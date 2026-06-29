@@ -362,13 +362,7 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
             </button>
 
             {open && (
-                <div style={{
-                    position: 'absolute', top: 'calc(100% + 6px)', right: 0,
-                    background: '#fff', border: '1px solid #e2e8f0',
-                    borderRadius: 12, boxShadow: '0 10px 36px rgba(0,0,0,0.16)',
-                    zIndex: 9999, width: 500, overflow: 'hidden',
-                    display: 'flex', flexDirection: 'column',
-                }}>
+                <div className="ov-region-panel">
                     {/* Panel header */}
                     <div style={{ padding: '10px 15px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', flexShrink: 0 }}>
                         <span style={{ fontWeight: 700, fontSize: 13, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -380,10 +374,10 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
                     </div>
 
                     {/* 2-col body */}
-                    <div style={{ display: 'flex', height: 320 }}>
+                    <div className="ov-region-body">
 
                         {/* LEFT: Provinces */}
-                        <div style={{ width: 220, borderRight: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column' }}>
+                        <div className="ov-region-left">
                             <div style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', flexShrink: 0 }}>
                                 <input
                                     value={provSearch}
@@ -513,20 +507,20 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
                     </div>
 
                     {/* Footer */}
-                    <div style={{ padding: '10px 15px', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8, background: '#f8fafc', flexShrink: 0 }}>
-                        <span style={{ flex: 1, fontSize: 12, color: '#64748b' }}>
+                    <div className="ov-region-footer">
+                        <span className="ov-region-footer-label" style={{ flex: 1, fontSize: 12, color: '#64748b' }}>
                             {checkedProvs.size > 0 ? `Đã chọn ${checkedProvs.size} tỉnh/thành` : 'Chưa chọn khu vực nào'}
                         </span>
-                        <button onClick={handleReset} style={{ padding: '6px 12px', borderRadius: 7, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', fontSize: 12, color: '#64748b', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <button className="ov-region-footer-btn" onClick={handleReset} style={{ padding: '6px 12px', borderRadius: 7, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', fontSize: 12, color: '#64748b', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5 }}>
                             <RotateCcw size={12} /> Đặt lại
                         </button>
 
                         {/* Export dropdown */}
-                        <div ref={exportMenuRef} style={{ position: 'relative' }}>
+                        <div className="ov-region-footer-btn" ref={exportMenuRef} style={{ position: 'relative' }}>
                             <button
                                 onClick={() => checkedProvs.size && !exporting && setShowExportMenu(m => !m)}
                                 disabled={!checkedProvs.size || exporting}
-                                style={{ padding: '6px 12px', borderRadius: 7, border: '1px solid #99f6e4', background: '#fff', cursor: checkedProvs.size ? 'pointer' : 'not-allowed', fontSize: 12, color: '#0f766e', fontWeight: 600, opacity: checkedProvs.size ? 1 : 0.5, display: 'flex', alignItems: 'center', gap: 5 }}
+                                style={{ width: '100%', padding: '6px 12px', borderRadius: 7, border: '1px solid #99f6e4', background: '#fff', cursor: checkedProvs.size ? 'pointer' : 'not-allowed', fontSize: 12, color: '#0f766e', fontWeight: 600, opacity: checkedProvs.size ? 1 : 0.5, display: 'flex', alignItems: 'center', gap: 5 }}
                             >
                                 {exporting ? <Loader2 size={12} style={{ animation: 'ov-spin .65s linear infinite' }} /> : <FileDown size={12} />}
                                 Xuất Excel
@@ -553,6 +547,7 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
                         </div>
 
                         <button
+                            className="ov-region-footer-btn"
                             onClick={handleApply}
                             disabled={!checkedProvs.size}
                             style={{ padding: '6px 16px', borderRadius: 7, border: 'none', background: checkedProvs.size ? '#0f766e' : '#e2e8f0', cursor: checkedProvs.size ? 'pointer' : 'not-allowed', fontSize: 12, color: checkedProvs.size ? '#fff' : '#94a3b8', fontWeight: 700 }}
@@ -711,7 +706,7 @@ const SearchBox = ({ devices, cruiseByImei, onSelect, isEn }) => {
     const hasResults = results.length > 0;
 
     return (
-        <div ref={wrapRef} style={{ position: 'relative', width: 260, flexShrink: 0 }}>
+        <div ref={wrapRef} className="ov-search-box-wrap" style={{ position: 'relative' }}>
             {/* Input */}
             <div style={{
                 display: 'flex',
@@ -1128,13 +1123,105 @@ const OverviewPage = () => {
                     .ov-header-actions {
                         justify-content: flex-start;
                         gap: 6px;
+                        width: 100%;
+                    }
+                    .ov-header-actions > * {
+                        flex: 1 !important;
+                        min-width: 0 !important;
                     }
                     .ov-header-actions .ov-refresh-btn {
-                        flex: 1;
+                        width: 100% !important;
                         justify-content: center;
-                        min-width: 0;
                         font-size: 12px;
                         padding: 7px 10px;
+                    }
+                }
+
+                /* ── Search Box responsive ── */
+                .ov-search-box-wrap {
+                    width: 260px;
+                    flex-shrink: 0;
+                }
+                @media (max-width: 560px) {
+                    .ov-search-box-wrap {
+                        width: 100% !important;
+                        margin-top: 4px;
+                    }
+                }
+
+                /* ── Region Panel bottom sheet ── */
+                .ov-region-panel {
+                    position: absolute;
+                    top: calc(100% + 6px);
+                    right: 0;
+                    background: #fff;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 12px;
+                    box-shadow: 0 10px 36px rgba(0,0,0,0.16);
+                    z-index: 9999;
+                    width: 500px;
+                    overflow: hidden;
+                    display: flex;
+                    flex-direction: column;
+                }
+                .ov-region-body {
+                    display: flex;
+                    height: 320px;
+                }
+                .ov-region-left {
+                    width: 220px;
+                    border-right: 1px solid #f1f5f9;
+                    display: flex;
+                    flex-direction: column;
+                }
+                .ov-region-footer {
+                    padding: 10px 15px;
+                    border-top: 1px solid #f1f5f9;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    background: #f8fafc;
+                    flex-shrink: 0;
+                }
+                @media (max-width: 560px) {
+                    .ov-region-panel {
+                        position: fixed !important;
+                        top: auto !important;
+                        bottom: 0 !important;
+                        left: 0 !important;
+                        right: 0 !important;
+                        width: 100% !important;
+                        height: 70vh !important;
+                        max-height: 500px !important;
+                        border-radius: 16px 16px 0 0 !important;
+                        border: none !important;
+                        box-shadow: 0 -4px 24px rgba(0,0,0,0.15) !important;
+                        z-index: 99999 !important;
+                    }
+                    .ov-region-body {
+                        flex: 1 !important;
+                        height: auto !important;
+                        min-height: 0 !important;
+                    }
+                    .ov-region-left {
+                        width: 45% !important;
+                        min-width: 140px !important;
+                    }
+                    .ov-region-footer {
+                        padding: 12px 14px 20px !important;
+                        flex-wrap: wrap !important;
+                        justify-content: space-between !important;
+                        gap: 8px !important;
+                    }
+                    .ov-region-footer-label {
+                        width: 100% !important;
+                        margin-bottom: 2px !important;
+                        font-size: 11px !important;
+                    }
+                    .ov-region-footer-btn {
+                        flex: 1 !important;
+                        justify-content: center !important;
+                        min-width: 0 !important;
                     }
                 }
 
