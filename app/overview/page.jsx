@@ -616,7 +616,7 @@ const ExcelDropdown = ({ onExport, disabled, regionActive, regionCount }) => {
                 }}>
                     {regionActive && (
                         <div style={{ padding: '6px 16px', fontSize: 10.5, color: '#0f766e', fontWeight: 600, background: '#f0fdfa', borderBottom: '1px solid #ccfbf1' }}>
-                            📍 Đang lọc theo khu vực
+                             Đang lọc theo khu vực
                         </div>
                     )}
                     {options.map((opt) => (
