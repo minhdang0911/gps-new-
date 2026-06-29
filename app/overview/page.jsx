@@ -1008,11 +1008,29 @@ const OverviewPage = () => {
     const toggleFilter = (mode) => setMapFilter((cur) => cur === mode ? 'all' : mode);
 
     // Khi region filter active → ExcelDropdown cũng xuất theo khu vực đã chọn
-    const handleExport = (mode) => exportOverviewExcel({
-        devices: regionFilter ? regionFilteredDevices : devices,
-        cruiseByImei,
-        mode,
-    });
+    const handleExport = (mode) => {
+        // Tạo nhãn khu vực từ regionFilter đang áp dụng
+        let regionLabel = null;
+        if (regionFilter?.checkedProvs?.size) {
+            const provNames = [...regionFilter.checkedProvs].map(provId => {
+                const prov = provinces.find(p => p.id === provId);
+                return prov?.full_name || provId;
+            });
+            // Ghép tối đa 2 tỉnh, nếu nhiều hơn thì thêm "+N"
+            if (provNames.length <= 2) {
+                regionLabel = provNames.join(', ');
+            } else {
+                regionLabel = `${provNames.slice(0, 2).join(', ')} +${provNames.length - 2}`;
+            }
+        }
+
+        exportOverviewExcel({
+            devices: regionFilter ? regionFilteredDevices : devices,
+            cruiseByImei,
+            mode,
+            regionLabel,
+        });
+    };
 
     const t = (vi, en) => (isEn ? en : vi);
 

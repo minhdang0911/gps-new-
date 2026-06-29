@@ -70,7 +70,7 @@ const OFFLINE_BG  = 'FDE8E8';
  * Xuất Excel danh sách thiết bị từ trang Overview.
  * mode: 'all' | 'online' | 'offline'
  */
-export function exportOverviewExcel({ devices, cruiseByImei, mode = 'all' }) {
+export function exportOverviewExcel({ devices, cruiseByImei, mode = 'all', regionLabel = null }) {
     const allWithStatus = devices.map((d) => {
         const cruise = cruiseByImei[d.imei];
         const online = isOnline(cruise);
@@ -93,7 +93,8 @@ export function exportOverviewExcel({ devices, cruiseByImei, mode = 'all' }) {
         mode === 'offline' ? 'Thiết bị Offline' :
         'Toàn bộ thiết bị';
 
-    const titleText    = `Báo cáo ${modeLabel} — IKY GPS`;
+    const regionSuffix = regionLabel ? ` — ${regionLabel}` : '';
+    const titleText    = `Báo cáo ${modeLabel}${regionSuffix} — IKY GPS`;
     const subtitleText = `Xuất lúc: ${new Date().toLocaleString('vi-VN')}  |  Tổng: ${filtered.length} thiết bị`;
 
     const rows = filtered.map((x, i) => ({
@@ -193,17 +194,17 @@ export function exportOverviewExcel({ devices, cruiseByImei, mode = 'all' }) {
         ref: XLSX.utils.encode_range({ s: { r: 2, c: 0 }, e: { r: range.e.r, c: range.e.c } }),
     };
 
-    // ── Save ────────────────────────────────────────────────────────
-    const fileNames = {
-        all:     `ToanBoThietBi_${getTodayStr()}.xlsx`,
-        online:  `ThietBiOnline_${getTodayStr()}.xlsx`,
-        offline: `ThietBiOffline_${getTodayStr()}.xlsx`,
-    };
+    // Tên file: [Mode]_[KhuVuc]_dd-mm-yyyy.xlsx
+    const safeName = (s) => s.replace(/[\/\\?%*:|"<>]/g, '_').replace(/\s+/g, '_').trim();
+    const modeSlug = { all: 'ToanBo', online: 'Online', offline: 'Offline' }[mode] || 'ToanBo';
+    const regionSlug = regionLabel ? `_${safeName(regionLabel)}` : '';
+    const fileName = `ThietBi_${modeSlug}${regionSlug}_${getTodayStr()}.xlsx`;
 
     const wb  = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, modeLabel);
+    const sheetName = (regionLabel ? `${modeLabel} - ${regionLabel}` : modeLabel).slice(0, 31);
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
     const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array', cellStyles: true });
-    saveAs(new Blob([buf]), fileNames[mode]);
+    saveAs(new Blob([buf]), fileName);
 }
 
 /**
