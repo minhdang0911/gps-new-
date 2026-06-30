@@ -11,6 +11,7 @@ import {
 import {
     MapPin, X, ChevronDown, FileSpreadsheet,
     Loader2, RotateCcw, FileDown, Check,
+    Maximize2, Minimize2,
 } from 'lucide-react';
 import Fuse from 'fuse.js';
 
@@ -20,6 +21,7 @@ import './map.css';
 
 import { getDevices } from '../lib/api/devices';
 import api from '../lib/api/axios';
+import { usePathname } from 'next/navigation';
 
 const PROVINCE_API = 'https://esgoo.net/api-tinhthanh/1/0.htm';
 const DISTRICT_API = (provinceId) => `https://esgoo.net/api-tinhthanh/2/${provinceId}.htm`;
@@ -99,7 +101,8 @@ const _findNearest = (lat, lon, list) => {
 };
 
 // ── Region Filter Panel (TopCV-style) ─────────────────────────────
-const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled }) => {
+const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled, isEn }) => {
+    const t = (vi, en) => (isEn ? en : vi);
     const [open, setOpen]                   = useState(false);
     const [hoveredProv, setHoveredProv]     = useState(null);
     const [checkedProvs, setCheckedProvs]   = useState(new Set());
@@ -309,7 +312,7 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
                 {appliedProvIds.size === 0 ? (
                     // No filter active → plain label
                     <span style={{ fontSize: 12.5, fontWeight: 500 }}>
-                        {exporting ? 'Đang xuất…' : 'Theo khu vực'}
+                        {exporting ? t('Đang xuất…', 'Exporting…') : t('Theo khu vực', 'By Region')}
                     </span>
                 ) : (
                     // Applied tags — max TAG_LIMIT, then +N
@@ -366,7 +369,7 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
                     {/* Panel header */}
                     <div style={{ padding: '10px 15px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc', flexShrink: 0 }}>
                         <span style={{ fontWeight: 700, fontSize: 13, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <MapPin size={14} color="#0f766e" /> Lọc &amp; xuất theo khu vực
+                            <MapPin size={14} color="#0f766e" /> {t('Lọc & xuất theo khu vực', 'Filter & Export by Region')}
                         </span>
                         <button onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: 2, display: 'flex', alignItems: 'center' }}>
                             <X size={16} />
@@ -382,7 +385,7 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
                                 <input
                                     value={provSearch}
                                     onChange={e => setProvSearch(e.target.value)}
-                                    placeholder="Tìm tỉnh/thành…"
+                                    placeholder={t('Tìm tỉnh/thành…', 'Search province…')}
                                     style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: 6, padding: '4px 8px', fontSize: 11.5, outline: 'none', color: '#334155', boxSizing: 'border-box' }}
                                 />
                             </div>
@@ -441,7 +444,7 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
                                         <input
                                             value={distSearch}
                                             onChange={e => setDistSearch(e.target.value)}
-                                            placeholder="Tìm quận/huyện…"
+                                            placeholder={t('Tìm quận/huyện…', 'Search district…')}
                                             style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: 6, padding: '4px 8px', fontSize: 11.5, outline: 'none', color: '#334155', boxSizing: 'border-box' }}
                                         />
                                     </div>
@@ -457,13 +460,13 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
                                             onChange={() => {}}
                                             style={{ accentColor: '#0f766e', cursor: 'pointer', flexShrink: 0 }}
                                         />
-                                        <span style={{ fontSize: 12, color: '#0f766e', fontWeight: 700, fontStyle: 'italic' }}>Tất cả ({hoveredProv.full_name})</span>
+                                        <span style={{ fontSize: 12, color: '#0f766e', fontWeight: 700, fontStyle: 'italic' }}>{t('Tất cả', 'All')} ({hoveredProv.full_name})</span>
                                     </div>
                                     )}
                                     <div style={colStyle}>
                                         {loadingDist ? (
                                             <div style={{ padding: 14, textAlign: 'center', color: '#94a3b8', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                                                <Loader2 size={12} style={{ animation: 'ov-spin .65s linear infinite' }} /> Đang tải…
+                                                <Loader2 size={12} style={{ animation: 'ov-spin .65s linear infinite' }} /> {t('Đang tải…', 'Loading…')}
                                             </div>
                                         ) : (
                                             sortedDistricts.map(dist => {
@@ -500,7 +503,7 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
                             ) : (
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#94a3b8', fontSize: 12, gap: 8 }}>
                                     <MapPin size={28} color="#cbd5e1" strokeWidth={1.5} />
-                                    Click vào tỉnh để chọn quận/huyện
+                                    {t('Click vào tỉnh để chọn quận/huyện', 'Click province to select district')}
                                 </div>
                             )}
                         </div>
@@ -509,10 +512,10 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
                     {/* Footer */}
                     <div className="ov-region-footer">
                         <span className="ov-region-footer-label" style={{ flex: 1, fontSize: 12, color: '#64748b' }}>
-                            {checkedProvs.size > 0 ? `Đã chọn ${checkedProvs.size} tỉnh/thành` : 'Chưa chọn khu vực nào'}
+                            {checkedProvs.size > 0 ? t(`Đã chọn ${checkedProvs.size} tỉnh/thành`, `Selected ${checkedProvs.size} region(s)`) : t('Chưa chọn khu vực nào', 'No region selected')}
                         </span>
                         <button className="ov-region-footer-btn" onClick={handleReset} style={{ padding: '6px 12px', borderRadius: 7, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', fontSize: 12, color: '#64748b', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5 }}>
-                            <RotateCcw size={12} /> Đặt lại
+                            <RotateCcw size={12} /> {t('Đặt lại', 'Reset')}
                         </button>
 
                         {/* Export dropdown */}
@@ -523,15 +526,15 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
                                 style={{ width: '100%', padding: '6px 12px', borderRadius: 7, border: '1px solid #99f6e4', background: '#fff', cursor: checkedProvs.size ? 'pointer' : 'not-allowed', fontSize: 12, color: '#0f766e', fontWeight: 600, opacity: checkedProvs.size ? 1 : 0.5, display: 'flex', alignItems: 'center', gap: 5 }}
                             >
                                 {exporting ? <Loader2 size={12} style={{ animation: 'ov-spin .65s linear infinite' }} /> : <FileDown size={12} />}
-                                Xuất Excel
+                                {t('Xuất Excel', 'Export Excel')}
                                 <ChevronDown size={10} strokeWidth={2.5} />
                             </button>
                             {showExportMenu && (
                                 <div style={{ position: 'absolute', bottom: 'calc(100% + 6px)', right: 0, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, boxShadow: '0 6px 20px rgba(0,0,0,0.12)', overflow: 'hidden', minWidth: 200, zIndex: 99999 }}>
                                     {[
-                                        { mode: 'all',     label: 'Xuất tất cả (khu vực)',  dot: '#0f766e' },
-                                        { mode: 'online',  label: 'Xuất Online',            dot: '#16a34a' },
-                                        { mode: 'offline', label: 'Xuất Offline',           dot: '#dc2626' },
+                                        { mode: 'all',     label: t('Xuất tất cả (khu vực)', 'Export all (region)'),  dot: '#0f766e' },
+                                        { mode: 'online',  label: t('Xuất Online', 'Export Online'),            dot: '#16a34a' },
+                                        { mode: 'offline', label: t('Xuất Offline', 'Export Offline'),           dot: '#dc2626' },
                                     ].map(opt => (
                                         <button key={opt.mode} onClick={() => handleExport(opt.mode)}
                                             style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12.5, color: '#334155', fontWeight: 500, textAlign: 'left' }}
@@ -552,7 +555,7 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
                             disabled={!checkedProvs.size}
                             style={{ padding: '6px 16px', borderRadius: 7, border: 'none', background: checkedProvs.size ? '#0f766e' : '#e2e8f0', cursor: checkedProvs.size ? 'pointer' : 'not-allowed', fontSize: 12, color: checkedProvs.size ? '#fff' : '#94a3b8', fontWeight: 700 }}
                         >
-                            Áp dụng
+                            {t('Áp dụng', 'Apply')}
                         </button>
                     </div>
                 </div>
@@ -562,7 +565,8 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
 };
 
 // ── Excel Dropdown ──────────────────────────────────────────────
-const ExcelDropdown = ({ onExport, disabled, regionActive, regionCount }) => {
+const ExcelDropdown = ({ onExport, disabled, regionActive, regionCount, isEn }) => {
+    const t = (vi, en) => (isEn ? en : vi);
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
 
@@ -574,14 +578,14 @@ const ExcelDropdown = ({ onExport, disabled, regionActive, regionCount }) => {
 
     const options = regionActive
         ? [
-            { mode: 'all',     label: `Xuất khu vực (${regionCount} thiết bị)`, color: '#0f766e' },
-            { mode: 'online',  label: 'Xuất Online trong khu vực',               color: '#16a34a' },
-            { mode: 'offline', label: 'Xuất Offline trong khu vực',              color: '#dc2626' },
+            { mode: 'all',     label: t(`Xuất khu vực (${regionCount} thiết bị)`, `Export region (${regionCount} devices)`), color: '#0f766e' },
+            { mode: 'online',  label: t('Xuất Online trong khu vực', 'Export Online in region'),               color: '#16a34a' },
+            { mode: 'offline', label: t('Xuất Offline trong khu vực', 'Export Offline in region'),              color: '#dc2626' },
         ]
         : [
-            { mode: 'all',     label: 'Xuất toàn bộ',         color: '#1677ff' },
-            { mode: 'online',  label: 'Xuất thiết bị Online',  color: '#16a34a' },
-            { mode: 'offline', label: 'Xuất thiết bị Offline', color: '#dc2626' },
+            { mode: 'all',     label: t('Xuất toàn bộ', 'Export all'),         color: '#1677ff' },
+            { mode: 'online',  label: t('Xuất thiết bị Online', 'Export Online devices'),  color: '#16a34a' },
+            { mode: 'offline', label: t('Xuất thiết bị Offline', 'Export Offline devices'), color: '#dc2626' },
         ];
 
     return (
@@ -593,7 +597,7 @@ const ExcelDropdown = ({ onExport, disabled, regionActive, regionCount }) => {
                 style={{ color: regionActive ? '#0f766e' : '#16a34a', borderColor: regionActive ? '#99f6e4' : '#bbf7d0', gap: 6 }}
             >
                 <IcExcel />
-                Xuất Excel
+                {t('Xuất Excel', 'Export Excel')}
                 {regionActive && (
                     <span style={{ background: '#0f766e', color: '#fff', borderRadius: 99, padding: '1px 6px', fontSize: 10, fontWeight: 700 }}>
                         {regionCount}
@@ -616,7 +620,7 @@ const ExcelDropdown = ({ onExport, disabled, regionActive, regionCount }) => {
                 }}>
                     {regionActive && (
                         <div style={{ padding: '6px 16px', fontSize: 10.5, color: '#0f766e', fontWeight: 600, background: '#f0fdfa', borderBottom: '1px solid #ccfbf1' }}>
-                             Đang lọc theo khu vực
+                             {t('Đang lọc theo khu vực', 'Filtering by region')}
                         </div>
                     )}
                     {options.map((opt) => (
@@ -896,23 +900,60 @@ const OverviewPage = () => {
     const [provinces, setProvinces]       = useState([]);   // esgoo province list
     const [regionFilter, setRegionFilter] = useState(null); // applied region filter
     const [mapHeight, setMapHeight]       = useState(640);  // responsive map height
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const mapCardRef                      = useRef(null);
+    const pathname                        = usePathname() || '/';
 
     useEffect(() => {
-        if (typeof window !== 'undefined') {
-            setIsEn(localStorage.getItem('iky_lang') === 'en');
+        const segments = pathname.split('/').filter(Boolean);
+        const last = segments[segments.length - 1];
+        const isEnFromPath = last === 'en';
+        if (typeof window === 'undefined') return;
+
+        if (isEnFromPath) {
+            setIsEn(true);
+            localStorage.setItem('iky_lang', 'en');
+        } else {
+            const saved = localStorage.getItem('iky_lang');
+            setIsEn(saved === 'en');
+        }
+    }, [pathname]);
+
+    // Responsive map height (accounting for Fullscreen mode)
+    const updateHeight = useCallback(() => {
+        if (document.fullscreenElement) {
+            setMapHeight(window.innerHeight - 80);
+        } else {
+            const w = window.innerWidth;
+            setMapHeight(w < 560 ? 340 : w < 768 ? 460 : 640);
         }
     }, []);
 
-    // Responsive map height
     useEffect(() => {
-        const updateHeight = () => {
-            const w = window.innerWidth;
-            setMapHeight(w < 560 ? 340 : w < 768 ? 460 : 640);
-        };
         updateHeight();
         window.addEventListener('resize', updateHeight);
-        return () => window.removeEventListener('resize', updateHeight);
-    }, []);
+        
+        const handleFsChange = () => {
+            setIsFullscreen(!!document.fullscreenElement);
+            updateHeight();
+        };
+        document.addEventListener('fullscreenchange', handleFsChange);
+        
+        return () => {
+            window.removeEventListener('resize', updateHeight);
+            document.removeEventListener('fullscreenchange', handleFsChange);
+        };
+    }, [updateHeight]);
+
+    const toggleFullscreen = () => {
+        if (!document.fullscreenElement) {
+            mapCardRef.current?.requestFullscreen?.().catch((err) => {
+                console.error('Error enabling fullscreen:', err);
+            });
+        } else {
+            document.exitFullscreen?.();
+        }
+    };
 
     const fetchAll = async (silent = false) => {
         if (!silent) setLoading(true);
@@ -1052,6 +1093,23 @@ const OverviewPage = () => {
                 }
                 @media (max-width: 768px) {
                     .ov-page { padding: 14px 14px 24px; }
+                }
+
+                .ov-map-card:fullscreen {
+                    padding: 16px 20px;
+                    background: #fff;
+                    width: 100vw;
+                    height: 100vh;
+                    box-sizing: border-box;
+                    overflow: hidden;
+                    border-radius: 0;
+                    border: none;
+                    box-shadow: none;
+                    display: flex;
+                    flex-direction: column;
+                }
+                .ov-map-card:fullscreen .ov-map-card-header {
+                    margin-bottom: 12px;
                 }
 
                 /* ── Header ─────────────────── */
@@ -1378,12 +1436,14 @@ const OverviewPage = () => {
                         cruiseByImei={cruiseByImei}
                         onApply={setRegionFilter}
                         disabled={loading || devices.length === 0}
+                        isEn={isEn}
                     />
                     <ExcelDropdown
                         onExport={handleExport}
                         disabled={loading || devices.length === 0}
                         regionActive={!!regionFilter}
                         regionCount={regionFilteredDevices.length}
+                        isEn={isEn}
                     />
                     <button
                         className="ov-refresh-btn"
@@ -1438,7 +1498,7 @@ const OverviewPage = () => {
             </div>
 
             {/* Map card */}
-            <div className="ov-map-card">
+            <div className="ov-map-card" ref={mapCardRef}>
                 <div className="ov-map-card-header">
                     <div className="ov-map-icon-wrap">
                         <IcMap />
@@ -1485,6 +1545,27 @@ const OverviewPage = () => {
                             >✕</button>
                         </span>
                     )}
+
+                    {/* Fullscreen button */}
+                    <button
+                        onClick={toggleFullscreen}
+                        className="ov-refresh-btn"
+                        style={{
+                            marginLeft: (mapFilter !== 'all' || (mapFilter === 'all' && !loading)) ? '0' : 'auto',
+                            padding: '5px 12px',
+                            height: 32,
+                            fontSize: 12.5,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            borderColor: '#e2e8f0',
+                            cursor: 'pointer',
+                        }}
+                        title={isFullscreen ? t('Thoát toàn màn hình', 'Exit Fullscreen') : t('Toàn màn hình', 'Fullscreen')}
+                    >
+                        {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                        <span>{isFullscreen ? t('Thu nhỏ', 'Minimize') : t('Toàn màn hình', 'Fullscreen')}</span>
+                    </button>
 
                     {!loading && mapFilter === 'all' && (
                         <span className="ov-map-hint" style={{ marginLeft: 'auto' }}>
