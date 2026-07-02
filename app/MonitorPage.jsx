@@ -933,6 +933,10 @@ const MonitorPage = () => {
               ? formatFixedDateTime(new Date(bs.updatedAt))
               : NA_TEXT;
 
+        // can = 1: dữ liệu từ CAN bus (nguồn ngoài), đánh dấu (*) để phân biệt
+        // Ưu tiên: liveTelemetry (MQTT) → lastCruise (API) → batteryStatus
+        const canVal = toNumberOrNull(src.can ?? lastCruise?.can ?? bs.can);
+
         return (
             <>
                 <div>
@@ -958,7 +962,11 @@ const MonitorPage = () => {
                     {t.battery.temperature} {temp != null ? `${temp}°C` : NA_TEXT}
                 </div>
                 <div>
-                    {t.battery.updatedAt} {updatedAt}
+                    {t.battery.updatedAt}{' '}
+                    <span>
+                        {updatedAt}{' '}
+                        {canVal === 1 && <span style={{ color: 'red', fontWeight: 600 }}>(*)</span>}
+                    </span>
                 </div>
             </>
         );
