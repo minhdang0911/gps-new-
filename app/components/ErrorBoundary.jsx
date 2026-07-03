@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React from 'react';
 
@@ -14,6 +14,12 @@ export default class ErrorBoundary extends React.Component {
 
     static getDerivedStateFromError(error) {
         return { hasError: true, error };
+    }
+
+    get isEn() {
+        try {
+            return typeof window !== 'undefined' && localStorage.getItem('iky_lang') === 'en';
+        } catch { return false; }
     }
 
     componentDidCatch(error, info) {
@@ -76,7 +82,7 @@ export default class ErrorBoundary extends React.Component {
                             margin: '0 0 8px',
                         }}
                     >
-                        Đã xảy ra lỗi
+                        {this.isEn ? 'Something went wrong' : 'Đã xảy ra lỗi'}
                     </h2>
 
                     <p
@@ -87,8 +93,9 @@ export default class ErrorBoundary extends React.Component {
                             lineHeight: 1.6,
                         }}
                     >
-                        Ứng dụng gặp sự cố không mong muốn.
-                        Vui lòng tải lại trang để tiếp tục.
+                        {this.isEn
+                            ? 'An unexpected error occurred. Please reload the page to continue.'
+                            : 'Ứng dụng gặp sự cố không mong muốn. Vui lòng tải lại trang để tiếp tục.'}
                     </p>
 
                     {process.env.NODE_ENV === 'development' && this.state.error && (
@@ -124,7 +131,7 @@ export default class ErrorBoundary extends React.Component {
                             boxShadow: '0 4px 12px rgba(22,119,255,0.3)',
                         }}
                     >
-                        Tai lai trang
+                        {this.isEn ? 'Reload Page' : 'Tải lại trang'}
                     </button>
                 </div>
             </div>

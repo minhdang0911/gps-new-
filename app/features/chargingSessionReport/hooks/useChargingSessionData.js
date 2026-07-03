@@ -1,252 +1,208 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import useSWR, { useSWRConfig } from 'swr';
-import { message } from 'antd';
+// features/chargingSessionReport/hooks/useChargingSessionData.js
+//
+// ✅ REFACTORED: Single large-limit fetch → ALL data → FE pagination
+//    - 1 request với limit=9_999_999 → BE trả tất cả records
+//    - Module-level in-memory cache (TTL = 5 min, key = stable filter JSON)
+//    - force=true → bypass cache ("Làm mới")
+//    - FE handles: pagination, sort, imei/plate filter
 
-import { API_SAFE_LIMIT } from '../constants';
-import { buildPayload } from '../utils'; // vẫn dùng util hiện có
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { buildPayload } from '../utils';
 import { useAuthStore } from '../../../stores/authStore';
-import { makeUserKey } from '../../_shared/swrKey';
 
-// ✅ strip các field BE không support (imei/license_plate/imeis)
+const DEFAULT_PAGE_SIZE = 20;
+const FETCH_ALL_LIMIT   = 9_999_999;
+
+// ── Module-level cache (tách riêng với trip-session cache) ────────
+const CACHE     = new Map();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function stableStringify(obj) {
+    if (!obj) return '';
+    const keys = [];
+    JSON.stringify(obj, (k, v) => { keys.push(k); return v; });
+    keys.sort();
+    return JSON.stringify(obj, keys);
+}
+
+function pickData(res) {
+    return res?.data ?? res?.devices ?? res?.items ?? [];
+}
+
+function getCached(key) {
+    const entry = CACHE.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.timestamp > CACHE_TTL) {
+        CACHE.delete(key);
+        return null;
+    }
+    return entry;
+}
+
+function setCached(key, data) {
+    CACHE.set(key, { data, total: data.length, timestamp: Date.now() });
+}
+
+function invalidateCache(key) {
+    if (key !== undefined) CACHE.delete(key);
+    else CACHE.clear();
+}
+
+// ✅ strip field FE-only mà BE không support
 function stripUnsupportedParams(payload) {
     if (!payload || typeof payload !== 'object') return payload;
-
     const next = { ...payload };
-
-    // form fields
     delete next.imei;
     delete next.license_plate;
-
-    // mapping fields (nếu util buildPayload có set)
     delete next.imeis;
     delete next.imeiText;
     delete next.plateText;
-
     return next;
 }
 
+// Build filter (không bao gồm page/limit)
+function buildFilter({ values, plateToImeis }) {
+    const payloadRaw = buildPayload({ values, page: 1, limit: 1, plateToImeis });
+    const { page: _p, limit: _l, ...filter } = payloadRaw;
+    return stripUnsupportedParams(filter);
+}
+
+// ── Main hook ─────────────────────────────────────────────────────
 export function useChargingSessionData({
     form,
     getChargingSessions,
     isEn,
     t,
     imeiToPlate,
-    plateToImeis, // (không dùng trong payload nữa, chỉ để giữ signature)
+    plateToImeis,
     loadingDeviceMap,
     attachLicensePlate,
 }) {
     const userId = useAuthStore((s) => s.user?._id) || 'guest';
-    const { mutate: globalMutate } = useSWRConfig();
 
-    const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 });
-    const [sortMode, setSortMode] = useState('none'); // none | newest | oldest (tuỳ options)
-    const needFullData = useMemo(() => sortMode !== 'none', [sortMode]);
+    // ── Raw data (before attachLicensePlate) ─────────────────────
+    const [rawAll,   setRawAll]   = useState([]);
+    const [loading,  setLoading]  = useState(false);
+    const [progress, setProgress] = useState({ loaded: 0, total: 0, percent: 0 });
 
-    const [pagedPayload, setPagedPayload] = useState(null);
-    const [allPayload, setAllPayload] = useState(null);
+    // ── FE sort ──────────────────────────────────────────────────
+    const [sortMode, setSortMode] = useState('none');
 
-    const fetcher = useCallback(
-        async ([, , payloadJson]) => {
-            const payload = JSON.parse(payloadJson);
-            return getChargingSessions(payload);
-        },
-        [getChargingSessions],
-    );
+    // ── FE pagination state ──────────────────────────────────────
+    const [page,     setPage]     = useState(1);
+    const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
-    const pagedKey = useMemo(() => {
-        if (needFullData) return null;
-        return makeUserKey(userId, 'chargingSessions:paged', pagedPayload);
-    }, [needFullData, pagedPayload, userId]);
+    const cancelRef = useRef(false);
 
-    const allKey = useMemo(() => {
-        if (!needFullData) return null;
-        return makeUserKey(userId, 'chargingSessions:all', allPayload);
-    }, [needFullData, allPayload, userId]);
+    // ── Attach license plate ─────────────────────────────────────
+    const serverData = useMemo(() => {
+        try {
+            if (!attachLicensePlate || !imeiToPlate || imeiToPlate.size === 0) return rawAll;
+            return attachLicensePlate(rawAll, imeiToPlate);
+        } catch (e) {
+            console.error('[useChargingSessionData] attachLicensePlate error:', e);
+            return rawAll;
+        }
+    }, [rawAll, imeiToPlate, attachLicensePlate]);
 
-    const swrPaged = useSWR(pagedKey, fetcher, {
-        revalidateOnFocus: false,
-        revalidateOnReconnect: false,
-        revalidateIfStale: false,
-        keepPreviousData: true,
-        dedupingInterval: 5 * 60 * 1000,
-        shouldRetryOnError: false,
-    });
+    // ── Pagination object ────────────────────────────────────────
+    // total = serverData.length (FE handles total after fetch)
+    // page.jsx thực ra đã tự slice theo feFilteredRows nên pagination.total
+    // sẽ được override bởi useEffect trong page.jsx.
+    const pagination = useMemo(() => ({
+        current:  page,
+        pageSize,
+        total:    serverData.length,
+    }), [page, pageSize, serverData.length]);
 
-    const swrAll = useSWR(allKey, fetcher, {
-        revalidateOnFocus: false,
-        revalidateOnReconnect: false,
-        revalidateIfStale: false,
-        keepPreviousData: true,
-        dedupingInterval: 5 * 60 * 1000,
-        shouldRetryOnError: false,
-    });
+    const setPagination = useCallback((updater) => {
+        const prev = { current: page, pageSize, total: serverData.length };
+        const next = typeof updater === 'function' ? updater(prev) : updater;
 
-    const loading = loadingDeviceMap
-        ? true
-        : needFullData
-        ? swrAll.isLoading || swrAll.isValidating
-        : swrPaged.isLoading || swrPaged.isValidating;
+        const newPage     = next.current  ?? page;
+        const newPageSize = next.pageSize ?? pageSize;
 
-    const rawServer = useMemo(() => (swrPaged.data?.data ? swrPaged.data.data : []), [swrPaged.data]);
-    const rawFull = useMemo(() => (swrAll.data?.data ? swrAll.data.data : []), [swrAll.data]);
+        if (newPageSize !== pageSize) {
+            setPageSize(newPageSize);
+            setPage(1);
+        } else if (newPage !== page) {
+            setPage(newPage);
+        }
+    }, [page, pageSize, serverData.length]);
 
-    const attachPlate = useCallback(
-        (list) => {
-            if (!imeiToPlate || imeiToPlate.size === 0) return list; // ✅ map chưa sẵn thì khỏi attach
-            return attachLicensePlate ? attachLicensePlate(list, imeiToPlate) : list;
-        },
-        [attachLicensePlate, imeiToPlate],
-    );
+    // ── Core fetch: 1 request với limit cực lớn ─────────────────
+    const fetchAll = useCallback(async ({ force = false } = {}) => {
+        if (loadingDeviceMap) return;
 
-    const serverData = useMemo(() => attachPlate(rawServer), [rawServer, attachPlate]);
-    const fullData = useMemo(() => attachPlate(rawFull), [rawFull, attachPlate]);
+        const values = form.getFieldsValue();
+        const filter = buildFilter({ values, plateToImeis });
+        const key    = stableStringify({ ...filter, userId });
 
-    const toastLoadError = useCallback(() => {
-        // message.error(
-        //   t?.messages?.loadError || (isEn ? 'Failed to load charging sessions' : 'Không tải được danh sách phiên sạc'),
-        // );
-    }, [isEn, t]);
+        // Serve from cache
+        if (!force) {
+            const cached = getCached(key);
+            if (cached) {
+                setRawAll(cached.data);
+                setProgress({ loaded: cached.total, total: cached.total, percent: 100 });
+                return;
+            }
+        } else {
+            invalidateCache(key);
+        }
 
-    const forceFetch = useCallback(
-        async (prefix, payload) => {
-            const key = makeUserKey(userId, prefix, payload);
-            await globalMutate(key, fetcher, { revalidate: true });
-        },
-        [globalMutate, fetcher, userId],
-    );
+        // Fetch fresh
+        cancelRef.current = false;
+        setLoading(true);
+        setRawAll([]);
+        setProgress({ loaded: 0, total: 0, percent: 0 });
 
+        try {
+            const result = await getChargingSessions({
+                ...filter,
+                page:  1,
+                limit: FETCH_ALL_LIMIT,
+            });
+
+            if (cancelRef.current) return;
+
+            const rawData = pickData(result);
+            const items   = Array.isArray(rawData) ? rawData : [];
+
+            setCached(key, items);
+            setRawAll(items);
+            setProgress({ loaded: items.length, total: items.length, percent: 100 });
+        } catch (err) {
+            console.error('[useChargingSessionData] fetch error:', err);
+        } finally {
+            if (!cancelRef.current) setLoading(false);
+        }
+    }, [form, plateToImeis, getChargingSessions, loadingDeviceMap, userId]);
+
+    // fetchPaged — alias for backward compat với page.jsx
     const fetchPaged = useCallback(
-        async (page = 1, pageSize = pagination.pageSize || 10, { force = false } = {}) => {
-            try {
-                const values = form.getFieldsValue();
-
-                // ✅ buildPayload vẫn có thể build các field khác mà BE support (chargeCode/soh/timeRange...)
-                // ❌ nhưng tuyệt đối strip imei/license_plate/imeis
-                const payloadRaw = buildPayload({
-                    values,
-                    page: 1,
-                    limit: API_SAFE_LIMIT,
-                    plateToImeis, // giữ cho util nếu cần, nhưng sẽ bị strip ra
-                });
-
-                const payload = stripUnsupportedParams(payloadRaw);
-
-                setPagination((p) => ({ ...p, current: page, pageSize }));
-                setPagedPayload(payload);
-
-                if (force) await forceFetch('chargingSessions:paged', payload);
-            } catch (err) {
-                console.error(err);
-                toastLoadError();
-            }
-        },
-        [form, pagination.pageSize, plateToImeis, forceFetch, toastLoadError],
+        (_page, _pageSize, opts) => fetchAll(opts),
+        [fetchAll],
     );
 
-    const fetchAll = useCallback(
-        async ({ force = false } = {}) => {
-            try {
-                const values = form.getFieldsValue();
-
-                const payloadRaw = buildPayload({
-                    values,
-                    page: 1,
-                    limit: 100000,
-                    plateToImeis,
-                });
-
-                const payload = stripUnsupportedParams(payloadRaw);
-
-                setPagination((p) => ({ ...p, current: 1 }));
-                setAllPayload(payload);
-
-                if (force) await forceFetch('chargingSessions:all', payload);
-            } catch (err) {
-                console.error(err);
-                toastLoadError();
-            }
-        },
-        [form, plateToImeis, forceFetch, toastLoadError],
-    );
-
-    // initial: set payload để “đọc cache nếu có”
+    // ── Auto-load on mount (sau khi device map sẵn sàng) ─────────
     useEffect(() => {
         if (loadingDeviceMap) return;
-
-        const values = form.getFieldsValue();
-        if (needFullData) {
-            const payload = stripUnsupportedParams(buildPayload({ values, page: 1, limit: 100000, plateToImeis }));
-            setAllPayload(payload);
-        } else {
-            const payload = stripUnsupportedParams(
-                buildPayload({ values, page: 1, limit: API_SAFE_LIMIT, plateToImeis }),
-            );
-            setPagedPayload(payload);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        fetchAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [loadingDeviceMap, userId]);
-
-    // đổi sortMode => đổi nguồn data
-    useEffect(() => {
-        if (loadingDeviceMap) return;
-
-        setPagination((p) => ({ ...p, current: 1 }));
-        const values = form.getFieldsValue();
-
-        if (needFullData) {
-            const payload = stripUnsupportedParams(buildPayload({ values, page: 1, limit: 100000, plateToImeis }));
-            setAllPayload(payload);
-        } else {
-            const payload = stripUnsupportedParams(
-                buildPayload({ values, page: 1, limit: API_SAFE_LIMIT, plateToImeis }),
-            );
-            setPagedPayload(payload);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [needFullData, userId]);
-
-    // total (unfiltered) — page sẽ override theo FE filter
-    useEffect(() => {
-        if (loadingDeviceMap) return;
-
-        if (!needFullData) {
-            const safeTotal = Math.max(swrPaged.data?.total || 0, serverData.length);
-            setPagination((p) => ({ ...p, total: safeTotal }));
-
-            if (serverData.length >= API_SAFE_LIMIT) {
-                // message.warning(
-                //   isEn ? `Data may be truncated (limit=${API_SAFE_LIMIT}).` : `Dữ liệu có thể bị cắt (limit=${API_SAFE_LIMIT}).`,
-                // );
-            }
-            return;
-        }
-
-        setPagination((p) => ({ ...p, total: fullData.length }));
-    }, [loadingDeviceMap, needFullData, serverData, fullData, swrPaged.data, isEn]);
-
-    useEffect(() => {
-        const err = needFullData ? swrAll.error : swrPaged.error;
-        if (!err) return;
-        console.error(err);
-        toastLoadError();
-    }, [needFullData, swrAll.error, swrPaged.error, toastLoadError]);
-
-    const mutate = useCallback(
-        () => (needFullData ? swrAll.mutate() : swrPaged.mutate()),
-        [needFullData, swrAll, swrPaged],
-    );
 
     return {
         serverData,
-        fullData,
-        loading,
+        fullData:     serverData,   // compat: page.jsx dùng fullData làm baseRows
+        loading:      loading || loadingDeviceMap,
+        progress,                  // { loaded, total, percent } — cho progress bar
         pagination,
         setPagination,
         sortMode,
         setSortMode,
-        needFullData,
-        fetchPaged,
-        fetchAll,
-        mutate,
+        needFullData: true,        // luôn dùng FE pagination + FE filter
+        fetchPaged,                // alias → fetchAll (backward compat)
+        fetchAll,                  // real fetch fn (gọi khi search/refresh)
+        mutate:       () => {},    // no-op
     };
 }

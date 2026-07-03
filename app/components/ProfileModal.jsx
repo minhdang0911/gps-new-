@@ -10,6 +10,7 @@ const ProfileModal = ({ open, onClose, isEn }) => {
     const [profileForm] = Form.useForm();
     const [passwordForm] = Form.useForm();
     const [activeTab, setActiveTab] = useState('profile');
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     const user = useAuthStore((s) => s.user);
     const setUser = useAuthStore((s) => s.setUser);
@@ -41,6 +42,8 @@ const ProfileModal = ({ open, onClose, isEn }) => {
     }, [open, user?._id]);
 
     const handleSubmit = async () => {
+        if (isSubmitting) return;
+        setIsSubmitting(true);
         try {
             if (activeTab === 'profile') {
                 const values = await profileForm.validateFields();
@@ -76,6 +79,8 @@ const ProfileModal = ({ open, onClose, isEn }) => {
             onClose();
         } catch (err) {
             message.error(err?.response?.data?.message || (isEn ? 'Update failed' : 'Cập nhật thất bại'));
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -94,6 +99,7 @@ const ProfileModal = ({ open, onClose, isEn }) => {
             onCancel={handleClose}
             onOk={handleSubmit}
             okText={okText}
+            okButtonProps={{ loading: isSubmitting }}
             cancelText={isEn ? 'Cancel' : 'Hủy'}
             title={isEn ? 'Profile' : 'Thông tin cá nhân'}
             destroyOnHidden

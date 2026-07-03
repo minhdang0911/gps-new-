@@ -2,8 +2,8 @@
 
 import useSWR from 'swr';
 import { useMemo } from 'react';
-import { getAuthToken } from '../features/batteryReport/utils';
-import { getDevices } from '../lib/api/devices'; // <-- chỉnh path đúng
+import { normalizePlate, getAuthToken } from '../util/number';
+import { getDevices } from '../lib/api/devices';
 
 const MAP_CACHE_KEY = 'maintenanceDeviceMap:v1';
 
@@ -30,20 +30,10 @@ async function buildImeiPlateMap() {
     const imeiToPlate = new Map();
     const plateToImeis = new Map();
 
-    // ✅ Thêm hàm normalize (giống với component)
-    const normalizePlate = (s) =>
-        (s || '')
-            .toString()
-            .trim()
-            .toUpperCase()
-            .replace(/\s+/g, '')
-            .replace(/[.\-_]+/g, '-')
-            .replace(/--+/g, '-');
-
     for (const d of list) {
         const imei = String(d?.imei || '').trim();
         const plateRaw = String(d?.license_plate || '').trim();
-        const plate = normalizePlate(plateRaw); // ✅ Normalize trước khi lưu
+        const plate = normalizePlate(plateRaw);
 
         if (imei) imeiToPlate.set(imei, plate || '');
 

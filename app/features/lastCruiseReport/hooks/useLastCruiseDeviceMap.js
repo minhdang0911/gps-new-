@@ -1,14 +1,11 @@
 import useSWR from 'swr';
 import { useMemo, useCallback, useEffect } from 'react';
-import { getAuthToken } from '../utils'; // giữ đúng path bạn
+import { normalizePlate, getAuthToken } from '../../../util/number';
 
-// ✅ bump version để bust cache cũ
+// bump version để bust cache cũ
 const MAP_CACHE_KEY = 'lastCruiseDeviceMap:v2';
-const OLD_KEYS = ['lastCruiseDeviceMap:v1']; // ✅ xoá key cũ nếu còn
-const MAP_CACHE_TTL_MS = 2 * 60 * 1000; // ✅ 2 phút (tuỳ chỉnh)
-
-const normalizePlate = (s) =>
-    (s || '').toString().trim().toUpperCase().replace(/\s+/g, '').replace(/[._]/g, '-').replace(/--+/g, '-');
+const OLD_KEYS = ['lastCruiseDeviceMap:v1'];
+const MAP_CACHE_TTL_MS = 2 * 60 * 1000; // 2 phút
 
 function reviveMapWithTTL(raw) {
     try {

@@ -875,7 +875,6 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
             }, 50);
 
             // ── OSM Tile layer (ẩn mặc định, hiện khi vào quận/thiết bị) ──
-            // Dùng CartoDB Voyager — giao diện hiện đại, tiếng Việt đầy đủ, miễn phí
             const tile = Lf.tileLayer(
                 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
                 {
@@ -1006,7 +1005,7 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
                     onEachFeature: (feature, layer) => {
                         const name = feature.properties.oldName || feature.properties.name || '';
 
-                        // Hover tooltip (always)
+                        // Hover tooltip
                         layer.bindTooltip(name, {
                             permanent: false,
                             direction: 'center',

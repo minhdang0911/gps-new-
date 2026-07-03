@@ -1,12 +1,6 @@
 import useSWR from 'swr';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { getAuthToken } from '../utils';
-
-const MAP_CACHE_KEY = 'batteryReportDeviceMap:v3';
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1h
-
-const normalizePlate = (s) =>
-    (s || '').toString().trim().toUpperCase().replace(/\s+/g, '').replace(/[._]/g, '-').replace(/--+/g, '-');
+import { normalizePlate, getAuthToken } from '../../../util/number';
 
 function reviveMaps(obj) {
     return {

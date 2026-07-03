@@ -38,12 +38,11 @@ export const getDeviceInfo = async (token, deviceId) => {
 // ===========================
 // CREATE DEVICE (x-www-form-urlencoded)
 // ===========================
-export const createDevice = async (token, payload) => {
+export const createDevice = async (payload) => {
     const body = qs.stringify(payload);
 
     const res = await api.post('device', body, {
         headers: {
-            Authorization: `Bearer ${token}`,
             'Content-Type': 'application/x-www-form-urlencoded',
         },
     });
@@ -54,12 +53,11 @@ export const createDevice = async (token, payload) => {
 // ===========================
 // UPDATE DEVICE (x-www-form-urlencoded)
 // ===========================
-export const updateDevice = async (token, id, payload) => {
+export const updateDevice = async (id, payload) => {
     const body = qs.stringify(payload);
 
     const res = await api.put(`device/${id}`, body, {
         headers: {
-            Authorization: `Bearer ${token}`,
             'Content-Type': 'application/x-www-form-urlencoded',
         },
     });
@@ -70,36 +68,21 @@ export const updateDevice = async (token, id, payload) => {
 // ===========================
 // DELETE DEVICE
 // ===========================
-export const deleteDevice = async (token, id) => {
-    const res = await api.delete(`device/${id}`, {
-        headers: {
-            Authorization: `Bearer ${token}`,
-        },
-    });
-
+export const deleteDevice = async (id) => {
+    const res = await api.delete(`device/${id}`);
     return res.data;
 };
 
-export const lockDevice = async (token, id) => {
-    const res = await api.post(`device/lock/${id}`, null, {
-        headers: {
-            Authorization: `Bearer ${token}`,
-        },
-    });
-
-    return res.data; // { message, device, ... }
+export const lockDevice = async (id) => {
+    const res = await api.post(`device/lock/${id}`, null);
+    return res.data;
 };
 
 // ===========================
 // UNLOCK DEVICE
 // POST device/unlock/:id
 // ===========================
-export const unlockDevice = async (token, id) => {
-    const res = await api.post(`device/unlock/${id}`, null, {
-        headers: {
-            Authorization: `Bearer ${token}`,
-        },
-    });
-
-    return res.data; // { message, device, ... }
+export const unlockDevice = async (id) => {
+    const res = await api.post(`device/unlock/${id}`, null);
+    return res.data;
 };

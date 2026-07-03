@@ -5,10 +5,9 @@ import { normalize } from '../utils';
 import { attachLicensePlate } from '../../../util/deviceMap';
 import { useAuthStore } from '../../../stores/authStore';
 import { makeUserKey } from '../../_shared/swrKey';
+import { normalizePlate } from '../../../util/number';
 
 const normStr = (v) => (typeof v === 'string' ? v.trim() : '');
-const normalizePlate = (s) =>
-    (s || '').toString().trim().toUpperCase().replace(/\s+/g, '').replace(/[._]/g, '-').replace(/--+/g, '-');
 
 // ✅ lấy imei từ nhiều field (đỡ fail do key khác nhau)
 const getRowImei = (row) => {
@@ -16,8 +15,8 @@ const getRowImei = (row) => {
     return normStr(String(v));
 };
 
-// ✅ API này không hỗ trợ timeRange đúng nghĩa => fetch all rồi filter FE
-const MAX_LIMIT = 50000;
+// ✅ REFACTORED: True server-side pagination — không còn fetch limit=50,000
+const DEFAULT_PAGE_SIZE = 20;
 
 export function useBatteryReportData({ form, getBatteryReport, getUserList, imeiToPlate, plateToImeis, isEn, t }) {
     const userId = useAuthStore((s) => s.user?._id) || 'guest';
@@ -55,24 +54,21 @@ export function useBatteryReportData({ form, getBatteryReport, getUserList, imei
     const getDistributorLabel = useCallback((id) => (id ? distributorMap[id] || id : ''), [distributorMap]);
 
     /**
-     * ✅ Build payload: vẫn giữ fields khác nếu BE support,
-     * nhưng CHỐT: luôn page=1 + limit=MAX_LIMIT để FE filter/paginate.
+     * ✅ Build payload: gửi đúng page + pageSize (server-side pagination)
      */
-    const buildQueryPayload = useCallback((values, sorter) => {
-        const payload = { page: 1, limit: MAX_LIMIT };
+    const buildQueryPayload = useCallback((values, sorter, p = 1, ps = DEFAULT_PAGE_SIZE) => {
+        const payload = { page: p, limit: ps };
 
         // vẫn gửi lên nếu BE có support 1 phần
         if (values?.license_plate) payload.license_plate = String(values.license_plate).trim();
-        if (values?.imei) payload.imei = String(values.imei).trim();
-
-        if (values?.batteryId) payload.batteryId = String(values.batteryId).trim();
+        if (values?.imei)          payload.imei          = String(values.imei).trim();
+        if (values?.batteryId)     payload.batteryId     = String(values.batteryId).trim();
         if (values?.connectionStatus) payload.connectionStatus = values.connectionStatus;
-        if (values?.utilization) payload.utilization = values.utilization;
+        if (values?.utilization)   payload.utilization   = values.utilization;
 
-        // ❗timeRange: BE không support thì cũng OK, FE sẽ filter
         if (values?.timeRange?.length === 2) {
             payload.start = values.timeRange[0].startOf('day').format('YYYY-MM-DD HH:mm:ss');
-            payload.end = values.timeRange[1].endOf('day').format('YYYY-MM-DD HH:mm:ss');
+            payload.end   = values.timeRange[1].endOf('day').format('YYYY-MM-DD HH:mm:ss');
         }
 
         if (values?.__sortMode && values.__sortMode !== 'none') payload.sort = values.__sortMode;
@@ -82,9 +78,7 @@ export function useBatteryReportData({ form, getBatteryReport, getUserList, imei
             payload.sortOrder = sorter.order === 'ascend' ? 'asc' : 'desc';
         }
 
-        // ✅ force refresh SWR key when needed
         payload._t = Date.now();
-
         return payload;
     }, []);
 
@@ -110,6 +104,12 @@ export function useBatteryReportData({ form, getBatteryReport, getUserList, imei
     const apiList = useMemo(() => {
         const res = swrReport.data;
         return res?.data || res?.items || [];
+    }, [swrReport.data]);
+
+    // ✅ Sync total from BE
+    useEffect(() => {
+        const t = swrReport.data?.total ?? swrReport.data?.totalRecords ?? null;
+        if (t != null) setPagination((p) => ({ ...p, total: Number(t) }));
     }, [swrReport.data]);
 
     // ✅ attach plate
@@ -174,10 +174,11 @@ export function useBatteryReportData({ form, getBatteryReport, getUserList, imei
         return rows;
     }, [rawData, filterValues, plateToImeis]);
 
-    // ✅ total theo FE processed
+    // ✅ Fallback: total from FE processed (nếu BE không trả total)
     useEffect(() => {
-        setPagination((p) => ({ ...p, total: processedData.length }));
-    }, [processedData.length]);
+        const t = swrReport.data?.total ?? swrReport.data?.totalRecords ?? null;
+        if (t == null) setPagination((p) => ({ ...p, total: processedData.length }));
+    }, [processedData.length, swrReport.data]);
 
     const setFilterValues = useCallback((next) => {
         setPagination((p) => ({ ...p, current: 1 }));
@@ -199,19 +200,16 @@ export function useBatteryReportData({ form, getBatteryReport, getUserList, imei
     useEffect(() => {
         setPagination((p) => ({ ...p, current: 1 }));
         setReportParams(null);
-
-        // fetch full
-        const payload = buildQueryPayload({ __sortMode: 'none' }, { field: null, order: null });
+        const payload = buildQueryPayload({ __sortMode: 'none' }, { field: null, order: null }, 1, DEFAULT_PAGE_SIZE);
         setReportParams(payload);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [userId]);
 
     // FE pagination slice
     const tableData = useMemo(() => {
         const { current, pageSize } = pagination;
         const start = (current - 1) * pageSize;
-        const end = start + pageSize;
-
+        const end   = start + pageSize;
         return processedData.slice(start, end).map((row, idx) => ({
             ...row,
             __rowNo: start + idx + 1,
@@ -220,13 +218,13 @@ export function useBatteryReportData({ form, getBatteryReport, getUserList, imei
 
     // clamp current when total changes
     useEffect(() => {
-        const total = processedData.length;
-        const pageSize = pagination.pageSize || 10;
-        const maxPage = Math.max(1, Math.ceil(total / pageSize));
+        const total   = processedData.length;
+        const ps      = pagination.pageSize || DEFAULT_PAGE_SIZE;
+        const maxPage = Math.max(1, Math.ceil(total / ps));
         if (pagination.current > maxPage) {
             setPagination((p) => ({ ...p, current: 1 }));
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [processedData.length, pagination.pageSize]);
 
     return {
@@ -268,7 +266,7 @@ export function useBatteryReportData({ form, getBatteryReport, getUserList, imei
             setTableSorter({ field: null, order: null });
             setPagination((p) => ({ ...p, current: 1 }));
 
-            const payload = buildQueryPayload({ __sortMode: 'none' }, { field: null, order: null });
+            const payload = buildQueryPayload({ __sortMode: 'none' }, { field: null, order: null }, 1, DEFAULT_PAGE_SIZE);
             setReportParams(payload);
         },
 
@@ -281,10 +279,6 @@ export function useBatteryReportData({ form, getBatteryReport, getUserList, imei
 
             setPagination((p) => ({ ...p, current: nextPage, pageSize: nextSize }));
             setTableSorter(nextSorter);
-
-            // ✅ sort change => refetch full (optional)
-            // nếu API sort không support thì bạn có thể bỏ fetchData() ở đây
-            // fetchData();
         },
 
         mutate: swrReport.mutate,

@@ -45,3 +45,37 @@ export function getDistanceMeters(lat1, lon1, lat2, lon2) {
 
     return R * c; // mét
 }
+
+/**
+ * Tính khoảng cách giữa 2 tọa độ theo đơn vị **km**
+ * (Wrapper của getDistanceMeters, tiện dùng cho province-level)
+ */
+export function getDistanceKm(lat1, lon1, lat2, lon2) {
+    const m = getDistanceMeters(lat1, lon1, lat2, lon2);
+    return m == null ? null : m / 1000;
+}
+
+/**
+ * Tìm item gần nhất trong danh sách theo tọa độ (lat/lon).
+ * Mỗi item cần có field `latitude` và `longitude` (string hoặc number).
+ *
+ * Dùng cho: province/district lookup trong Overview.
+ *
+ * @param {number} lat
+ * @param {number} lon
+ * @param {Array<{latitude: string|number, longitude: string|number}>} list
+ * @returns {object|null} item gần nhất hoặc null nếu list rỗng
+ */
+export function findNearest(lat, lon, list) {
+    if (!list?.length) return null;
+    let best = null;
+    let bestDist = Infinity;
+    for (const item of list) {
+        const d = getDistanceKm(lat, lon, parseFloat(item.latitude), parseFloat(item.longitude));
+        if (d != null && d < bestDist) {
+            bestDist = d;
+            best = item;
+        }
+    }
+    return best;
+}

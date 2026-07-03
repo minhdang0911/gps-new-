@@ -14,7 +14,7 @@ class CruiseCacheManager {
         this.CACHE_DURATION = 7 * 24 * 60 * 60 * 1000;
 
         // Khoảng thời gian cache được coi là "fresh"
-        // VD: trong vòng 60 giây kể từ lúc cache thì lần load lại sẽ dùng cache
+        // 60 * 10000 = 600,000ms = 10 phút — trong vòng 10 phút kể từ lúc cache thì lần load lại sẽ dùng cache
         this.MAX_CACHE_AGE_MS = 60 * 10000;
     }
 

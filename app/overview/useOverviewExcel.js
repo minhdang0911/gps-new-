@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
 import * as turf from '@turf/turf';
+import { message } from 'antd';
 
 // ── Geo helpers (same logic as VietnamMapDrillDown) ─────────────
 const haversine = (lat1, lon1, lat2, lon2) => {
@@ -54,7 +55,7 @@ const isOnline = (cruiseItem) => {
     return Date.now() - new Date(updated).getTime() < 24 * 60 * 60 * 1000;
 };
 
-const getTodayStr = () => {
+const getTodayStr = () => { 
     const d = new Date();
     const dd   = String(d.getDate()).padStart(2, '0');
     const mm   = String(d.getMonth() + 1).padStart(2, '0');
@@ -84,7 +85,7 @@ export function exportOverviewExcel({ devices, cruiseByImei, mode = 'all', regio
         allWithStatus;
 
     if (!filtered.length) {
-        alert('Không có dữ liệu để xuất!');
+        message.warning('Không có dữ liệu để xuất!');
         return;
     }
 
@@ -231,7 +232,7 @@ export async function exportByRegion({ devices, cruiseByImei, province, district
         try {
             geo = await getGeoJson();
         } catch (e) {
-            alert('Không tải được dữ liệu ranh giới hành chính!');
+            message.error('Không tải được dữ liệu ranh giới hành chính!');
             return;
         }
         filtered = filtered.filter((d) => {
@@ -243,7 +244,7 @@ export async function exportByRegion({ devices, cruiseByImei, province, district
     }
 
     if (!filtered.length) {
-        alert('Không có thiết bị nào thuộc khu vực đã chọn có dữ liệu GPS!');
+        message.warning('Không có thiết bị nào thuộc khu vực đã chọn có dữ liệu GPS!');
         return;
     }
 

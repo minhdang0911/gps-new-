@@ -21,6 +21,7 @@ import flagEn from '../../assets/flag-en.webp';
 
 import { useAuthStore } from '../../stores/authStore';
 import { logoutApi } from '../../lib/api/auth';
+import { resetDeviceCache } from '../../hooks/useDeviceCache';
 
 const navItems = [
     { key: 'monitor', labelVi: 'Giám Sát', labelEn: 'Monitor', img: giamsat, path: '/' },
@@ -97,7 +98,7 @@ const Navbar = () => {
     if (!mounted) return null;
     if (pathname === '/login' || pathname === '/login/en') return null;
 
-    const role = typeof window !== 'undefined' ? localStorage.getItem('role') : '';
+    const role = user?.role || '';
 
     const handleClickItem = (item) => {
         // Dùng href (nếu có) thay vì path để navigate thẳng đến trang đầu tiên
@@ -124,6 +125,7 @@ const Navbar = () => {
             console.error('Logout error:', err);
         } finally {
             clearUser();
+            await resetDeviceCache();
             if (typeof window !== 'undefined') {
                 localStorage.removeItem('accessToken');
                 localStorage.removeItem('refreshToken');

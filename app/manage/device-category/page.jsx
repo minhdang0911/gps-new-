@@ -76,7 +76,7 @@ export default function DeviceCategoryPage() {
 
     const popupInParent = (triggerNode) => triggerNode?.parentElement || document.body;
 
-    const { mifOptions, mifLoading, mifValidating, mutateMIF } = useMadeInFromOptions({ token, t });
+    const { mifOptions, mifLoading, mifValidating, mutateMIF } = useMadeInFromOptions({ t });
     const showMifLoading = mifLoading || mifValidating;
 
     const getMadeInFromLabel = (value) => getMifLabelUtil({ value, mifOptions, isEn });
@@ -93,11 +93,11 @@ export default function DeviceCategoryPage() {
         };
     }, [pagination.current, pagination.pageSize, filters]);
 
-    const listKey = token && role && role !== 'customer' ? ['deviceCategories', token, listParams] : null;
+    const listKey = role && role !== 'customer' ? ['deviceCategories', listParams] : null;
 
-    const listFetcher = async ([, tk, params]) => {
+    const listFetcher = async ([, params]) => {
         if (role === 'customer') return { items: [], page: 1, limit: params.limit, total: 0 };
-        return getDeviceCategories(tk, params);
+        return getDeviceCategories(params);
     };
 
     const {
@@ -156,9 +156,8 @@ export default function DeviceCategoryPage() {
 
     const handleDelete = async (record) => {
         if (!isAdmin) return message.warning(t.noPermissionDelete);
-        if (!token) return;
         try {
-            await deleteDeviceCategory(token, record._id);
+            await deleteDeviceCategory(record._id);
             message.success(t.deleteSuccess);
             mutateList();
         } catch (err) {
@@ -169,7 +168,6 @@ export default function DeviceCategoryPage() {
 
     const handleModalOk = async () => {
         if (!canEdit) return message.warning(t.noPermissionAction);
-        if (!token) return;
 
         try {
             const values = await form.validateFields();
@@ -183,10 +181,10 @@ export default function DeviceCategoryPage() {
             };
 
             if (editingItem) {
-                await updateDeviceCategory(token, editingItem._id, payload);
+                await updateDeviceCategory(editingItem._id, payload);
                 message.success(t.updateSuccess);
             } else {
-                await createDeviceCategory(token, payload);
+                await createDeviceCategory(payload);
                 message.success(t.createSuccess);
             }
 

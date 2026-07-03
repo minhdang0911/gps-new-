@@ -1,3 +1,5 @@
 export const LOCKED_KEYS = ['index'];
 export const STORAGE_KEY = 'iky_trip_session_report_cols_v1';
-export const API_SAFE_LIMIT = 300000;
+
+// ✅ Đã chuyển sang true server-side pagination — không còn fetch 300K nữa
+export const DEFAULT_PAGE_SIZE = 20;

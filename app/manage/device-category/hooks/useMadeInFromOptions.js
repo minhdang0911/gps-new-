@@ -5,15 +5,13 @@ import { message } from 'antd';
 import { useMemo } from 'react';
 import { getMadeInFromOptions } from '../../../lib/api/deviceCategory';
 
-export function useMadeInFromOptions({ token, t }) {
-    const mifKey = token ? ['madeInFromOptions', token] : null;
-
-    const { data, isLoading, mutate, isValidating } = useSWR(mifKey, ([, tk]) => getMadeInFromOptions(tk), {
+export function useMadeInFromOptions({ t }) {
+    const { data, isLoading, mutate, isValidating } = useSWR('madeInFromOptions', () => getMadeInFromOptions(), {
         revalidateOnFocus: false,
         dedupingInterval: 60_000,
         onError: (err) => {
             console.error('Load madeInFrom options error:', err);
-            if (token) message.error(t.loadError);
+            message.error(t.loadError);
         },
     });
 

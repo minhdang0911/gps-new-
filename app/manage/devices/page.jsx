@@ -77,7 +77,6 @@ function getConfirmedByFromLocalStorage() {
 export default function ManageDevicesPage() {
     const pathname = usePathname() || '/';
 
-    const [token] = useState(() => (typeof window === 'undefined' ? '' : localStorage.getItem('accessToken') || ''));
     const [currentRole] = useState(() => (typeof window === 'undefined' ? '' : localStorage.getItem('role') || ''));
 
     const canEditDevice = currentRole === 'administrator' || currentRole === 'distributor';
@@ -153,7 +152,6 @@ export default function ManageDevicesPage() {
         usersLoading,
         prefetchOptions,
     } = useManageDevicesData({
-        token,
         currentPage,
         pageSize,
         filters,
@@ -165,7 +163,6 @@ export default function ManageDevicesPage() {
     });
 
     const { cruiseInfo, batteryInfo, getEngineStatusText, getVehicleStatusText } = useDeviceDetail({
-        token,
         viewMode,
         selectedDevice,
         isEn,
@@ -231,10 +228,10 @@ export default function ManageDevicesPage() {
             };
 
             if (modalMode === 'edit') {
-                await updateDevice(token, selectedDevice._id, payload);
+                await updateDevice(selectedDevice._id, payload);
                 message.success(t.updateSuccess);
             } else if (modalMode === 'add') {
-                await createDevice(token, payload);
+                await createDevice(payload);
                 message.success(t.createSuccess);
             }
 
@@ -289,7 +286,7 @@ export default function ManageDevicesPage() {
                 );
             },
             rollback: () => mutateDevices(),
-            apiDelete: () => deleteDevice(token, item._id),
+            apiDelete: () => deleteDevice(item._id),
             onSuccess: () => {
                 message.success(t.deleteSuccess);
                 mutateDevices();

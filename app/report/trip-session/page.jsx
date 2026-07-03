@@ -3,7 +3,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { Card, Form, Input, Button, Row, Col, Table, Space, Typography, Grid, Divider, Statistic } from 'antd';
+import { Card, Form, Input, Button, Row, Col, Table, Space, Typography, Grid, Divider, Statistic, Progress } from 'antd';
 import { SearchOutlined, ReloadOutlined, DownloadOutlined, SettingOutlined } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 
@@ -33,7 +33,7 @@ import { buildTripSessionInsight } from '../../features/tripSessionReport/compar
 import { useLangFromPath } from '../../features/usageSessionReport/locale';
 import { LOCKED_KEYS, STORAGE_KEY } from '../../features/tripSessionReport/constants';
 import { buildAllColsMeta } from '../../features/tripSessionReport/columns/buildAllColsMeta';
-import { applySortTrip } from '../../features/tripSessionReport/utils';
+// applySortTrip moved into useTripSessionData (sort chạy trên allData trong hook)
 import { useTripDeviceMap } from '../../features/tripSessionReport/hooks/useTripDeviceMap';
 import { useTripSessionData } from '../../features/tripSessionReport/hooks/useTripSessionData';
 import { useTripSessionExcel } from '../../features/tripSessionReport/hooks/useTripSessionExcel';
@@ -139,9 +139,6 @@ const TripSessionReportPage = () => {
 
     const [viewMode, setViewMode] = useState('table');
 
-    // FE filters
-    const [feFilters, setFeFilters] = useState({ imeis: [], imeiText: '', plateText: '' });
-
     // ✅ reset key for time preset picker (force remount to reset preset UI)
     const [timePresetResetKey, setTimePresetResetKey] = useState(0);
 
@@ -151,7 +148,18 @@ const TripSessionReportPage = () => {
     });
 
     // ✅ data from BE
-    const { serverData, loading, pagination, setPagination, sortMode, setSortMode, fetchBase } = useTripSessionData({
+    const {
+        serverData,
+        allData,
+        loading,
+        progress,
+        pagination,
+        setPagination,
+        sortMode,
+        setSortMode,
+        fetchBase,
+        forceRefresh,
+    } = useTripSessionData({
         form,
         getTripSessions,
         isEn,
@@ -188,107 +196,37 @@ const TripSessionReportPage = () => {
         [selectedRowKeys],
     );
 
-    // ✅ FE FILTER (IMEI / Biển số)
-    const feFilteredData = useMemo(() => {
-        const list = serverData || [];
+    // ✅ serverData đã được sort + slice trong hook (FE pagination trên allData)
+    // applySortTrip không cần gọi lại ở đây để tránh double-sort
+    const processedData = serverData;
 
-        const imeis = feFilters?.imeis || [];
-        const imeiText = normStr(feFilters?.imeiText);
-        const plateText = normalizePlate(feFilters?.plateText || '');
-
-        if ((!imeis || imeis.length === 0) && !imeiText && !plateText) return list;
-
-        if (imeis && imeis.length > 0) {
-            const set = new Set(imeis.map((x) => normStr(String(x))));
-            return list.filter((row) => set.has(getRowImei(row)));
-        }
-
-        if (imeiText) {
-            return list.filter((row) => getRowImei(row).includes(imeiText));
-        }
-
-        if (plateText) {
-            return list.filter((row) => getRowPlate(row).includes(plateText));
-        }
-
-        return list;
-    }, [serverData, feFilters]);
-
-    // ✅ sort
-    const processedData = useMemo(() => applySortTrip(feFilteredData, sortMode), [feFilteredData, sortMode]);
-
-    // ✅ total theo FE (đã filter + sort)
-    useEffect(() => {
-        setPagination((p) => ({ ...p, total: processedData.length }));
-    }, [processedData.length, setPagination]);
-
-    // ✅ đảm bảo current không vượt maxPage khi total/pageSize đổi
-    useEffect(() => {
-        const total = processedData.length;
-        const pageSize = pagination.pageSize || 10;
-        const maxPage = Math.max(1, Math.ceil(total / pageSize));
-        if (pagination.current > maxPage) {
-            setPagination((p) => ({ ...p, current: 1 }));
-        }
-    }, [processedData.length, pagination.pageSize, pagination.current, setPagination]);
-
-    // ✅ paginate FE bằng slice
-    const pagedData = useMemo(() => {
-        const { current, pageSize } = pagination;
-        const start = (current - 1) * pageSize;
-        const end = start + pageSize;
-        return (processedData || []).slice(start, end);
-    }, [processedData, pagination.current, pagination.pageSize]);
-
-    // table rows with rowNo
+    // ✅ tableData với rowNo — không cần slice nữa (server đã cắt đúng page)
     const tableData = useMemo(() => {
-        return (pagedData || []).map((row, idx) => ({
+        return (processedData || []).map((row, idx) => ({
             ...row,
             __rowNo: (pagination.current - 1) * pagination.pageSize + idx + 1,
         }));
-    }, [pagedData, pagination.current, pagination.pageSize]);
+    }, [processedData, pagination.current, pagination.pageSize]);
 
-    // ✅ Search
+    // ✅ Tìm kiếm — truyền filter lên API (server filter), reset về trang 1
     const onFinish = async () => {
-        const values = await form.validateFields();
-
-        const plateInput = normalizePlate(values?.license_plate || '');
-        const imeiInput = normStr(values?.imei || '');
-
-        const mappedImeis = plateInput ? plateToImeis?.get?.(plateInput) || [] : [];
-
-        if (imeiInput) {
-            setFeFilters({ imeis: [], imeiText: imeiInput, plateText: '' });
-        } else if (plateInput && mappedImeis.length > 0) {
-            setFeFilters({ imeis: mappedImeis, imeiText: '', plateText: '' });
-        } else if (plateInput) {
-            setFeFilters({ imeis: [], imeiText: '', plateText: plateInput });
-        } else {
-            setFeFilters({ imeis: [], imeiText: '', plateText: '' });
-        }
-
+        await form.validateFields();
         clearSelection();
-        setPagination((p) => ({ ...p, current: 1 }));
-
-        // ✅ luôn force fetch (payload y hệt vẫn gọi)
         fetchBase({ resetPage: true }, { force: true });
     };
 
     const onReset = async () => {
         clearSelection();
         form.resetFields();
-        setFeFilters({ imeis: [], imeiText: '', plateText: '' });
         setSortMode('none');
-        setPagination((p) => ({ ...p, current: 1 }));
-
-        // ✅ reset preset UI (force remount)
         setTimePresetResetKey((k) => k + 1);
-
-        // ✅ Reset = map mới + data mới
-        await Promise.allSettled([refreshDeviceMap(), fetchBase({ resetPage: true }, { force: true })]);
+        // forceRefresh dùng filter hiện tại (đã reset) → bypass cache
+        await Promise.allSettled([refreshDeviceMap(), forceRefresh()]);
     };
 
+    // ✅ Chuyển trang — gọi API với page/limit mới (server-side pagination)
     const handleTableChange = (pager) => {
+        clearSelection();
         setPagination((p) => ({
             ...p,
             current: pager.current,
@@ -313,9 +251,9 @@ const TripSessionReportPage = () => {
         return m;
     }, [allColsForModal]);
 
-    // ✅ excel
+    // ✅ excel — export 1000 records gần nhất từ toàn bộ allData
     const { exportExcel } = useTripSessionExcel({ isEn, t });
-    const onExport = () => exportExcel({ pagedData, pagination });
+    const onExport = () => exportExcel({ allData, pagination });
 
     // ✅ report config
     const reportConfig = useMemo(() => {
@@ -326,19 +264,17 @@ const TripSessionReportPage = () => {
         });
     }, [processedData, isEn, t]);
 
-    // ✅ summary totals (tổng theo kết quả đã lọc)
+    // ✅ totalKm: cộng từ TẤT CẢ records đã fetch (allData)
     const totalKm = useMemo(() => {
-        return (processedData || []).reduce((sum, r) => {
+        return (allData || []).reduce((sum, r) => {
             const km = r?.distanceKm;
-            if (typeof km !== 'number') return sum;
-            if (!Number.isFinite(km)) return sum;
-            if (km < 0) return sum; // bỏ record lỗi
-            if (km > 100_000) return sum; // optional: chặn outlier vô lý
+            if (typeof km !== 'number' || !Number.isFinite(km) || km < 0 || km > 100_000) return sum;
             return sum + km;
         }, 0);
-    }, [processedData]);
+    }, [allData]);
 
-    const totalTrips = useMemo(() => processedData?.length || 0, [processedData]);
+    // ✅ totalTrips: = allData.length (FE, chính xác sau khi fetch xong)
+    const totalTrips = allData.length;
 
     return (
         <div className="usage-report-page">
@@ -452,11 +388,28 @@ const TripSessionReportPage = () => {
                     >
                         {viewMode === 'table' ? (
                             <>
+                                {/* Progress bar — hiển thị khi đang fetch */}
+                                {loading && (
+                                    <div style={{ marginBottom: 8 }}>
+                                        <Progress
+                                            percent={progress.total > 0 ? progress.percent : undefined}
+                                            status="active"
+                                            size="small"
+                                            strokeColor={{ from: '#108ee9', to: '#87d068' }}
+                                            format={() =>
+                                                progress.loaded > 0
+                                                    ? `${isEn ? 'Loading' : 'Đang tải'} ${progress.loaded.toLocaleString()} records...`
+                                                    : (isEn ? 'Connecting...' : 'Đang kết nối...')
+                                            }
+                                        />
+                                    </div>
+                                )}
+
                                 {/* Summary row */}
                                 <Row gutter={[12, 12]} style={{ marginBottom: 8 }}>
                                     <Col xs={12} sm="auto">
                                         <Statistic
-                                            title={isEn ? 'Total distance (filtered)' : 'Tổng quãng đường'}
+                                            title={isEn ? 'Total distance' : 'Tổng quãng đường'}
                                             value={totalKm}
                                             formatter={(v) => formatDistance(Number(v), isEn ? 'en' : 'vi')}
                                         />
@@ -464,7 +417,7 @@ const TripSessionReportPage = () => {
 
                                     <Col xs={12} sm="auto">
                                         <Statistic
-                                            title={isEn ? 'Total trips (filtered)' : 'Tổng số chuyến'}
+                                            title={isEn ? 'Total trips' : 'Tổng số chuyến'}
                                             value={totalTrips}
                                         />
                                     </Col>

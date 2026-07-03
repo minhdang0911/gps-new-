@@ -18,7 +18,8 @@ export default function SWRProvider({ children }) {
             dedupingInterval: 5 * 60 * 1000,
             shouldRetryOnError: false,
         }),
-        [],
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [], // intentional: SWR config is static, no deps needed
     );
 
     return (

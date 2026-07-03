@@ -24,6 +24,22 @@ const STALE_MS     = 5 * 60 * 1000; // 5 phút
 // Module-level promise để tránh nhiều component cùng fetch cùng lúc
 let _fetchPromise = null;
 
+/**
+ * Gọi khi user logout — xóa cache IndexedDB và reset fetch promise.
+ * Tránh data của user cũ bị giữ lại cho session mới.
+ */
+export async function resetDeviceCache() {
+    _fetchPromise = null;
+    try {
+        await Promise.all([
+            set(CACHE_KEY, null),
+            set(CACHE_TS_KEY, null),
+        ]);
+    } catch {
+        // ignore
+    }
+}
+
 export function useDeviceCache({ limit = 200000 } = {}) {
     const [devices,  setDevices]  = useState([]);
     const [loading,  setLoading]  = useState(true);

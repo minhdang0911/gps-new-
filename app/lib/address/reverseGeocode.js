@@ -206,11 +206,11 @@ export const reverseGeocodeAddress = async (lat, lon, opts = {}) => {
     const lang = opts.lang || 'vi';
     const isEn = opts.isEn || false;
 
-    // 1️⃣ Ưu tiên Goong
+    // 1️⃣ Ưu tiên Goong (có key rotation riêng, giữ logic cũ)
     const goong = await callGoongWithRotation(lat, lon, lang);
     if (goong) return goong;
 
-    // 2️⃣ Fallback providers
+    // 2️⃣ Fallback providers — chạy song song, lấy kết quả nào về trước
     const providers = [
         () => providerVietMap(lat, lon),
         () => providerTrackAsia(lat, lon),
@@ -221,10 +221,19 @@ export const reverseGeocodeAddress = async (lat, lon, opts = {}) => {
         () => providerNominatim(lat, lon, lang),
     ];
 
-    for (const fn of providers) {
-        const addr = await fn();
-        if (addr) return { address: addr, deprecatedAddress: '' };
+    try {
+        const addr = await Promise.any(
+            providers.map((fn) =>
+                fn().then((result) => {
+                    // Reject nếu không có kết quả → để Promise.any thử provider khác
+                    if (!result) return Promise.reject(new Error('empty'));
+                    return result;
+                }),
+            ),
+        );
+        return { address: addr, deprecatedAddress: '' };
+    } catch {
+        // AggregateError: tất cả providers đều fail
+        return null;
     }
-
-    return null;
 };

@@ -1,171 +1,180 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import useSWR from 'swr';
-import { Form } from 'antd';
-import { API_SAFE_LIMIT } from '../constants';
+import useSWR, { useSWRConfig } from 'swr';
 import { buildParams } from '../utils';
 
-// stable stringify để key ổn định
+// ✅ REFACTORED: True server-side pagination
+// Xóa hoàn toàn needFullData (fetch 300K) và dual-SWR pattern.
+// Mỗi lần chuyển trang / filter → gọi API với page + limit thực sự.
+
+const DEFAULT_PAGE_SIZE = 20;
+
 function stableStringify(obj) {
     if (!obj) return '';
     const allKeys = [];
-    JSON.stringify(obj, (key, value) => {
-        allKeys.push(key);
-        return value;
-    });
+    JSON.stringify(obj, (key, value) => { allKeys.push(key); return value; });
     allKeys.sort();
     return JSON.stringify(obj, allKeys);
 }
 
 function makeKey(prefix, params) {
-    return params ? [prefix, stableStringify(params)] : null;
+    return params !== null ? [prefix, stableStringify(params)] : null;
+}
+
+function pickData(res) {
+    return res?.data || res?.devices || res?.items || [];
+}
+
+function pickTotal(res) {
+    return res?.total ?? res?.totalRecords ?? res?.count ?? null;
+}
+
+// Build filter params (NO page/limit)
+function buildFilter(values) {
+    const p = buildParams(values, 1, 1); // page/limit dummy, sẽ bị override
+    const { page: _p, limit: _l, ...filter } = p;
+    return filter;
 }
 
 export function useUsageSessionData({ form, getUsageSessions, isEn, t }) {
-    const [pagination, setPagination] = useState({ current: 1, pageSize: 20, total: 0 });
+    const { mutate: globalMutate } = useSWRConfig();
 
-    const [sortMode, setSortMode] = useState('none');
+    // ── Server-side pagination state ───────────────────────────────
+    const [page, setPage]               = useState(1);
+    const [pageSize, setPageSize]       = useState(DEFAULT_PAGE_SIZE);
+    const [totalFromBE, setTotalFromBE] = useState(0);
+
+    // ── FE sort (within current page only) ────────────────────────
+    const [sortMode, setSortMode]       = useState('none');
     const [tableFilters, setTableFilters] = useState({ vehicleId: null, batteryId: null });
-    const [groupBy, setGroupBy] = useState('none');
+    const [groupBy, setGroupBy]         = useState('none');
 
-    // ✅ FIX: watch timeRange REACTIVE (đổi range là hook biết ngay)
-    const watchedTimeRange = Form.useWatch('timeRange', form);
+    // ── Filter payload (no page/limit) ────────────────────────────
+    const [filterPayload, setFilterPayload] = useState(null);
 
-    const hasTimeRange = useMemo(() => {
-        const v = watchedTimeRange;
-        return Array.isArray(v) && v.length === 2 && !!v?.[0] && !!v?.[1];
-    }, [watchedTimeRange]);
-
-    const needFullData = useMemo(() => {
-        const hasTableFilter = tableFilters.vehicleId?.length || tableFilters.batteryId?.length;
-        return sortMode !== 'none' || hasTableFilter || groupBy !== 'none' || hasTimeRange;
-    }, [sortMode, tableFilters, groupBy, hasTimeRange]);
-
-    // params quyết định SWR fetch cái gì
-    const [pagedParams, setPagedParams] = useState(null);
-    const [allParams, setAllParams] = useState(null);
+    // ── SWR key = filter + page + pageSize ────────────────────────
+    const swrKey = useMemo(() => {
+        if (filterPayload === null) return null;
+        return makeKey('usageSessions:v2', { ...filterPayload, page, limit: pageSize });
+    }, [filterPayload, page, pageSize]);
 
     const fetcher = useCallback(
         async (key) => {
             if (!key) return null;
-            if (Array.isArray(key)) {
-                const [, paramsJson] = key;
-                const params = paramsJson ? JSON.parse(paramsJson) : {};
-                return getUsageSessions(params);
-            }
-            return null;
+            const [, paramsJson] = key;
+            return getUsageSessions(paramsJson ? JSON.parse(paramsJson) : {});
         },
         [getUsageSessions],
     );
 
-    const swrOpt = useMemo(
-        () => ({
-            revalidateOnFocus: false,
-            revalidateOnReconnect: false,
-            revalidateIfStale: false,
-            keepPreviousData: true,
-            dedupingInterval: 5 * 60 * 1000,
-            shouldRetryOnError: false,
-        }),
-        [],
-    );
+    const swrOpt = useMemo(() => ({
+        revalidateOnFocus:     false,
+        revalidateOnReconnect: false,
+        revalidateIfStale:     false,
+        keepPreviousData:      true,
+        dedupingInterval:      30_000,
+        shouldRetryOnError:    false,
+    }), []);
 
-    const pagedKey = useMemo(() => {
-        if (needFullData) return null;
-        return makeKey('usageSessions:paged', pagedParams);
-    }, [needFullData, pagedParams]);
+    const swr = useSWR(swrKey, fetcher, swrOpt);
+    const loading = swr.isLoading || swr.isValidating;
 
-    const allKey = useMemo(() => {
-        if (!needFullData) return null;
-        return makeKey('usageSessions:all', allParams);
-    }, [needFullData, allParams]);
+    // ── Extract current page data ──────────────────────────────────
+    const serverData = useMemo(() => pickData(swr.data) || [], [swr.data]);
+    // compat: các page.jsx vẫn có thể dùng fullData
+    const fullData = serverData;
 
-    const swrPaged = useSWR(pagedKey, fetcher, swrOpt);
-    const swrAll = useSWR(allKey, fetcher, swrOpt);
-
-    const loading = needFullData
-        ? swrAll.isLoading || swrAll.isValidating
-        : swrPaged.isLoading || swrPaged.isValidating;
-
-    const serverData = useMemo(() => (swrPaged.data?.data ? swrPaged.data.data : []), [swrPaged.data]);
-    const fullData = useMemo(() => (swrAll.data?.data ? swrAll.data.data : []), [swrAll.data]);
-
-    // ✅ Initial load: set paged params
+    // ── Sync total from BE ─────────────────────────────────────────
     useEffect(() => {
-        const values = form.getFieldsValue();
-        const params = buildParams(values, 1, pagination.pageSize);
-        setPagedParams(params);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        const t = pickTotal(swr.data);
+        if (t != null) setTotalFromBE(Number(t));
+    }, [swr.data]);
+
+    // ── Update total (compat) ──────────────────────────────────────
+    useEffect(() => {
+        const t = pickTotal(swr.data);
+        if (t == null && serverData.length > 0) {
+            // fallback nếu BE không trả total
+            setTotalFromBE((prev) => Math.max(prev, serverData.length));
+        }
+    }, [serverData.length, swr.data]);
+
+    // ── Exposed pagination ─────────────────────────────────────────
+    const pagination = useMemo(() => ({
+        current:  page,
+        pageSize,
+        total:    totalFromBE,
+    }), [page, pageSize, totalFromBE]);
+
+    const setPagination = useCallback((updater) => {
+        const prev = { current: page, pageSize, total: totalFromBE };
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+
+        const newPage     = next.current  ?? page;
+        const newPageSize = next.pageSize ?? pageSize;
+
+        if (newPageSize !== pageSize) {
+            setPageSize(newPageSize);
+            setPage(1);
+        } else if (newPage !== page) {
+            setPage(newPage);
+        }
+    }, [page, pageSize, totalFromBE]);
+
+    // ── fetchPaged: called on form submit ──────────────────────────
+    const fetchPaged = useCallback(async (p = 1, ps = pageSize) => {
+        const values  = form.getFieldsValue();
+        const payload = buildFilter(values);
+
+        setPage(p);
+        if (ps !== pageSize) setPageSize(ps);
+        setFilterPayload(payload);
+    }, [form, pageSize]);
+
+    // ── fetchAll: compat (now = reset to page 1 + force) ──────────
+    const fetchAll = useCallback(async () => {
+        const values  = form.getFieldsValue();
+        const payload = buildFilter(values);
+        setPage(1);
+        setFilterPayload(payload);
+
+        await globalMutate(
+            (key) => Array.isArray(key) && key[0] === 'usageSessions:v2',
+            undefined,
+            { revalidate: true },
+        );
+    }, [form, globalMutate]);
+
+    const refresh = useCallback(async () => swr.mutate(), [swr]);
+
+    // ── Initial auto-load ──────────────────────────────────────────
+    useEffect(() => {
+        const values  = form.getFieldsValue();
+        const payload = buildFilter(values);
+        setFilterPayload(payload);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // ✅ Khi needFullData bật: set allParams để SWR fetch
+    // ── Error logging ──────────────────────────────────────────────
     useEffect(() => {
-        if (!needFullData) return;
-
-        const values = form.getFieldsValue();
-        const params = buildParams(values, 1, API_SAFE_LIMIT);
-
-        setPagination((p) => ({ ...p, current: 1 }));
-        setAllParams(params);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [needFullData]);
-
-    // ✅ Update total (an toàn)
-    useEffect(() => {
-        if (!needFullData) {
-            const list = serverData || [];
-            const safeTotal = Math.max(Number(swrPaged.data?.total || 0), list.length);
-            setPagination((p) => ({ ...p, total: safeTotal }));
-            return;
-        }
-
-        const list = fullData || [];
-        const safeTotal = Math.max(Number(swrAll.data?.total || 0), list.length);
-        setPagination((p) => ({ ...p, total: safeTotal }));
-    }, [needFullData, serverData, fullData, swrPaged.data, swrAll.data]);
-
-    const fetchPaged = useCallback(
-        async (page = 1, pageSize = pagination.pageSize || 20) => {
-            const values = form.getFieldsValue();
-            const params = buildParams(values, page, pageSize);
-
-            setPagination((p) => ({ ...p, current: page, pageSize }));
-            setPagedParams(params);
-        },
-        [form, pagination.pageSize],
-    );
-
-    const fetchAll = useCallback(async () => {
-        const values = form.getFieldsValue();
-        const params = buildParams(values, 1, API_SAFE_LIMIT);
-
-        setPagination((p) => ({ ...p, current: 1 }));
-        setAllParams(params);
-    }, [form]);
-
-    const refresh = useCallback(async () => {
-        if (needFullData) return swrAll.mutate();
-        return swrPaged.mutate();
-    }, [needFullData, swrAll, swrPaged]);
+        if (!swr.error) return;
+        console.error('[useUsageSessionData]', swr.error);
+    }, [swr.error]);
 
     return {
         serverData,
         fullData,
-
         loading,
         pagination,
         setPagination,
-
         sortMode,
         setSortMode,
         tableFilters,
         setTableFilters,
         groupBy,
         setGroupBy,
-        needFullData,
-
+        needFullData: false, // compat: không còn needFullData
         fetchPaged,
         fetchAll,
-
         refresh,
         mutate: refresh,
     };

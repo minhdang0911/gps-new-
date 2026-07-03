@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Skeleton } from 'antd';
+import { Skeleton, Popover } from 'antd';
 import {
     SearchOutlined,
     CloseOutlined,
@@ -22,6 +22,9 @@ import './map.css';
 import { getDevices } from '../lib/api/devices';
 import api from '../lib/api/axios';
 import { usePathname } from 'next/navigation';
+import { findNearest } from '../util/geo';
+import { useAuthStore } from '../stores/authStore';
+import { Select } from 'antd';
 
 const PROVINCE_API = 'https://esgoo.net/api-tinhthanh/1/0.htm';
 const DISTRICT_API = (provinceId) => `https://esgoo.net/api-tinhthanh/2/${provinceId}.htm`;
@@ -83,23 +86,6 @@ const IcRefresh = ({ spinning }) => (
 const IcExcel = () => <FileSpreadsheet size={15} />;
 const IcChevron = () => <ChevronDown size={12} strokeWidth={2.5} />;
 
-// ── Geo helper (province-level device filtering) ────────────────
-const _haversine = (lat1, lon1, lat2, lon2) => {
-    const R = 6371;
-    const dLat = ((lat2 - lat1) * Math.PI) / 180;
-    const dLon = ((lon2 - lon1) * Math.PI) / 180;
-    const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-};
-const _findNearest = (lat, lon, list) => {
-    let best = null, bestDist = Infinity;
-    for (const item of list) {
-        const d = _haversine(lat, lon, parseFloat(item.latitude), parseFloat(item.longitude));
-        if (d < bestDist) { bestDist = d; best = item; }
-    }
-    return best;
-};
-
 // ── Region Filter Panel (TopCV-style) ─────────────────────────────
 const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled, isEn }) => {
     const t = (vi, en) => (isEn ? en : vi);
@@ -125,7 +111,7 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
         const counts = {};
         Object.values(cruiseByImei).forEach(cruise => {
             if (!cruise?.lat || !cruise?.lon) return;
-            const nearest = _findNearest(cruise.lat, cruise.lon, provinces);
+            const nearest = findNearest(cruise.lat, cruise.lon, provinces);
             if (nearest) counts[nearest.id] = (counts[nearest.id] || 0) + 1;
         });
         return counts;
@@ -140,9 +126,9 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
         Object.values(cruiseByImei).forEach(cruise => {
             if (!cruise?.lat || !cruise?.lon) return;
             // Only consider devices belonging to this province
-            const nearestProv = _findNearest(cruise.lat, cruise.lon, provinces);
+            const nearestProv = findNearest(cruise.lat, cruise.lon, provinces);
             if (nearestProv?.id !== hoveredProv.id) return;
-            const nearestDist = _findNearest(cruise.lat, cruise.lon, dists);
+            const nearestDist = findNearest(cruise.lat, cruise.lon, dists);
             if (nearestDist) counts[nearestDist.id] = (counts[nearestDist.id] || 0) + 1;
         });
         return counts;
@@ -843,7 +829,7 @@ const SearchBox = ({ devices, cruiseByImei, onSelect, isEn }) => {
 };
 
 // ── Stat Card ────────────────────────────────────────────────
-const StatCard = ({ icon, label, value, sub, accentColor, loading: cardLoading, onClick, active }) => (
+const StatCard = ({ icon, label, value, sub, accentColor, loading: cardLoading, onClick, active, isEn }) => (
     <div
         className="ov-stat-card"
         onClick={onClick}
@@ -881,7 +867,10 @@ const StatCard = ({ icon, label, value, sub, accentColor, loading: cardLoading, 
                 position: 'absolute', bottom: 8, right: 12,
                 fontSize: 10, color: accentColor + 'bb', fontWeight: 500,
             }}>
-                {active ? '✕ Bỏ lọc' : 'Xem trên bản đồ →'}
+                {active
+                    ? (isEn ? '✕ Clear filter' : '✕ Bỏ lọc')
+                    : (isEn ? 'View on map →' : 'Xem trên bản đồ →')
+                }
             </div>
         )}
     </div>
@@ -899,10 +888,21 @@ const OverviewPage = () => {
     const [highlightDevice, setHighlightDevice] = useState(null);
     const [provinces, setProvinces]       = useState([]);   // esgoo province list
     const [regionFilter, setRegionFilter] = useState(null); // applied region filter
+    const [distributorFilter, setDistributorFilter] = useState(null); // null = all
     const [mapHeight, setMapHeight]       = useState(640);  // responsive map height
     const [isFullscreen, setIsFullscreen] = useState(false);
     const mapCardRef                      = useRef(null);
     const pathname                        = usePathname() || '/';
+
+    // ─ Role detection (administrator only sees distributor filter)
+    const user = useAuthStore((s) => s.user);
+    const isAdmin = useMemo(() => {
+        if (user?.position === 'administrator') return true;
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('role') === 'administrator';
+        }
+        return false;
+    }, [user]);
 
     useEffect(() => {
         const segments = pathname.split('/').filter(Boolean);
@@ -959,18 +959,14 @@ const OverviewPage = () => {
         if (!silent) setLoading(true);
         else setRefreshing(true);
         try {
-            const token =
-                typeof window !== 'undefined' ? localStorage.getItem('accessToken') || '' : '';
-
             // ✅ Fetch song song thay vì tuần tự — giảm ~50% thời gian chờ
+            // Authorization được tự động gắn bởi axios interceptor
             const [devRes, cruiseRes] = await Promise.all([
                 getDevices({ limit: 200000 }),
-                api.get('last-cruise-list', {
-                    headers: { Authorization: `Bearer ${token}` },
-                }),
+                api.get('last-cruise-list'),
             ]);
 
-            const devList   = devRes?.devices || [];
+            const devList    = devRes?.devices || [];
             const cruiseList = cruiseRes?.data?.data || [];
 
 
@@ -1011,53 +1007,98 @@ const OverviewPage = () => {
     }, []);
 
     const totalDevices = devices.length;
-    const onlineDevices = useMemo(
-        () => devices.filter((d) => isOnline(cruiseByImei[d.imei])).length,
-        [devices, cruiseByImei],
-    );
-    const offlineDevices = totalDevices - onlineDevices;
-    const expiringSoon   = useMemo(() => devices.filter(isExpiringSoon).length, [devices]);
 
-    // Devices shown on map based on online/offline filter
-    const filteredDevices = useMemo(() => {
+    // ─ Distributor options (admin only) — lấy từ devices list
+    const distributorOptions = useMemo(() => {
+        if (!isAdmin) return [];
+        const map = new Map();
+        devices.forEach(d => {
+            const dist = d.distributor_id;
+            if (dist?._id && !map.has(dist._id)) {
+                map.set(dist._id, { value: dist._id, label: dist.name || dist.username || dist._id });
+            }
+        });
+        return [...map.values()].sort((a, b) => a.label.localeCompare(b.label, 'vi'));
+    }, [devices, isAdmin]);
+
+    // ─ Distributor stats (admin only) — phân bổ tổng / online / offline theo từng đại lý
+    const distributorStats = useMemo(() => {
+        if (!isAdmin || !devices.length) return [];
+        const map = new Map();
+        devices.forEach(d => {
+            const dist  = d.distributor_id;
+            const id    = dist?._id || '__none__';
+            const label = dist?.name || dist?.username || (dist ? dist._id : (isEn ? 'Unassigned' : 'Chưa phân đại lý'));
+            if (!map.has(id)) map.set(id, { id, label, total: 0, online: 0 });
+            const entry = map.get(id);
+            entry.total++;
+            if (isOnline(cruiseByImei[d.imei])) entry.online++;
+        });
+        return [...map.values()]
+            .map(e => ({ ...e, offline: e.total - e.online }))
+            .sort((a, b) => b.total - a.total);
+    }, [devices, cruiseByImei, isAdmin, isEn]);
+
+    // ─ Filter chain: mapFilter → distributorFilter → regionFilter → displayDevices
+    // filteredByMap: filter online/offline
+    const filteredByMap = useMemo(() => {
         if (mapFilter === 'online')  return devices.filter((d) => isOnline(cruiseByImei[d.imei]));
         if (mapFilter === 'offline') return devices.filter((d) => !isOnline(cruiseByImei[d.imei]));
         return devices;
     }, [devices, cruiseByImei, mapFilter]);
 
-    // Devices filtered further by selected region (province + district level)
+    // filteredByDistributor: filter theo đại lý (admin only)
+    const filteredByDistributor = useMemo(() => {
+        if (!distributorFilter) return filteredByMap;
+        return filteredByMap.filter(d => d.distributor_id?._id === distributorFilter);
+    }, [filteredByMap, distributorFilter]);
+
+    // filteredDevices: sau map filter và distributor filter (dùng cho map display)
+    const filteredDevices = filteredByDistributor;
+
+    // regionFilteredDevices: sau thêm region filter — đây là tập cuối cùng hiển trên bản đồ
     const regionFilteredDevices = useMemo(() => {
         if (!regionFilter || !regionFilter.checkedProvs.size || !provinces.length) return filteredDevices;
         return filteredDevices.filter(d => {
             const cruise = cruiseByImei[d.imei];
             if (!cruise?.lat || !cruise?.lon) return false;
-            // Step 1: province filter
-            const nearest = _findNearest(cruise.lat, cruise.lon, provinces);
+            const nearest = findNearest(cruise.lat, cruise.lon, provinces);
             if (!nearest || !regionFilter.checkedProvs.has(nearest.id)) return false;
-            // Step 2: district filter (if specific districts selected for this province)
             const provId = nearest.id;
             const selectedDists = regionFilter.checkedDists?.[provId];
-            if (!selectedDists || selectedDists.size === 0) return true; // no district filter → keep
+            if (!selectedDists || selectedDists.size === 0) return true;
             const distList = regionFilter.districtCache?.[provId];
-            if (!distList?.length) return true; // no district data → keep
-            const nearestDist = _findNearest(cruise.lat, cruise.lon, distList);
+            if (!distList?.length) return true;
+            const nearestDist = findNearest(cruise.lat, cruise.lon, distList);
             return nearestDist && selectedDists.has(nearestDist.id);
         });
     }, [filteredDevices, regionFilter, provinces, cruiseByImei]);
+
+    // displayDevices: tập cuối cùng hiển thị trên stat cards
+    const displayDevices = regionFilter?.checkedProvs?.size ? regionFilteredDevices : filteredDevices;
+
+    // ─ Stat counts tính từ displayDevices (reactive theo tất cả filter)
+    const displayTotal   = displayDevices.length;
+    const displayOnline  = useMemo(() => displayDevices.filter(d => isOnline(cruiseByImei[d.imei])).length,  [displayDevices, cruiseByImei]);
+    const displayOffline = displayTotal - displayOnline;
+    const displayExpiring = useMemo(() => displayDevices.filter(isExpiringSoon).length, [displayDevices]);
+
+    // Legacy (giữ cho Excel export total)
+    const onlineDevices  = useMemo(() => devices.filter((d) => isOnline(cruiseByImei[d.imei])).length, [devices, cruiseByImei]);
+    const offlineDevices = totalDevices - onlineDevices;
+    const expiringSoon   = useMemo(() => devices.filter(isExpiringSoon).length, [devices]);
 
 
     const toggleFilter = (mode) => setMapFilter((cur) => cur === mode ? 'all' : mode);
 
     // Khi region filter active → ExcelDropdown cũng xuất theo khu vực đã chọn
     const handleExport = (mode) => {
-        // Tạo nhãn khu vực từ regionFilter đang áp dụng
         let regionLabel = null;
         if (regionFilter?.checkedProvs?.size) {
             const provNames = [...regionFilter.checkedProvs].map(provId => {
                 const prov = provinces.find(p => p.id === provId);
                 return prov?.full_name || provId;
             });
-            // Ghép tối đa 2 tỉnh, nếu nhiều hơn thì thêm "+N"
             if (provNames.length <= 2) {
                 regionLabel = provNames.join(', ');
             } else {
@@ -1066,7 +1107,7 @@ const OverviewPage = () => {
         }
 
         exportOverviewExcel({
-            devices: regionFilter ? regionFilteredDevices : devices,
+            devices: regionFilter ? regionFilteredDevices : displayDevices,
             cruiseByImei,
             mode,
             regionLabel,
@@ -1161,7 +1202,8 @@ const OverviewPage = () => {
                     background: #fff;
                     border: 1px solid #e2e8f0;
                     border-radius: 9px;
-                    padding: 7px 16px;
+                    padding: 0 16px;
+                    height: 32px;
                     font-size: 12.5px;
                     color: #334155;
                     cursor: pointer;
@@ -1180,13 +1222,14 @@ const OverviewPage = () => {
                 /* ── Stats grid ─────────────── */
                 .ov-stats-row {
                     display: grid;
-                    grid-template-columns: repeat(4, 1fr);
+                    grid-template-columns: repeat(var(--stat-cols, 4), 1fr);
                     gap: 14px;
                     margin-bottom: 18px;
                 }
-                @media (max-width: 1024px) { .ov-stats-row { grid-template-columns: repeat(2, 1fr); gap: 12px; } }
-                @media (max-width: 560px)  { .ov-stats-row { grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; } }
-                @media (max-width: 380px)  { .ov-stats-row { grid-template-columns: 1fr; gap: 8px; } }
+                @media (max-width: 1200px) { .ov-stats-row { --stat-cols: 3 !important; gap: 12px; } }
+                @media (max-width: 900px)  { .ov-stats-row { --stat-cols: 2 !important; gap: 12px; } }
+                @media (max-width: 560px)  { .ov-stats-row { --stat-cols: 2 !important; gap: 8px; margin-bottom: 12px; } }
+                @media (max-width: 380px)  { .ov-stats-row { --stat-cols: 1 !important; gap: 8px; } }
 
                 /* ── Header actions ─────────── */
                 .ov-header-actions {
@@ -1330,8 +1373,10 @@ const OverviewPage = () => {
                 .ov-stat-accent {
                     position: absolute;
                     top: 0; left: 0; right: 0;
-                    height: 3px;
+                    height: 4px;
                     border-radius: 14px 14px 0 0;
+                    /* gradient glow from solid color — will be overridden by inline style background */
+                    filter: brightness(1.05);
                 }
                 .ov-stat-body { flex: 1; min-width: 0; }
                 .ov-stat-label {
@@ -1426,10 +1471,41 @@ const OverviewPage = () => {
                                     {t('Cập nhật lúc', 'Updated at')} {formatLastUpdated()}
                                 </div>
                             )}
+                            {/* Mini online ratio bar */}
+                            {!loading && totalDevices > 0 && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 6 }}>
+                                    <div style={{ flex: 1, height: 4, borderRadius: 99, background: '#f1f5f9', overflow: 'hidden', maxWidth: 140 }}>
+                                        <div style={{
+                                            height: '100%', borderRadius: 99,
+                                            background: 'linear-gradient(90deg, #16a34a, #4ade80)',
+                                            width: `${Math.round((displayOnline / Math.max(displayTotal, 1)) * 100)}%`,
+                                            transition: 'width .4s ease',
+                                        }} />
+                                    </div>
+                                    <span style={{ fontSize: 10.5, color: '#16a34a', fontWeight: 700 }}>
+                                        {Math.round((displayOnline / Math.max(displayTotal, 1)) * 100)}% online
+                                    </span>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
                 <div className="ov-header-actions">
+                    {/* Distributor dropdown — chỉ admin mới thấy */}
+                    {isAdmin && distributorOptions.length > 0 && (
+                        <Select
+                            allowClear
+                            showSearch
+                            placeholder={t('Đại lý', 'Distributor')}
+                            value={distributorFilter}
+                            onChange={setDistributorFilter}
+                            options={distributorOptions}
+                            optionFilterProp="label"
+                            style={{ minWidth: 160, maxWidth: 220, fontSize: 12.5 }}
+                            size="small"
+                            styles={{ selector: { height: 32 } }}
+                        />
+                    )}
                     <RegionFilterPanel
                         provinces={provinces}
                         devices={devices}
@@ -1456,45 +1532,205 @@ const OverviewPage = () => {
                 </div>
             </div>
 
-            {/* Stat cards */}
-            <div className="ov-stats-row">
+            {/* Stat cards — reactive theo tất cả filter đang active */}
+            <div
+                className="ov-stats-row"
+                style={isAdmin && !loading && distributorStats.length > 0
+                    ? { '--stat-cols': '5' }
+                    : undefined
+                }
+            >
                 <StatCard
                     icon={<IcTotal />}
                     label={t('Tổng thiết bị', 'Total Devices')}
-                    value={loading ? '—' : totalDevices.toLocaleString()}
+                    value={loading ? '—' : displayTotal.toLocaleString()}
+                    sub={displayTotal !== totalDevices ? t(`/ ${totalDevices} tổng`, `/ ${totalDevices} total`) : undefined}
                     accentColor="#1677ff"
                     loading={loading}
                     onClick={() => setMapFilter('all')}
                     active={mapFilter === 'all'}
+                    isEn={isEn}
                 />
                 <StatCard
                     icon={<IcWifiOn />}
                     label={t('Thiết bị Online', 'Devices Online')}
-                    value={loading ? '—' : onlineDevices.toLocaleString()}
+                    value={loading ? '—' : displayOnline.toLocaleString()}
                     sub={t('Cập nhật trong 24h', 'Updated < 24h')}
                     accentColor="#16a34a"
                     loading={loading}
                     onClick={() => setMapFilter((c) => c === 'online' ? 'all' : 'online')}
                     active={mapFilter === 'online'}
+                    isEn={isEn}
                 />
                 <StatCard
                     icon={<IcWifiOff />}
                     label={t('Thiết bị Offline', 'Devices Offline')}
-                    value={loading ? '—' : offlineDevices.toLocaleString()}
+                    value={loading ? '—' : displayOffline.toLocaleString()}
                     sub={t('Không cập nhật 24h', 'No update > 24h')}
                     accentColor="#dc2626"
                     loading={loading}
                     onClick={() => setMapFilter((c) => c === 'offline' ? 'all' : 'offline')}
                     active={mapFilter === 'offline'}
+                    isEn={isEn}
                 />
                 <StatCard
                     icon={<IcClock />}
                     label={t('Sắp hết hạn', 'Expiring Soon')}
-                    value={loading ? '—' : expiringSoon.toLocaleString()}
+                    value={loading ? '—' : displayExpiring.toLocaleString()}
                     sub={t('Trong vòng 7 ngày', 'Within 7 days')}
-                    accentColor={expiringSoon > 0 ? '#ea580c' : '#94a3b8'}
+                    accentColor={displayExpiring > 0 ? '#ea580c' : '#94a3b8'}
                     loading={loading}
                 />
+
+                {/* Distributor card — admin only */}
+                {isAdmin && !loading && distributorStats.length > 0 && (
+                    <Popover
+                        trigger="click"
+                        placement="bottomRight"
+                        overlayInnerStyle={{ padding: 0, borderRadius: 12, overflow: 'hidden', minWidth: 340 }}
+                        content={
+                            <div style={{ width: 340 }}>
+                                {/* Popover header */}
+                                <div style={{
+                                    padding: '10px 14px 8px',
+                                    borderBottom: '1px solid #f1f5f9',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                }}>
+                                    <span style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
+                                        {t('Phân bổ theo đại lý', 'By Distributor')}
+                                    </span>
+                                    {distributorFilter && (
+                                        <button
+                                            onClick={() => setDistributorFilter(null)}
+                                            style={{
+                                                fontSize: 11, color: '#7c3aed', fontWeight: 600,
+                                                border: '1px solid #ddd6fe', background: '#faf5ff',
+                                                borderRadius: 6, padding: '2px 8px', cursor: 'pointer',
+                                            }}
+                                        >
+                                            {t('Bỏ lọc', 'Clear')}
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Column header */}
+                                <div style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: '1fr 36px 36px 36px 90px',
+                                    gap: '0 8px',
+                                    padding: '5px 14px 4px',
+                                    background: '#f8fafc',
+                                    borderBottom: '1px solid #f1f5f9',
+                                }}>
+                                    <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600 }}>{t('Đại lý', 'Distributor')}</span>
+                                    <span style={{ fontSize: 10, color: '#1677ff', fontWeight: 600, textAlign: 'right' }}>{t('T', 'T')}</span>
+                                    <span style={{ fontSize: 10, color: '#16a34a', fontWeight: 600, textAlign: 'right' }}>On</span>
+                                    <span style={{ fontSize: 10, color: '#dc2626', fontWeight: 600, textAlign: 'right' }}>Off</span>
+                                    <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600, textAlign: 'right' }}>%Online</span>
+                                </div>
+
+                                {/* Rows */}
+                                <div style={{ maxHeight: 260, overflowY: 'auto', padding: '4px 0' }}>
+                                    {distributorStats.map(dist => {
+                                        const isActive = distributorFilter === dist.id;
+                                        const pct = dist.total ? Math.round((dist.online / dist.total) * 100) : 0;
+                                        return (
+                                            <div
+                                                key={dist.id}
+                                                onClick={() => setDistributorFilter(isActive ? null : dist.id)}
+                                                style={{
+                                                    display: 'grid',
+                                                    gridTemplateColumns: '1fr 36px 36px 36px 90px',
+                                                    alignItems: 'center',
+                                                    gap: '0 8px',
+                                                    padding: '6px 14px',
+                                                    cursor: 'pointer',
+                                                    background: isActive ? '#faf5ff' : 'transparent',
+                                                    transition: 'background .12s',
+                                                }}
+                                                onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = '#f8fafc'; }}
+                                                onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
+                                            >
+                                                <span style={{
+                                                    fontSize: 12.5, fontWeight: isActive ? 700 : 400,
+                                                    color: isActive ? '#6d28d9' : '#334155',
+                                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                                }}>
+                                                    {isActive && <span style={{ color: '#7c3aed', marginRight: 4 }}>●</span>}
+                                                    {dist.label}
+                                                </span>
+                                                <span style={{ fontSize: 12, fontWeight: 700, color: '#1677ff', textAlign: 'right' }}>{dist.total}</span>
+                                                <span style={{ fontSize: 12, color: '#16a34a', textAlign: 'right' }}>{dist.online}</span>
+                                                <span style={{ fontSize: 12, color: '#dc2626', textAlign: 'right' }}>{dist.offline}</span>
+                                                {/* Mini bar + % */}
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                    <div style={{ flex: 1, height: 5, borderRadius: 99, background: '#e2e8f0', overflow: 'hidden' }}>
+                                                        <div style={{
+                                                            height: '100%', borderRadius: 99,
+                                                            background: 'linear-gradient(90deg,#16a34a,#4ade80)',
+                                                            width: `${pct}%`, transition: 'width .3s',
+                                                        }} />
+                                                    </div>
+                                                    <span style={{ fontSize: 10, color: '#94a3b8', minWidth: 26, textAlign: 'right' }}>{pct}%</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                <div style={{ padding: '6px 14px 8px', borderTop: '1px solid #f1f5f9', fontSize: 10.5, color: '#94a3b8' }}>
+                                    {t('Click vào hàng để lọc theo đại lý', 'Click a row to filter by distributor')}
+                                </div>
+                            </div>
+                        }
+                    >
+                        {/* Trigger card — styled like StatCard */}
+                        <div
+                            className="ov-stat-card"
+                            style={{
+                                cursor: 'pointer',
+                                outline: distributorFilter ? '2px solid #7c3aed' : '2px solid transparent',
+                                outlineOffset: -2,
+                            }}
+                        >
+                            {distributorFilter && (
+                                <div style={{
+                                    position: 'absolute', inset: 0,
+                                    background: '#7c3aed0D',
+                                    borderRadius: 14, pointerEvents: 'none',
+                                }} />
+                            )}
+                            <div className="ov-stat-accent" style={{ background: '#7c3aed' }} />
+                            <div className="ov-stat-body">
+                                <div className="ov-stat-label">{t('Đại lý', 'Distributors')}</div>
+                                <div className="ov-stat-value" style={{ color: '#7c3aed' }}>
+                                    {distributorFilter
+                                        ? distributorStats.find(d => d.id === distributorFilter)?.label?.split('_')[0] || '1'
+                                        : distributorStats.length
+                                    }
+                                </div>
+                                <div className="ov-stat-sub">
+                                    {distributorFilter
+                                        ? t('Đang lọc · click xem tất cả', 'Filtering · click to see all')
+                                        : t('Click để xem phân bổ', 'Click to see breakdown')
+                                    }
+                                </div>
+                            </div>
+                            <div className="ov-stat-icon" style={{ color: '#7c3aed', background: '#7c3aed18' }}>
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                                </svg>
+                            </div>
+                            <div style={{
+                                position: 'absolute', bottom: 8, right: 12,
+                                fontSize: 10, color: '#7c3aedbb', fontWeight: 500,
+                            }}>
+                                {distributorFilter ? t('✕ Bỏ lọc', '✕ Clear') : t('Xem chi tiết →', 'Details →')}
+                            </div>
+                        </div>
+                    </Popover>
+                )}
             </div>
 
             {/* Map card */}

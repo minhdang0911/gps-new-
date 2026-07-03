@@ -1,7 +1,7 @@
 // features/tripReport/hooks/useTripReportDeviceMap.js
 import useSWR from 'swr';
 import { useMemo, useEffect, useCallback } from 'react';
-import { getAuthToken } from '../utils';
+import { getAuthToken } from '../../../util/number';
 
 // ✅ bump version để bust cache cũ
 const MAP_CACHE_KEY = 'tripReportDeviceMap:v2';

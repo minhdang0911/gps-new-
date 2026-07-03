@@ -5,11 +5,10 @@ import dayjs from 'dayjs';
 import { useAuthStore } from '../../../stores/authStore';
 import { stableStringify } from '../../_shared/swrKey';
 import { applyFilterSortTripReport } from '../utils';
+import { normalizePlate } from '../../../util/number';
 
 // ========= helpers =========
 const normStr = (v) => (typeof v === 'string' ? v.trim() : '');
-const normalizePlate = (s) =>
-    (s || '').toString().trim().toUpperCase().replace(/\s+/g, '').replace(/[._]/g, '-').replace(/--+/g, '-');
 
 const getRowImei = (row) => normStr(String(row?.imei ?? row?.IMEI ?? row?.deviceImei ?? row?.device?.imei ?? ''));
 
@@ -133,6 +132,9 @@ export function useTripReportData({
     }, [filterValues, plateToImeis]);
 
     // ===== FETCH ALL when needFullData =====
+    const MAX_PAGES = 1000; // safety guard tránh loop vô hạn nếu BE trả total sai
+    const [isFetchingAll, setIsFetchingAll] = useState(false);
+
     const fetchAllPages = useCallback(
         async (filters) => {
             const LIMIT = 200; // nếu BE cho lớn hơn thì tăng lên
@@ -155,8 +157,11 @@ export function useTripReportData({
                 if (rows.length < LIMIT) break; // last page
                 page += 1;
 
-                // safety guard tránh loop vô hạn nếu BE trả total sai
-                if (page > 1000) break;
+                // safety guard tránh loop vô hạn
+                if (page > MAX_PAGES) {
+                    console.warn('[fetchAllPages] Hit MAX_PAGES safety limit');
+                    break;
+                }
             }
 
             // attach plate cho full list
@@ -300,8 +305,13 @@ export function useTripReportData({
                     // reset pagination về page 1
                     setPagination((p) => ({ ...p, current: 1 }));
 
-                    const all = await fetchAllPages(filters);
-                    setFullData(all);
+                    setIsFetchingAll(true);
+                    try {
+                        const all = await fetchAllPages(filters);
+                        setFullData(all);
+                    } finally {
+                        setIsFetchingAll(false);
+                    }
                     // không cần setQueryParams trong full mode (tránh SWR override)
                     return;
                 }
@@ -333,7 +343,7 @@ export function useTripReportData({
     }, [userId]);
 
     return {
-        loading,
+        loading: loading || isFetchingAll,
 
         // raw list used for FE processing (full or page)
         rawData,

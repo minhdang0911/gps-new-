@@ -4,11 +4,10 @@ import { API_SAFE_LIMIT } from '../constants';
 import { attachPlateToLastCruise, applyClientFilterSort } from '../utils';
 import { useAuthStore } from '../../../stores/authStore';
 import { stableStringify } from '../../_shared/swrKey';
+import { normalizePlate } from '../../../util/number';
 
 // helpers
 const normStr = (v) => (typeof v === 'string' ? v.trim() : '');
-const normalizePlate = (s) =>
-    (s || '').toString().trim().toUpperCase().replace(/\s+/g, '').replace(/[._]/g, '-').replace(/--+/g, '-');
 
 const getRowDev = (row) => normStr(String(row?.dev ?? ''));
 

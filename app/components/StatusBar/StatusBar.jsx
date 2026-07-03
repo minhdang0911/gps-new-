@@ -16,29 +16,28 @@ import en from '../../locales/en.json';
 const { Text } = Typography;
 
 const locales = { vi, en };
+ 
 
-// ✅ Tách Clock ra memo component — chỉ bản thân nó re-render mỗi giây, không cascade lên StatusBar
-const Clock = React.memo(function Clock() {
+const Clock = React.memo(function Clock({ isEn }) {
     const [time, setTime] = useState('');
 
     useEffect(() => {
         const updateClock = () => {
             const now = new Date();
             const formatted = now
-                .toLocaleTimeString('en-US', {
+                .toLocaleTimeString(isEn ? 'en-US' : 'vi-VN', {
                     hour: '2-digit',
                     minute: '2-digit',
                     second: '2-digit',
-                    hour12: true,
-                })
-                .toUpperCase();
+                    hour12: isEn,
+                });
             const date = now.toLocaleDateString('vi-VN');
             setTime(`${formatted} ${date}`);
         };
         updateClock();
         const timer = setInterval(updateClock, 1000);
         return () => clearInterval(timer);
-    }, []);
+    }, [isEn]);
 
     return <Text className="iky-status__time">{time}</Text>;
 });
@@ -71,28 +70,29 @@ const StatusBar = () => {
 
     const t = isEn ? locales.en.statusbar : locales.vi.statusbar;
 
-    // ----- TITLE ĂN THEO ROUTE -----
-    let currentTitle = t.monitor;
-
-    if (pathname === '/') currentTitle = t.monitor;
-    else if (pathname.includes('/cruise')) currentTitle = t.cruise;
-    else if (pathname.includes('/report')) currentTitle = t.report;
-    else if (pathname.includes('/manage')) currentTitle = t.manage;
-    else if (pathname.includes('/support')) currentTitle = t.support;
-    else if (pathname.includes('/maintenance')) currentTitle = t.maintain;
-    else if (pathname.includes('/overview')) currentTitle = t.overview;
+     
+    const routeTitleMap = [
+        { prefix: '/cruise',      key: 'cruise'   },
+        { prefix: '/report',      key: 'report'   },
+        { prefix: '/manage',      key: 'manage'   },
+        { prefix: '/support',     key: 'support'  },
+        { prefix: '/maintenance', key: 'maintain' },
+        { prefix: '/overview',    key: 'overview' },
+    ];
+    const routeMatch = routeTitleMap.find(({ prefix }) => pathname.startsWith(prefix));
+    const currentTitle = routeMatch ? t[routeMatch.key] : t.monitor;
 
 
     if (pathname === '/login' || pathname === '/login/en') return null;
 
     return (
         <div className="iky-status">
-            {/* LEFT: BREADCRUMB */}
+           
             <div className="iky-status__left">
                 <Breadcrumb className="iky-status__breadcrumb" items={[{ title: t.home }, { title: currentTitle }]} />
             </div>
 
-            {/* CENTER: STATUS */}
+       
             <div className="iky-status__center">
                 <Space size={20} wrap>
                     <div className="iky-status__state">
@@ -125,12 +125,12 @@ const StatusBar = () => {
                 </Space>
             </div>
 
-            {/* RIGHT: NOTI + TIME */}
+         
             <div className="iky-status__right">
-                <Badge count={0} overflowCount={99} size="small" className="iky-status__badge" showZero>
+                <Badge count={0} overflowCount={99} size="small" className="iky-status__badge">
                     <span className="iky-status__notify-label">{t.notify}</span>
                 </Badge>
-                <Clock />
+                <Clock isEn={isEn} />
             </div>
         </div>
     );

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { Card, Form, Input, Button, Row, Col, Table, Space, Typography, Grid } from 'antd';
+import { Card, Form, Input, Button, Row, Col, Table, Space, Typography, Grid, Progress } from 'antd';
 import { SearchOutlined, ReloadOutlined, DownloadOutlined, SettingOutlined } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 
@@ -83,6 +83,7 @@ const ChargingSessionReportPage = () => {
         serverData,
         fullData,
         loading,
+        progress,
         pagination,
         setPagination,
         sortMode,
@@ -214,7 +215,8 @@ const ChargingSessionReportPage = () => {
         setTimePresetResetKey((k) => k + 1);
 
         // ✅ quan trọng: refetch map mới + refetch list mới
-        await Promise.allSettled([refreshDeviceMap(), fetchPaged(1, pagination.pageSize, { force: true })]);
+        // forceRefresh: fetchAll với force=true → bypass cache, fetch lại từ BE
+        await Promise.allSettled([refreshDeviceMap(), fetchAll({ force: true })]);
 
         clearSelection();
     };
@@ -386,7 +388,26 @@ const ChargingSessionReportPage = () => {
                         }
                     >
                         {viewMode === 'table' ? (
-                            <Table
+                            <>
+                                {/* Progress bar — hiển thị khi đang fetch */}
+                                {loading && (
+                                    <div style={{ marginBottom: 8 }}>
+                                        {progress?.total > 0 ? (
+                                            <Progress
+                                                percent={progress.percent}
+                                                status="active"
+                                                size="small"
+                                                format={() =>
+                                                    `${(progress.loaded || 0).toLocaleString()} records đã tải`
+                                                }
+                                            />
+                                        ) : (
+                                            <Progress percent={0} status="active" size="small" />
+                                        )}
+                                    </div>
+                                )}
+
+                                <Table
                                 rowKey={(r) =>
                                     r._id || r.sessionId || `${r.imei}-${r.start || r.startTime}-${r.end || r.endTime}`
                                 }
@@ -408,6 +429,7 @@ const ChargingSessionReportPage = () => {
                                 virtual
                                 scroll={{ x: 1400, y: 600 }}
                             />
+                            </>
                         ) : (
                             <ReportPanel
                                 title={isEn ? 'Report' : 'Báo cáo'}
