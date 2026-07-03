@@ -1,6 +1,10 @@
 import useSWR from 'swr';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { normalizePlate, getAuthToken } from '../../../util/number';
+
+const MAP_CACHE_KEY = 'iky_battery_device_map_v1';
+const CACHE_TTL_MS  = 10 * 60 * 1000; // 10 phút
+
 
 function reviveMaps(obj) {
     return {
