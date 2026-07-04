@@ -4,7 +4,6 @@ import { useMemo, useEffect } from 'react';
 import useSWR from 'swr';
 
 export function useManageDevicesData({
-    token,
     currentPage,
     pageSize,
     filters,
@@ -14,6 +13,7 @@ export function useManageDevicesData({
     getUserList,
     modalMode,
 }) {
+
     const listParams = useMemo(
         () => ({
             page: currentPage,
@@ -48,7 +48,7 @@ export function useManageDevicesData({
         data: dcRes,
         isLoading: dcLoading,
         mutate: mutateDC,
-    } = useSWR(token ? ['deviceCategories', token] : null, ([, tk]) => getDeviceCategories(tk, { limit: 1000 }), {
+    } = useSWR(['deviceCategories'], () => getDeviceCategories({ limit: 1000 }), {
         revalidateOnFocus: false,
         dedupingInterval: 60_000,
     });
@@ -57,28 +57,23 @@ export function useManageDevicesData({
         data: vcRes,
         isLoading: vcLoading,
         mutate: mutateVC,
-    } = useSWR(token ? ['vehicleCategories', token] : null, ([, tk]) => getVehicleCategories(tk, { limit: 1000 }), {
+    } = useSWR(['vehicleCategories'], () => getVehicleCategories({ limit: 1000 }), {
         revalidateOnFocus: false,
         dedupingInterval: 60_000,
     });
 
-    const usersFetcher = async () => {
-        try {
-            return await getUserList({ limit: 2000 });
-        } catch (e1) {
-            if (!token) throw e1;
-            return await getUserList(token, { limit: 2000 });
-        }
-    };
+
+    const usersFetcher = async () => getUserList({ limit: 2000 });
 
     const {
         data: usersRes,
         isLoading: usersLoading,
         mutate: mutateUsers,
-    } = useSWR(['users', token || 'no-token'], usersFetcher, {
+    } = useSWR(['users'], usersFetcher, {
         revalidateOnFocus: false,
         dedupingInterval: 60_000,
     });
+
 
     const deviceCategories = dcRes?.items || [];
     const vehicleCategories = vcRes?.items || [];
