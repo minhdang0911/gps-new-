@@ -73,8 +73,30 @@
 }
 
 .iky-cruise__table-body {
-    height: 350px; /* đúng bằng cái bạn đang set */
-    overflow: hidden;
+    height: 350px;
+    overflow-y: scroll !important; /* ghi đè inline style của react-window */
+    overflow-x: hidden !important;
+}
+
+/* Scrollbar tùy chỉnh cho VirtualList (chính phần tử) */
+.iky-cruise__table-body::-webkit-scrollbar {
+    width: 6px;
+}
+.iky-cruise__table-body::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 99px;
+}
+.iky-cruise__table-body::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 99px;
+}
+.iky-cruise__table-body::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* div con trực tiếp cũng cần ẩn scrollbar (phòng trường hợp react-window thêm scroll ở inner) */
+.iky-cruise__table-body > div::-webkit-scrollbar {
+    display: none;
 }
 
 /* Ant List item mặc định có padding, bạn muốn giống table row thì chỉnh: */
@@ -1100,3 +1122,62 @@
     vertical-align: middle;
 }
 
+/* =========================
+ *  MAP MATCHING PROGRESS
+ * ========================= */
+.iky-cruise__match-progress {
+    position: absolute;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2000;
+    background: rgba(17, 24, 39, 0.88);
+    color: #fff;
+    border-radius: 12px;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    font-weight: 500;
+    backdrop-filter: blur(6px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    white-space: nowrap;
+    pointer-events: none;
+    animation: iky-fade-in 0.2s ease;
+}
+
+@keyframes iky-fade-in {
+    from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+    to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.iky-cruise__match-progress-icon {
+    font-size: 16px;
+}
+
+.iky-cruise__match-progress-text {
+    opacity: 0.9;
+}
+
+.iky-cruise__match-progress-bar {
+    width: 100px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 99px;
+    overflow: hidden;
+}
+
+.iky-cruise__match-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #60a5fa, #34d399);
+    border-radius: 99px;
+    transition: width 0.3s ease;
+}
+
+.iky-cruise__match-progress-pct {
+    font-size: 11px;
+    opacity: 0.75;
+    min-width: 28px;
+    text-align: right;
+}

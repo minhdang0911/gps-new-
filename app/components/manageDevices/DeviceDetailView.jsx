@@ -3,9 +3,9 @@
 // =========================
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Space, Button, Typography, Row, Col, Card } from 'antd';
-import { ArrowLeftOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
 
 const { Title } = Typography;
 
@@ -17,14 +17,38 @@ export default function DeviceDetailView({
     batteryInfo,
     getEngineStatusText,
     getVehicleStatusText,
+    mutateCruise,
     onBack,
 }) {
+    const [refreshing, setRefreshing] = useState(false);
+
+    const handleRefresh = async () => {
+        if (!mutateCruise) return;
+        setRefreshing(true);
+        try {
+            await mutateCruise();
+        } finally {
+            setRefreshing(false);
+        }
+    };
     return (
         <Space orientation="vertical" style={{ width: '100%' }} size="middle">
             <Space wrap>
                 <Button icon={<ArrowLeftOutlined />} onClick={onBack}>
                     {t.back}
                 </Button>
+                <Button
+                    icon={<ReloadOutlined />}
+                    loading={refreshing}
+                    onClick={handleRefresh}
+                >
+                    {isEn ? 'Refresh' : 'Làm mới'}
+                </Button>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {cruiseInfo?.tim
+                        ? (isEn ? 'Last update: ' : 'Cập nhật lúc: ') + new Date(cruiseInfo.tim).toLocaleTimeString('vi-VN')
+                        : ''}
+                </Typography.Text>
                 <Title level={4}>{t.detailTitle}</Title>
             </Space>
 

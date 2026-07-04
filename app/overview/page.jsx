@@ -891,6 +891,7 @@ const OverviewPage = () => {
     const [distributorFilter, setDistributorFilter] = useState(null); // null = all
     const [mapHeight, setMapHeight]       = useState(640);  // responsive map height
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [drillDevices, setDrillDevices] = useState(null); // null = no drill, array = devices visible in current map drill level
     const mapCardRef                      = useRef(null);
     const pathname                        = usePathname() || '/';
 
@@ -1077,11 +1078,14 @@ const OverviewPage = () => {
     // displayDevices: tập cuối cùng hiển thị trên stat cards
     const displayDevices = regionFilter?.checkedProvs?.size ? regionFilteredDevices : filteredDevices;
 
-    // ─ Stat counts tính từ displayDevices (reactive theo tất cả filter)
-    const displayTotal   = displayDevices.length;
-    const displayOnline  = useMemo(() => displayDevices.filter(d => isOnline(cruiseByImei[d.imei])).length,  [displayDevices, cruiseByImei]);
-    const displayOffline = displayTotal - displayOnline;
-    const displayExpiring = useMemo(() => displayDevices.filter(isExpiringSoon).length, [displayDevices]);
+    // statDevices: nếu đang drill xuống tỉnh/quận thì dùng drillDevices, ngược lại dùng displayDevices
+    const statDevices = drillDevices ?? displayDevices;
+
+    // ─ Stat counts tính từ statDevices (reactive theo tất cả filter + map drill level)
+    const displayTotal    = statDevices.length;
+    const displayOnline   = useMemo(() => statDevices.filter(d => isOnline(cruiseByImei[d.imei])).length, [statDevices, cruiseByImei]);
+    const displayOffline  = displayTotal - displayOnline;
+    const displayExpiring = useMemo(() => statDevices.filter(isExpiringSoon).length, [statDevices]);
 
     // Legacy (giữ cho Excel export total)
     const onlineDevices  = useMemo(() => devices.filter((d) => isOnline(cruiseByImei[d.imei])).length, [devices, cruiseByImei]);
@@ -1106,11 +1110,18 @@ const OverviewPage = () => {
             }
         }
 
+        // Lấy tên đại lý đang filter (nếu có) để đưa vào tên file
+        const distributorName = distributorFilter
+            ? distributorOptions.find(o => o.value === distributorFilter)?.label || null
+            : null;
+
         exportOverviewExcel({
             devices: regionFilter ? regionFilteredDevices : displayDevices,
             cruiseByImei,
             mode,
             regionLabel,
+            provinces,
+            distributorName,
         });
     };
 
@@ -1803,7 +1814,21 @@ const OverviewPage = () => {
                         <span>{isFullscreen ? t('Thu nhỏ', 'Minimize') : t('Toàn màn hình', 'Fullscreen')}</span>
                     </button>
 
-                    {!loading && mapFilter === 'all' && (
+                    {/* Drill level badge — hiện khi đang xem tỉnh/quận cụ thể */}
+                    {drillDevices !== null && !loading && (
+                        <span style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                            padding: '3px 10px', borderRadius: 20,
+                            fontSize: 12, fontWeight: 600,
+                            background: '#eff6ff', color: '#1d4ed8',
+                            border: '1px solid #bfdbfe',
+                        }}>
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3b82f6' }} />
+                            {t('Xem', 'Viewing')}: {drillDevices.length} {t('thiết bị', 'devices')}
+                        </span>
+                    )}
+
+                    {!loading && mapFilter === 'all' && drillDevices === null && (
                         <span className="ov-map-hint" style={{ marginLeft: 'auto' }}>
                             {t('Click cụm → quận/huyện → xe', 'Click cluster → district → device')}
                         </span>
@@ -1832,6 +1857,7 @@ const OverviewPage = () => {
                         height={mapHeight}
                         forceAllDevices={mapFilter !== 'all' || !!regionFilter}
                         highlightDevice={highlightDevice}
+                        onDrillChange={setDrillDevices}
                     />
                 )}
             </div>

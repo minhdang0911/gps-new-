@@ -2,18 +2,24 @@
 
 import useSWR from 'swr';
 
-export function useDeviceDetail({ token, viewMode, selectedDevice, isEn, getLastCruise, getBatteryStatusByImei }) {
+export function useDeviceDetail({ viewMode, selectedDevice, isEn, getLastCruise, getBatteryStatusByImei }) {
+
     const selectedImei = selectedDevice?.imei;
 
-    const { data: cruiseInfo } = useSWR(
-        token && viewMode === 'detail' && selectedImei ? ['lastCruise', token, selectedImei] : null,
-        ([, tk, imei]) => getLastCruise(tk, imei),
-        { revalidateOnFocus: false },
+    const { data: cruiseInfo, mutate: mutateCruise } = useSWR(
+        viewMode === 'detail' && selectedImei ? ['lastCruise', selectedImei] : null,
+        ([, imei]) => getLastCruise(imei),
+        {
+            revalidateOnFocus: false,
+            refreshInterval: 30_000,
+            dedupingInterval: 10_000,
+        },
     );
 
+
     const { data: batteryRes } = useSWR(
-        token && viewMode === 'detail' && selectedImei ? ['battery', token, selectedImei] : null,
-        ([, tk, imei]) => getBatteryStatusByImei(tk, imei),
+        viewMode === 'detail' && selectedImei ? ['battery', selectedImei] : null,
+        ([, imei]) => getBatteryStatusByImei(imei),
         { revalidateOnFocus: false, refreshInterval: 30_000 },
     );
 
@@ -32,5 +38,6 @@ export function useDeviceDetail({ token, viewMode, selectedDevice, isEn, getLast
         return isEn ? 'Stopped' : 'Dừng xe';
     };
 
-    return { cruiseInfo, batteryInfo, getEngineStatusText, getVehicleStatusText };
+    return { cruiseInfo, mutateCruise, batteryInfo, getEngineStatusText, getVehicleStatusText };
+
 }

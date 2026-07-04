@@ -3,7 +3,7 @@ import { saveAs } from 'file-saver';
 import * as turf from '@turf/turf';
 import { message } from 'antd';
 
-// ── Geo helpers (same logic as VietnamMapDrillDown) ─────────────
+// ── Geo helpers ──────────────────────────────────────────────────────────────
 const haversine = (lat1, lon1, lat2, lon2) => {
     const R = 6371;
     const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -23,7 +23,6 @@ const findNearest = (lat, lon, list) => {
     return best;
 };
 
-// Dùng turf point-in-polygon — chính xác theo ranh giới hành chính
 let _geoJsonCache = null;
 const getGeoJson = async () => {
     if (_geoJsonCache) return _geoJsonCache;
@@ -55,95 +54,32 @@ const isOnline = (cruiseItem) => {
     return Date.now() - new Date(updated).getTime() < 24 * 60 * 60 * 1000;
 };
 
-const getTodayStr = () => { 
+const getTodayStr = () => {
     const d = new Date();
-    const dd   = String(d.getDate()).padStart(2, '0');
-    const mm   = String(d.getMonth() + 1).padStart(2, '0');
-    const yyyy = d.getFullYear();
-    return `${dd}-${mm}-${yyyy}`;
+    return `${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`;
 };
 
-const HDR_COLOR   = '1677FF';
-const ONLINE_BG   = 'E2F5EA';
-const OFFLINE_BG  = 'FDE8E8';
+const safeName = (s) => String(s || '').replace(/[\/\\?%*:|"<>]/g, '_').replace(/\s+/g, '_').trim();
 
-/**
- * Xuất Excel danh sách thiết bị từ trang Overview.
- * mode: 'all' | 'online' | 'offline'
- */
-export function exportOverviewExcel({ devices, cruiseByImei, mode = 'all', regionLabel = null }) {
-    const allWithStatus = devices.map((d) => {
-        const cruise = cruiseByImei[d.imei];
-        const online = isOnline(cruise);
-        const lastUpdate = cruise?.updatedAt || cruise?.createdAt;
-        return { device: d, cruise, online, lastUpdate };
-    });
+const getDistName = (device) => {
+    const dist = device.distributor_id;
+    if (!dist) return '--';
+    if (typeof dist === 'string') return dist;
+    return dist.name || dist.username || dist._id || '--';
+};
 
-    const filtered =
-        mode === 'online'  ? allWithStatus.filter((x) => x.online) :
-        mode === 'offline' ? allWithStatus.filter((x) => !x.online) :
-        allWithStatus;
+// Apply common xlsx-js-style to a worksheet
+const applySheetStyle = (ws, rows, HDR_CLR, EVEN_BG) => {
+    const headers = Object.keys(rows[0] || {});
+    const statusColIdx = headers.indexOf('Trạng thái');
+    const range = XLSX.utils.decode_range(ws['!ref']);
 
-    if (!filtered.length) {
-        message.warning('Không có dữ liệu để xuất!');
-        return;
-    }
-
-    const modeLabel =
-        mode === 'online'  ? 'Thiết bị Online' :
-        mode === 'offline' ? 'Thiết bị Offline' :
-        'Toàn bộ thiết bị';
-
-    const regionSuffix = regionLabel ? ` — ${regionLabel}` : '';
-    const titleText    = `Báo cáo ${modeLabel}${regionSuffix} — IKY GPS`;
-    const subtitleText = `Xuất lúc: ${new Date().toLocaleString('vi-VN')}  |  Tổng: ${filtered.length} thiết bị`;
-
-    const rows = filtered.map((x, i) => ({
-        'STT':               i + 1,
-        'IMEI':              x.device.imei || '',
-        'Biển số xe':        x.device.license_plate || '',
-        'Tên thiết bị':      x.device.name || '',
-        'Loại thiết bị':     x.device.device_category_id?.name || x.device.device_category_id?.code || '',
-        'Trạng thái':        x.online ? 'Online' : 'Offline',
-        'Cập nhật lần cuối': x.lastUpdate ? new Date(x.lastUpdate).toLocaleString('vi-VN') : '--',
-        'Vĩ độ (lat)':       x.cruise?.lat ?? '',
-        'Kinh độ (lon)':     x.cruise?.lon ?? '',
-        'Tốc độ (km/h)':     x.cruise?.vgp ?? '',
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(rows, { origin: 'A3' });
-    const headers  = Object.keys(rows[0]);
-    const colCount = headers.length;
-
-    // ── Row 1: Title ────────────────────────────────────────────────
-    ws['A1'] = { v: titleText, t: 's' };
-    ws['!merges'] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: colCount - 1 } },
-        { s: { r: 1, c: 0 }, e: { r: 1, c: colCount - 1 } },
-    ];
-    ws['A1'].s = {
-        font:      { bold: true, sz: 16, color: { rgb: 'FFFFFF' } },
-        fill:      { fgColor: { rgb: HDR_COLOR } },
-        alignment: { horizontal: 'center', vertical: 'center' },
-    };
-
-    // ── Row 2: Subtitle ─────────────────────────────────────────────
-    ws['A2'] = { v: subtitleText, t: 's' };
-    ws['A2'].s = {
-        font:      { italic: true, sz: 10, color: { rgb: '555555' } },
-        fill:      { fgColor: { rgb: 'EBF2FF' } },
-        alignment: { horizontal: 'left', vertical: 'center' },
-    };
-
-    ws['!rows'] = [{ hpt: 28 }, { hpt: 18 }, { hpt: 22 }];
-
-    // ── Row 3: Column headers ────────────────────────────────────────
-    headers.forEach((h, idx) => {
+    headers.forEach((_, idx) => {
         const ref = XLSX.utils.encode_cell({ r: 2, c: idx });
         if (!ws[ref]) return;
         ws[ref].s = {
             font:      { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 },
-            fill:      { fgColor: { rgb: HDR_COLOR } },
+            fill:      { fgColor: { rgb: HDR_CLR } },
             alignment: { horizontal: 'center', vertical: 'center' },
             border: {
                 top:    { style: 'thin', color: { rgb: 'AAAAAA' } },
@@ -154,16 +90,11 @@ export function exportOverviewExcel({ devices, cruiseByImei, mode = 'all', regio
         };
     });
 
-    // ── Data rows ───────────────────────────────────────────────────
-    const statusColIdx = headers.indexOf('Trạng thái');
-    const range = XLSX.utils.decode_range(ws['!ref']);
-
     for (let R = 3; R <= range.e.r; R++) {
         for (let C = range.s.c; C <= range.e.c; C++) {
             const ref  = XLSX.utils.encode_cell({ r: R, c: C });
             const cell = ws[ref];
             if (!cell) continue;
-
             cell.s = {
                 alignment: { horizontal: C === 0 ? 'center' : 'left', vertical: 'center' },
                 border: {
@@ -172,69 +103,150 @@ export function exportOverviewExcel({ devices, cruiseByImei, mode = 'all', regio
                     left:   { style: 'thin', color: { rgb: 'DDDDDD' } },
                     right:  { style: 'thin', color: { rgb: 'DDDDDD' } },
                 },
-                fill: { fgColor: { rgb: R % 2 === 0 ? 'F5F8FF' : 'FFFFFF' } },
+                fill: { fgColor: { rgb: R % 2 === 0 ? EVEN_BG : 'FFFFFF' } },
             };
-
             if (C === statusColIdx) {
                 const online = String(cell.v).trim() === 'Online';
-                cell.s.fill = { fgColor: { rgb: online ? ONLINE_BG : OFFLINE_BG } };
+                cell.s.fill = { fgColor: { rgb: online ? 'E2F5EA' : 'FDE8E8' } };
                 cell.s.font = { bold: true, color: { rgb: online ? '166534' : '991B1B' } };
                 cell.s.alignment = { horizontal: 'center', vertical: 'center' };
             }
         }
     }
 
-    // ── Auto column width ───────────────────────────────────────────
     ws['!cols'] = headers.map((key) => {
         const maxLen = Math.max(key.length, ...rows.map((r) => String(r[key] ?? '').length));
         return { wch: Math.min(maxLen + 4, 40) };
     });
 
-    // ── Auto filter ─────────────────────────────────────────────────
     ws['!autofilter'] = {
         ref: XLSX.utils.encode_range({ s: { r: 2, c: 0 }, e: { r: range.e.r, c: range.e.c } }),
     };
+};
 
-    // Tên file: [Mode]_[KhuVuc]_dd-mm-yyyy.xlsx
-    const safeName = (s) => s.replace(/[\/\\?%*:|"<>]/g, '_').replace(/\s+/g, '_').trim();
+/**
+ * Xuất Excel toàn bộ/online/offline từ trang Overview.
+ * Tên file và tiêu đề phản ánh các filter đang active.
+ *
+ * @param {Array}       devices          - danh sách thiết bị đã lọc
+ * @param {object}      cruiseByImei     - { [imei]: cruise }
+ * @param {string}      mode             - 'all' | 'online' | 'offline'
+ * @param {string|null} regionLabel      - label tỉnh/quận filter (nếu có)
+ * @param {Array}       provinces        - danh sách tỉnh esgoo (để resolve Tỉnh/TP)
+ * @param {string|null} distributorName  - tên đại lý đang filter (nếu có)
+ */
+export async function exportOverviewExcel({
+    devices,
+    cruiseByImei,
+    mode = 'all',
+    regionLabel = null,
+    provinces = [],
+    distributorName = null,
+}) {
+    const allWithStatus = devices.map((d) => {
+        const cruise = cruiseByImei[d.imei];
+        return { device: d, cruise, online: isOnline(cruise), lastUpdate: cruise?.updatedAt || cruise?.createdAt };
+    });
+
+    const filtered =
+        mode === 'online'  ? allWithStatus.filter((x) => x.online) :
+        mode === 'offline' ? allWithStatus.filter((x) => !x.online) :
+        allWithStatus;
+
+    if (!filtered.length) { message.warning('Không có dữ liệu để xuất!'); return; }
+
+    // Resolve province (haversine — sync)
+    const resolveProvince = (cruise) => {
+        if (!cruise?.lat || !cruise?.lon || !provinces.length) return '';
+        return findNearest(cruise.lat, cruise.lon, provinces)?.full_name || '';
+    };
+
+    // Resolve district (turf PIP — async, GeoJSON loaded once)
+    let geoJson = null;
+    if (filtered.some(x => x.cruise?.lat && x.cruise?.lon)) {
+        try { geoJson = await getGeoJson(); } catch (_) {}
+    }
+    const resolveDistrict = (cruise) => {
+        if (!cruise?.lat || !cruise?.lon || !geoJson) return '';
+        const feat = findDistrictByPoint(cruise.lat, cruise.lon, geoJson);
+        if (!feat) return '';
+        const loai = feat.properties?.loai || '';
+        const ten  = feat.properties?.ten_huyen || feat.properties?.Ten_Huyen || '';
+        return `${loai} ${ten}`.trim();
+    };
+
+    const rows = filtered.map((x, i) => ({
+        'STT':               i + 1,
+        'IMEI':              x.device.imei || '',
+        'Biển số xe':        x.device.license_plate || '',
+        'Tên thiết bị':      x.device.name || '',
+        'Loại thiết bị':     x.device.device_category_id?.name || x.device.device_category_id?.code || '',
+        'Đại lý':            getDistName(x.device),
+        'Tỉnh/TP':           resolveProvince(x.cruise),
+        'Quận/Huyện':        resolveDistrict(x.cruise),
+        'Trạng thái':        x.online ? 'Online' : 'Offline',
+        'Cập nhật lần cuối': x.lastUpdate ? new Date(x.lastUpdate).toLocaleString('vi-VN') : '--',
+        'Vĩ độ (lat)':       x.cruise?.lat ?? '',
+        'Kinh độ (lon)':     x.cruise?.lon ?? '',
+        'Tốc độ (km/h)':     x.cruise?.vgp ?? '',
+    }));
+
+    const modeLabel =
+        mode === 'online'  ? 'Thiết bị Online' :
+        mode === 'offline' ? 'Thiết bị Offline' :
+        'Toàn bộ thiết bị';
+
+    // Tiêu đề bao gồm các filter đang active
+    const filterParts = [
+        distributorName ? `Đại lý: ${distributorName}` : null,
+        regionLabel     ? `Khu vực: ${regionLabel}`    : null,
+    ].filter(Boolean);
+    const filterSuffix = filterParts.length ? ` — ${filterParts.join(' | ')}` : '';
+    const titleText    = `Báo cáo ${modeLabel}${filterSuffix} — IKY GPS`;
+    const subtitleText = `Xuất lúc: ${new Date().toLocaleString('vi-VN')}  |  Tổng: ${filtered.length} thiết bị`;
+
+    const ws = XLSX.utils.json_to_sheet(rows, { origin: 'A3' });
+    const colCount = Object.keys(rows[0]).length;
+
+    ws['A1'] = { v: titleText, t: 's' };
+    ws['!merges'] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: colCount - 1 } },
+        { s: { r: 1, c: 0 }, e: { r: 1, c: colCount - 1 } },
+    ];
+    ws['A1'].s = { font: { bold: true, sz: 16, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '1677FF' } }, alignment: { horizontal: 'center', vertical: 'center' } };
+    ws['A2'] = { v: subtitleText, t: 's' };
+    ws['A2'].s = { font: { italic: true, sz: 10, color: { rgb: '555555' } }, fill: { fgColor: { rgb: 'EBF2FF' } }, alignment: { horizontal: 'left', vertical: 'center' } };
+    ws['!rows'] = [{ hpt: 28 }, { hpt: 18 }, { hpt: 22 }];
+
+    applySheetStyle(ws, rows, '1677FF', 'F5F8FF');
+
+    // Tên file: ThietBi_[Mode]_[DaiLy]_[KhuVuc]_dd-mm-yyyy.xlsx
     const modeSlug = { all: 'ToanBo', online: 'Online', offline: 'Offline' }[mode] || 'ToanBo';
-    const regionSlug = regionLabel ? `_${safeName(regionLabel)}` : '';
-    const fileName = `ThietBi_${modeSlug}${regionSlug}_${getTodayStr()}.xlsx`;
+    const distSlug = distributorName ? `_${safeName(distributorName)}` : '';
+    const regSlug  = regionLabel     ? `_${safeName(regionLabel)}`     : '';
+    const fileName = `ThietBi_${modeSlug}${distSlug}${regSlug}_${getTodayStr()}.xlsx`;
+    const sheetName = [modeLabel, distributorName, regionLabel].filter(Boolean).join(' - ').slice(0, 31);
 
-    const wb  = XLSX.utils.book_new();
-    const sheetName = (regionLabel ? `${modeLabel} - ${regionLabel}` : modeLabel).slice(0, 31);
+    const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
     const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array', cellStyles: true });
     saveAs(new Blob([buf]), fileName);
 }
 
 /**
- * Xuất Excel theo khu vực (tỉnh/thành hoặc quận/huyện).
- * @param {object} opts
- * @param {Array}  opts.devices        - danh sách thiết bị
- * @param {object} opts.cruiseByImei   - { [imei]: cruise }
- * @param {object} opts.province       - province object từ esgoo API { id, full_name, latitude, longitude, ... }
- * @param {object|null} opts.district  - district GeoJSON feature (nếu null → xuất toàn tỉnh)
- * @param {Array}  opts.provinces      - toàn bộ danh sách tỉnh từ esgoo (để findNearest)
+ * Xuất Excel theo khu vực — từ map drill-down context menu.
  */
 export async function exportByRegion({ devices, cruiseByImei, province, district, provinces }) {
-    // 1. Lọc devices thuộc tỉnh đã chọn (dùng haversine giống map)
     let filtered = devices.filter((d) => {
         const cruise = cruiseByImei[d.imei];
         if (!cruise?.lat || !cruise?.lon) return false;
-        const nearest = findNearest(cruise.lat, cruise.lon, provinces);
-        return nearest?.id === province.id;
+        return findNearest(cruise.lat, cruise.lon, provinces)?.id === province.id;
     });
 
-    // 2. Nếu có quận cụ thể → lọc tiếp bằng point-in-polygon
     if (district) {
         let geo;
-        try {
-            geo = await getGeoJson();
-        } catch (e) {
-            message.error('Không tải được dữ liệu ranh giới hành chính!');
-            return;
-        }
+        try { geo = await getGeoJson(); }
+        catch (e) { message.error('Không tải được dữ liệu ranh giới hành chính!'); return; }
         filtered = filtered.filter((d) => {
             const cruise = cruiseByImei[d.imei];
             if (!cruise?.lat || !cruise?.lon) return false;
@@ -243,12 +255,8 @@ export async function exportByRegion({ devices, cruiseByImei, province, district
         });
     }
 
-    if (!filtered.length) {
-        message.warning('Không có thiết bị nào thuộc khu vực đã chọn có dữ liệu GPS!');
-        return;
-    }
+    if (!filtered.length) { message.warning('Không có thiết bị nào thuộc khu vực đã chọn có dữ liệu GPS!'); return; }
 
-    // 3. Build rows (cùng format với exportOverviewExcel)
     const regionLabel = district
         ? `${district.properties?.loai || ''} ${district.properties?.ten_huyen || ''} - ${province.full_name}`
         : province.full_name;
@@ -266,6 +274,7 @@ export async function exportByRegion({ devices, cruiseByImei, province, district
             'Biển số xe':        d.license_plate || '',
             'Tên thiết bị':      d.name || '',
             'Loại thiết bị':     d.device_category_id?.name || d.device_category_id?.code || '',
+            'Đại lý':            getDistName(d),
             'Trạng thái':        online ? 'Online' : 'Offline',
             'Cập nhật lần cuối': lastUpdate ? new Date(lastUpdate).toLocaleString('vi-VN') : '--',
             'Vĩ độ (lat)':       cruise?.lat ?? '',
@@ -275,93 +284,24 @@ export async function exportByRegion({ devices, cruiseByImei, province, district
     });
 
     const ws = XLSX.utils.json_to_sheet(rows, { origin: 'A3' });
-    const headers  = Object.keys(rows[0]);
-    const colCount = headers.length;
-
-    // Title row
+    const colCount = Object.keys(rows[0]).length;
     ws['A1'] = { v: titleText, t: 's' };
     ws['!merges'] = [
         { s: { r: 0, c: 0 }, e: { r: 0, c: colCount - 1 } },
         { s: { r: 1, c: 0 }, e: { r: 1, c: colCount - 1 } },
     ];
-    ws['A1'].s = {
-        font:      { bold: true, sz: 16, color: { rgb: 'FFFFFF' } },
-        fill:      { fgColor: { rgb: '0F766E' } }, // teal — phân biệt với "all export"
-        alignment: { horizontal: 'center', vertical: 'center' },
-    };
-
-    // Subtitle row
+    ws['A1'].s = { font: { bold: true, sz: 16, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '0F766E' } }, alignment: { horizontal: 'center', vertical: 'center' } };
     ws['A2'] = { v: subtitleText, t: 's' };
-    ws['A2'].s = {
-        font:      { italic: true, sz: 10, color: { rgb: '555555' } },
-        fill:      { fgColor: { rgb: 'CCFBF1' } },
-        alignment: { horizontal: 'left', vertical: 'center' },
-    };
+    ws['A2'].s = { font: { italic: true, sz: 10, color: { rgb: '555555' } }, fill: { fgColor: { rgb: 'CCFBF1' } }, alignment: { horizontal: 'left', vertical: 'center' } };
     ws['!rows'] = [{ hpt: 28 }, { hpt: 18 }, { hpt: 22 }];
 
-    // Header row style
-    const HDR = '0F766E';
-    headers.forEach((h, idx) => {
-        const ref = XLSX.utils.encode_cell({ r: 2, c: idx });
-        if (!ws[ref]) return;
-        ws[ref].s = {
-            font:      { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 },
-            fill:      { fgColor: { rgb: HDR } },
-            alignment: { horizontal: 'center', vertical: 'center' },
-            border: {
-                top:    { style: 'thin', color: { rgb: 'AAAAAA' } },
-                bottom: { style: 'thin', color: { rgb: 'AAAAAA' } },
-                left:   { style: 'thin', color: { rgb: 'AAAAAA' } },
-                right:  { style: 'thin', color: { rgb: 'AAAAAA' } },
-            },
-        };
-    });
+    applySheetStyle(ws, rows, '0F766E', 'F0FDFA');
 
-    // Data rows
-    const statusColIdx = headers.indexOf('Trạng thái');
-    const range = XLSX.utils.decode_range(ws['!ref']);
-    for (let R = 3; R <= range.e.r; R++) {
-        for (let C = range.s.c; C <= range.e.c; C++) {
-            const ref  = XLSX.utils.encode_cell({ r: R, c: C });
-            const cell = ws[ref];
-            if (!cell) continue;
-            cell.s = {
-                alignment: { horizontal: C === 0 ? 'center' : 'left', vertical: 'center' },
-                border: {
-                    top:    { style: 'thin', color: { rgb: 'DDDDDD' } },
-                    bottom: { style: 'thin', color: { rgb: 'DDDDDD' } },
-                    left:   { style: 'thin', color: { rgb: 'DDDDDD' } },
-                    right:  { style: 'thin', color: { rgb: 'DDDDDD' } },
-                },
-                fill: { fgColor: { rgb: R % 2 === 0 ? 'F0FDFA' : 'FFFFFF' } },
-            };
-            if (C === statusColIdx) {
-                const online = String(cell.v).trim() === 'Online';
-                cell.s.fill = { fgColor: { rgb: online ? 'E2F5EA' : 'FDE8E8' } };
-                cell.s.font = { bold: true, color: { rgb: online ? '166534' : '991B1B' } };
-                cell.s.alignment = { horizontal: 'center', vertical: 'center' };
-            }
-        }
-    }
+    const provSlug = safeName(province.full_name);
+    const distSlug = district ? `_${safeName(district.properties?.ten_huyen || '')}` : '';
+    const fileName = `KhuVuc_${provSlug}${distSlug}_${getTodayStr()}.xlsx`;
 
-    // Auto column width
-    ws['!cols'] = headers.map((key) => {
-        const maxLen = Math.max(key.length, ...rows.map((r) => String(r[key] ?? '').length));
-        return { wch: Math.min(maxLen + 4, 40) };
-    });
-
-    // Auto filter
-    ws['!autofilter'] = {
-        ref: XLSX.utils.encode_range({ s: { r: 2, c: 0 }, e: { r: range.e.r, c: range.e.c } }),
-    };
-
-    // File name: KhuVuc_TenTinh_TenQuan_dd-mm-yyyy.xlsx
-    const safeName = (s) => s.replace(/[/\\?%*:|"<>]/g, '_').trim();
-    const provSlug  = safeName(province.full_name);
-    const distSlug  = district ? `_${safeName(district.properties?.ten_huyen || '')}` : '';
-    const fileName  = `KhuVuc_${provSlug}${distSlug}_${getTodayStr()}.xlsx`;
-
-    const wb  = XLSX.utils.book_new();
+    const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, regionLabel.slice(0, 31));
     const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array', cellStyles: true });
     saveAs(new Blob([buf]), fileName);

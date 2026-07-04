@@ -12,6 +12,7 @@ import {
     QuestionCircleOutlined,
     PlayCircleOutlined,
     ToolOutlined,
+    ReloadOutlined,
 } from '@ant-design/icons';
 
 import CommandBarTrigger from '../../components/common/CommandBarTrigger';
@@ -45,6 +46,7 @@ export default function DeviceListView({
     onActivateDevice,
     onMaintainDevice,
     activatingId,
+    onRefresh,
 }) {
     const [isMobile, setIsMobile] = useState(false);
 
@@ -211,6 +213,12 @@ export default function DeviceListView({
 
                 <Col>
                     <Space>
+                        {onRefresh && (
+                            <Button icon={<ReloadOutlined />} onClick={onRefresh}>
+                                {isEn ? 'Refresh' : 'Làm mới'}
+                            </Button>
+                        )}
+
                         <Button icon={<DownloadOutlined />} onClick={onExportExcel}>
                             {t.exportExcel}
                         </Button>

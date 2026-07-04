@@ -772,7 +772,7 @@ const DistrictListPanel = ({ zones, selectedDistrictId, onClickZone, mapRef }) =
 // ============================================================
 // MAIN COMPONENT
 // ============================================================
-const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false, height = 580, forceAllDevices = false, highlightDevice = null }) => {
+const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false, height = 580, forceAllDevices = false, highlightDevice = null, onDrillChange = null }) => {
     const mapRef = useRef(null);
     const leafletMapRef = useRef(null);
     const markersLayerRef = useRef(null);
@@ -1187,6 +1187,40 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
             }
         };
     }, [provinces, devices, cruiseByImei]);
+
+    // ── Emit drill-level devices to parent ───────────────────────────────────────
+    // Khi level thay đổi, tính devices đang hiển thị trên map và báo lên parent
+    useEffect(() => {
+        if (!onDrillChange) return;
+        if (level === 'province' && !selectedProvince) {
+            // Level toàn quốc — không drill: rất đủ devices
+            onDrillChange(null);
+            return;
+        }
+        if (level === 'district' && selectedProvince) {
+            // Đang xem tỉnh — emit devices trong tỉnh đó
+            const provinceDevices = devices.filter(d => {
+                const cruise = cruiseByImei[d.imei];
+                if (!cruise?.lat || !cruise?.lon) return false;
+                const prov = findNearest(cruise.lat, cruise.lon, provinces);
+                return prov?.id === selectedProvince.id;
+            });
+            onDrillChange(provinceDevices);
+            return;
+        }
+        if (level === 'device' && selectedDistrict) {
+            // Đang xem quận/huyện — emit devices trong quận đó
+            const districtDevices = devices.filter(d => {
+                const cruise = cruiseByImei[d.imei];
+                if (!cruise?.lat || !cruise?.lon) return false;
+                const f = findDistrictByPoint(cruise.lat, cruise.lon, districtGeoJson, selectedProvince?.full_name);
+                return f?.properties?.ma_huyen === selectedDistrict?.properties?.ma_huyen;
+            });
+            onDrillChange(districtDevices);
+            return;
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [level, selectedProvince, selectedDistrict]);
 
     // groupByDistrict: tính lại khi province/district/cruiseByImei thay đổi
     const districtGroups = useMemo(() => {

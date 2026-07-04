@@ -1167,7 +1167,8 @@ export default function InstallAcceptanceProcess() {
             if (token) {
                 const [bRes, cRes] = await Promise.allSettled([
                     getBatteryStatusByImei(token, imei),
-                    getLastCruise(token, imei),
+                    getLastCruise(imei),
+
                 ]);
 
                 if (bRes.status === 'fulfilled') battery = normalizeBattery(bRes.value);

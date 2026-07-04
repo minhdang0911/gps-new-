@@ -11,7 +11,7 @@ export const VISUAL_MAX_POINTS_ON_MAP = 3000;
 export const MAP_MIN_SAMPLE_DIST_M = 60;
 
 // Playback/UI perf
-export const UI_FPS = 6;
+export const UI_FPS = 30;                            // 30 FPS — smooth marker movement
 export const UI_THROTTLE_MS = Math.round(1000 / UI_FPS);
 export const BASE_SPEED_MPS = 60;
 

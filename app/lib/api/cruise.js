@@ -1,12 +1,13 @@
 import axios from './axios';
 
-export const getLastCruise = async (token, imei) => {
+export const getLastCruise = async (imei) => {
     const res = await axios.get(`last-cruise`, {
         params: { imei },
-        headers: { Authorization: `Bearer ${token}` },
+        // Authorization tự động gắn qua axios interceptor
     });
     return res.data.cruise;
 };
+
 
 export const getCruiseHistory = async (token, { imei, start, end, page, limit = 500 }) => {
     const res = await axios.get('cruise-history', {

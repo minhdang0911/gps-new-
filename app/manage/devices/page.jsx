@@ -162,13 +162,14 @@ export default function ManageDevicesPage() {
         modalMode,
     });
 
-    const { cruiseInfo, batteryInfo, getEngineStatusText, getVehicleStatusText } = useDeviceDetail({
+    const { cruiseInfo, mutateCruise, batteryInfo, getEngineStatusText, getVehicleStatusText } = useDeviceDetail({
         viewMode,
         selectedDevice,
         isEn,
         getLastCruise,
         getBatteryStatusByImei,
     });
+
 
     const { destroyMap } = useLeafletDeviceMap({
         enabled: viewMode === 'detail',
@@ -469,6 +470,8 @@ export default function ManageDevicesPage() {
                     onActivateDevice={handleActivateDevice}
                     onMaintainDevice={openMaintainModal}
                     activatingId={activatingId}
+                    onRefresh={() => mutateDevices()}
+
                 />
             ) : (
                 <DeviceDetailView
@@ -479,6 +482,7 @@ export default function ManageDevicesPage() {
                     batteryInfo={batteryInfo}
                     getEngineStatusText={getEngineStatusText}
                     getVehicleStatusText={getVehicleStatusText}
+                    mutateCruise={mutateCruise}
                     onBack={goBack}
                 />
             )}

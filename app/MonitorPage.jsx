@@ -458,7 +458,7 @@ const MonitorPage = () => {
     const lastCruiseQuery = useQuery({
         queryKey: ['monitor', 'lastCruise', token, selectedDevice?.imei],
         enabled: !!token && !!selectedDevice?.imei,
-        queryFn: () => getLastCruise(token, selectedDevice.imei),
+        queryFn: () => getLastCruise(selectedDevice.imei),
     });
 
     // sync query data -> local states (giữ UI logic cũ)
@@ -587,7 +587,7 @@ const MonitorPage = () => {
 
                 const cruise = await queryClient.fetchQuery({
                     queryKey: ['monitor', 'lastCruise', token, imei],
-                    queryFn: () => getLastCruise(token, imei),
+                    queryFn: () => getLastCruise(imei),
                     staleTime: 60_000,
                 });
 
@@ -1252,7 +1252,21 @@ const MonitorPage = () => {
 
                                                             <div className="iky-monitor__device-main">
                                                                 <div className="iky-monitor__plate-row">
-                                                                    <div className="plate">
+                                                                    <div
+                                                                        className="plate"
+                                                                        title={isEn ? 'Click to copy plate' : 'Click để copy biển số'}
+                                                                        style={{ cursor: 'pointer' }}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            const txt = d.license_plate || '';
+                                                                            if (!txt) return;
+                                                                            navigator.clipboard.writeText(txt).then(() => {
+                                                                                message.success({ content: isEn ? `Copied: ${txt}` : `Đã copy: ${txt}`, duration: 1.5 });
+                                                                            }).catch(() => {
+                                                                                message.error(isEn ? 'Copy failed' : 'Copy thất bại');
+                                                                            });
+                                                                        }}
+                                                                    >
                                                                         {d.license_plate || t.list.unknownPlate}
                                                                     </div>
 
@@ -1276,7 +1290,19 @@ const MonitorPage = () => {
                                                                     className="iky-monitor__meta"
                                                                     style={{ marginTop: 2 }}
                                                                 >
-                                                                    <span className="imei">IMEI: {d.imei}</span>
+                                                                    <span
+                                                                        className="imei"
+                                                                        title={isEn ? 'Click to copy IMEI' : 'Click để copy IMEI'}
+                                                                        style={{ cursor: 'pointer' }}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            navigator.clipboard.writeText(d.imei || '').then(() => {
+                                                                                message.success({ content: isEn ? `Copied IMEI: ${d.imei}` : `Đã copy IMEI: ${d.imei}`, duration: 1.5 });
+                                                                            }).catch(() => {
+                                                                                message.error(isEn ? 'Copy failed' : 'Copy thất bại');
+                                                                            });
+                                                                        }}
+                                                                    >IMEI: {d.imei}</span>
                                                                     <span className="dot">•</span>
                                                                     <span className="phone">
                                                                         {t.list.phoneLabel}{' '}

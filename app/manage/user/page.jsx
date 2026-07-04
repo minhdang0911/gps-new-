@@ -26,6 +26,7 @@ import {
     EyeOutlined,
     DownloadOutlined,
     QuestionCircleOutlined,
+    ReloadOutlined,
 } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
 
@@ -700,6 +701,14 @@ export default function ManageUserPage() {
                     </div>
 
                     <Space>
+                        <Button
+                            icon={<ReloadOutlined />}
+                            onClick={() => mutateUsers()}
+                            loading={loadingUsers || validatingUsers}
+                        >
+                            {isEn ? 'Refresh' : 'Làm mới'}
+                        </Button>
+
                         <Button
                             icon={<DownloadOutlined />}
                             onClick={exportExcel}
