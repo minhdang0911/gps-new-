@@ -88,7 +88,7 @@ api.interceptors.response.use(
 
             if (!refreshToken) {
                 clearTokens();
-                window.location.href = '/login';
+                window.dispatchEvent(new CustomEvent('auth:logout'));
                 return Promise.reject(error);
             }
 
@@ -124,9 +124,9 @@ api.interceptors.response.use(
                 // ✅ Chỉ redirect login khi refresh token thực sự hết hạn (401/403)
                 // Không redirect khi lỗi mạng tạm thời (500, network error, timeout)
                 if (status === 401 || status === 403) {
-                    console.warn('[axios] Refresh token expired — redirecting to login');
+                    console.warn('[axios] Refresh token expired — dispatching auth:logout');
                     clearTokens();
-                    window.location.href = '/login';
+                    window.dispatchEvent(new CustomEvent('auth:logout'));
                 } else {
                     console.warn('[axios] Refresh failed (status:', status, ') — NOT redirecting (network issue?)');
                 }
@@ -176,7 +176,7 @@ export const proactiveRefresh = async () => {
     const { refreshToken } = getTokens();
     if (!refreshToken) {
         clearTokens();
-        window.location.href = '/login';
+        window.dispatchEvent(new CustomEvent('auth:logout'));
         return;
     }
 
@@ -191,7 +191,7 @@ export const proactiveRefresh = async () => {
         processQueue(err, null);
         if (status === 401 || status === 403) {
             clearTokens();
-            window.location.href = '/login';
+            window.dispatchEvent(new CustomEvent('auth:logout'));
         }
         // Lỗi mạng/500 → không redirect, TokenRefresher sẽ retry
         throw err;

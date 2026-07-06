@@ -11,7 +11,8 @@ import {
 import {
     MapPin, X, ChevronDown, FileSpreadsheet,
     Loader2, RotateCcw, FileDown, Check,
-    Maximize2, Minimize2,
+    Maximize2, Minimize2, LayoutList, Map as MapIcon,
+    ArrowUpDown, ArrowUp, ArrowDown,
 } from 'lucide-react';
 import Fuse from 'fuse.js';
 
@@ -876,6 +877,298 @@ const StatCard = ({ icon, label, value, sub, accentColor, loading: cardLoading, 
     </div>
 );
 
+// ── Device Table View ────────────────────────────────────────
+const DeviceTable = ({ devices, cruiseByImei, isEn }) => {
+    const t = (vi, en) => (isEn ? en : vi);
+    const [sortKey, setSortKey]   = useState('status'); // 'status'|'plate'|'spd'|'mil'|'updated'|'exp'
+    const [sortDir, setSortDir]   = useState('asc');    // 'asc'|'desc'
+    const [tableSearch, setTableSearch] = useState('');
+
+    const handleSort = (key) => {
+        if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+        else { setSortKey(key); setSortDir('asc'); }
+    };
+
+    const SortIcon = ({ col }) => {
+        if (sortKey !== col) return <ArrowUpDown size={11} style={{ opacity: 0.35 }} />;
+        return sortDir === 'asc'
+            ? <ArrowUp size={11} style={{ color: '#1677ff' }} />
+            : <ArrowDown size={11} style={{ color: '#1677ff' }} />;
+    };
+
+    const rows = useMemo(() => {
+        const kw = tableSearch.trim().toLowerCase();
+        let list = devices.filter(d => {
+            if (!kw) return true;
+            return (
+                (d.license_plate || '').toLowerCase().includes(kw) ||
+                (d.imei || '').toLowerCase().includes(kw) ||
+                (d.driver || '').toLowerCase().includes(kw)
+            );
+        });
+
+        list = [...list].sort((a, b) => {
+            const ca = cruiseByImei[a.imei];
+            const cb = cruiseByImei[b.imei];
+            let va, vb;
+            if (sortKey === 'status') {
+                va = isOnline(ca) ? 0 : 1;
+                vb = isOnline(cb) ? 0 : 1;
+            } else if (sortKey === 'plate') {
+                va = (a.license_plate || a.imei || '').toLowerCase();
+                vb = (b.license_plate || b.imei || '').toLowerCase();
+                return sortDir === 'asc' ? va.localeCompare(vb, 'vi') : vb.localeCompare(va, 'vi');
+            } else if (sortKey === 'spd') {
+                va = ca?.spd ?? -1;
+                vb = cb?.spd ?? -1;
+            } else if (sortKey === 'mil') {
+                va = ca?.mil ?? -1;
+                vb = cb?.mil ?? -1;
+            } else if (sortKey === 'updated') {
+                va = ca ? new Date(ca.updatedAt || ca.createdAt || 0).getTime() : 0;
+                vb = cb ? new Date(cb.updatedAt || cb.createdAt || 0).getTime() : 0;
+            } else if (sortKey === 'exp') {
+                va = a.date_exp ? new Date(a.date_exp).getTime() : Infinity;
+                vb = b.date_exp ? new Date(b.date_exp).getTime() : Infinity;
+            } else {
+                va = 0; vb = 0;
+            }
+            return sortDir === 'asc' ? va - vb : vb - va;
+        });
+        return list;
+    }, [devices, cruiseByImei, sortKey, sortDir, tableSearch]);
+
+    const formatUpdated = (cruise) => {
+        if (!cruise) return '—';
+        const d = cruise.updatedAt || cruise.createdAt;
+        if (!d) return '—';
+        return new Date(d).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+    };
+
+    const formatExp = (dateExp) => {
+        if (!dateExp) return '—';
+        const d = new Date(dateExp);
+        const diff = d - Date.now();
+        const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+        const str = d.toLocaleDateString('vi-VN');
+        if (days < 0)  return <span style={{ color: '#dc2626', fontWeight: 700 }}>{str} ⚠</span>;
+        if (days <= 7) return <span style={{ color: '#ea580c', fontWeight: 700 }}>{str} ({days}d)</span>;
+        return str;
+    };
+
+    const thStyle = (col) => ({
+        padding: '9px 12px',
+        textAlign: 'left',
+        fontSize: 11,
+        fontWeight: 700,
+        color: '#64748b',
+        textTransform: 'uppercase',
+        letterSpacing: '.5px',
+        whiteSpace: 'nowrap',
+        cursor: 'pointer',
+        userSelect: 'none',
+        background: '#f8fafc',
+        borderBottom: '1px solid #e2e8f0',
+        position: 'sticky',
+        top: 0,
+        zIndex: 1,
+    });
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+            {/* Table toolbar */}
+            <div style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '10px 0 12px',
+                flexShrink: 0,
+            }}>
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: 7,
+                    background: '#f8fafc',
+                    border: '1.5px solid #e2e8f0',
+                    borderRadius: 8,
+                    padding: '6px 11px',
+                    flex: 1,
+                    maxWidth: 320,
+                    transition: 'border-color .15s',
+                }}
+                    onFocus={e => e.currentTarget.style.borderColor = '#1677ff'}
+                    onBlur={e => e.currentTarget.style.borderColor = '#e2e8f0'}
+                >
+                    <SearchOutlined style={{ fontSize: 13, color: '#94a3b8' }} />
+                    <input
+                        value={tableSearch}
+                        onChange={e => setTableSearch(e.target.value)}
+                        placeholder={t('Tìm biển số / IMEI / lái xe…', 'Search plate / IMEI / driver…')}
+                        style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 12.5, color: '#1e293b', width: '100%', fontFamily: 'inherit' }}
+                    />
+                    {tableSearch && (
+                        <button onClick={() => setTableSearch('')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#94a3b8', display: 'flex' }}>
+                            <X size={12} />
+                        </button>
+                    )}
+                </div>
+                <span style={{ fontSize: 12, color: '#94a3b8', flexShrink: 0 }}>
+                    {rows.length} {t('thiết bị', 'devices')}
+                </span>
+            </div>
+
+            {/* Table wrapper */}
+            <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'auto', borderRadius: 10, border: '1px solid #e2e8f0' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, fontFamily: 'system-ui,sans-serif' }}>
+                    <thead>
+                        <tr>
+                            <th style={thStyle('status')} onClick={() => handleSort('status')}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    {t('Trạng thái', 'Status')} <SortIcon col="status" />
+                                </span>
+                            </th>
+                            <th style={{ ...thStyle('plate'), minWidth: 130 }} onClick={() => handleSort('plate')}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    {t('Biển số', 'Plate')} <SortIcon col="plate" />
+                                </span>
+                            </th>
+                            <th style={{ ...thStyle(), cursor: 'default' }}>{t('Lái xe', 'Driver')}</th>
+                            <th style={{ ...thStyle(), cursor: 'default' }}>{t('Loại xe', 'Type')}</th>
+                            <th style={thStyle('spd')} onClick={() => handleSort('spd')}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    {t('Tốc độ', 'Speed')} <SortIcon col="spd" />
+                                </span>
+                            </th>
+                            <th style={thStyle('mil')} onClick={() => handleSort('mil')}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    ODO <SortIcon col="mil" />
+                                </span>
+                            </th>
+                            <th style={thStyle('updated')} onClick={() => handleSort('updated')}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    {t('Cập nhật', 'Updated')} <SortIcon col="updated" />
+                                </span>
+                            </th>
+                            <th style={thStyle('exp')} onClick={() => handleSort('exp')}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    {t('Hết hạn', 'Expires')} <SortIcon col="exp" />
+                                </span>
+                            </th>
+                            <th style={{ ...thStyle(), cursor: 'default', textAlign: 'center' }}>{t('Thao tác', 'Actions')}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.map((d, i) => {
+                            const cruise = cruiseByImei[d.imei];
+                            const online = isOnline(cruise);
+                            const moving = online && cruise?.acc === 0;
+                            return (
+                                <tr
+                                    key={d._id || d.imei}
+                                    style={{
+                                        background: i % 2 === 0 ? '#fff' : '#fafafa',
+                                        transition: 'background .1s',
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.background = '#f0f9ff'}
+                                    onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? '#fff' : '#fafafa'}
+                                >
+                                    {/* Status */}
+                                    <td style={{ padding: '8px 12px', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>
+                                        <span style={{
+                                            display: 'inline-flex', alignItems: 'center', gap: 5,
+                                            fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 20,
+                                            background: online ? (moving ? '#eff6ff' : '#f0fdf4') : '#fef2f2',
+                                            color: online ? (moving ? '#1d4ed8' : '#15803d') : '#dc2626',
+                                            border: `1px solid ${online ? (moving ? '#bfdbfe' : '#bbf7d0') : '#fecaca'}`,
+                                        }}>
+                                            <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'currentColor', flexShrink: 0 }} />
+                                            {online ? (moving ? t('Đang chạy', 'Moving') : t('Online', 'Online')) : t('Offline', 'Offline')}
+                                        </span>
+                                    </td>
+                                    {/* Plate */}
+                                    <td style={{ padding: '8px 12px', borderBottom: '1px solid #f1f5f9', fontWeight: 700, color: '#0f172a' }}>
+                                        {d.license_plate || '—'}
+                                        <div style={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 400, marginTop: 1 }}>{d.imei}</div>
+                                    </td>
+                                    {/* Driver */}
+                                    <td style={{ padding: '8px 12px', borderBottom: '1px solid #f1f5f9', color: '#334155' }}>
+                                        {d.driver || '—'}
+                                    </td>
+                                    {/* Type */}
+                                    <td style={{ padding: '8px 12px', borderBottom: '1px solid #f1f5f9', color: '#64748b' }}>
+                                        {d.vehicle_category_id?.name || '—'}
+                                    </td>
+                                    {/* Speed */}
+                                    <td style={{ padding: '8px 12px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', fontWeight: cruise?.spd > 0 ? 700 : 400, color: cruise?.spd > 80 ? '#dc2626' : cruise?.spd > 0 ? '#1677ff' : '#94a3b8' }}>
+                                        {cruise?.spd != null ? `${cruise.spd} km/h` : '—'}
+                                    </td>
+                                    {/* ODO */}
+                                    <td style={{ padding: '8px 12px', borderBottom: '1px solid #f1f5f9', textAlign: 'right', color: '#475569' }}>
+                                        {cruise?.mil != null ? `${Number(cruise.mil).toLocaleString()} km` : '—'}
+                                    </td>
+                                    {/* Updated */}
+                                    <td style={{ padding: '8px 12px', borderBottom: '1px solid #f1f5f9', color: '#64748b', whiteSpace: 'nowrap' }}>
+                                        {formatUpdated(cruise)}
+                                    </td>
+                                    {/* Exp */}
+                                    <td style={{ padding: '8px 12px', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap', color: '#475569' }}>
+                                        {formatExp(d.date_exp)}
+                                    </td>
+                                    {/* Actions */}
+                                    <td style={{ padding: '8px 12px', borderBottom: '1px solid #f1f5f9', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                        <a
+                                            href="/cruise"
+                                            onClick={() => { try { localStorage.setItem('iky_preselect_imei', d.imei || ''); localStorage.setItem('iky_preselect_device_id', d._id || ''); } catch(_){} }}
+                                            title={t('Xem hành trình', 'View cruise history')}
+                                            style={{
+                                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                                width: 28, height: 28, borderRadius: 7,
+                                                background: '#eff6ff', border: '1px solid #bfdbfe',
+                                                color: '#1d4ed8', textDecoration: 'none', marginRight: 5,
+                                                transition: 'background .12s',
+                                            }}
+                                            onMouseEnter={e => e.currentTarget.style.background = '#dbeafe'}
+                                            onMouseLeave={e => e.currentTarget.style.background = '#eff6ff'}
+                                        >
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6z"/>
+                                                <line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="6" x2="15" y2="18"/>
+                                            </svg>
+                                        </a>
+                                        <a
+                                            href="/"
+                                            onClick={() => { try { localStorage.setItem('iky_preselect_imei', d.imei || ''); localStorage.setItem('iky_preselect_device_id', d._id || ''); } catch(_){} }}
+                                            title={t('Giám sát', 'Monitor')}
+                                            style={{
+                                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                                width: 28, height: 28, borderRadius: 7,
+                                                background: online ? '#f0fdf4' : '#fef2f2',
+                                                border: `1px solid ${online ? '#bbf7d0' : '#fecaca'}`,
+                                                color: online ? '#15803d' : '#dc2626',
+                                                textDecoration: 'none',
+                                                transition: 'background .12s',
+                                            }}
+                                            onMouseEnter={e => e.currentTarget.style.background = online ? '#dcfce7' : '#fee2e2'}
+                                            onMouseLeave={e => e.currentTarget.style.background = online ? '#f0fdf4' : '#fef2f2'}
+                                        >
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                                <circle cx="12" cy="12" r="2"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                                            </svg>
+                                        </a>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                        {rows.length === 0 && (
+                            <tr>
+                                <td colSpan={9} style={{ padding: '40px 20px', textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
+                                    {tableSearch ? t('Không tìm thấy kết quả', 'No results found') : t('Không có thiết bị', 'No devices')}
+                                </td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
 // ── Main page ─────────────────────────────────────────────────
 const OverviewPage = () => {
     const [devices, setDevices]           = useState([]);
@@ -892,6 +1185,7 @@ const OverviewPage = () => {
     const [mapHeight, setMapHeight]       = useState(640);  // responsive map height
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [drillDevices, setDrillDevices] = useState(null); // null = no drill, array = devices visible in current map drill level
+    const [viewMode, setViewMode]         = useState('map'); // 'map' | 'table'
     const mapCardRef                      = useRef(null);
     const pathname                        = usePathname() || '/';
 
@@ -1440,6 +1734,12 @@ const OverviewPage = () => {
                 @media (max-width: 768px) {
                     .ov-map-card-header { margin-bottom: 10px; }
                     .ov-map-hint { display: none; }
+                    .ov-toggle-label { display: none; }
+                }
+                .ov-map-search-wrap {
+                    flex: 1;
+                    min-width: 0;
+                    max-width: 260px;
                 }
                 .ov-map-title {
                     font-size: 14px;
@@ -1747,10 +2047,52 @@ const OverviewPage = () => {
             {/* Map card */}
             <div className="ov-map-card" ref={mapCardRef}>
                 <div className="ov-map-card-header">
-                    <div className="ov-map-icon-wrap">
-                        <IcMap />
+                    <div className="ov-map-icon-wrap" style={{ background: viewMode === 'table' ? 'linear-gradient(135deg,#7c3aed,#a78bfa)' : undefined }}>
+                        {viewMode === 'table' ? <LayoutList size={16} /> : <IcMap />}
                     </div>
-                    <span className="ov-map-title">{t('Bản đồ thiết bị', 'Device Map')}</span>
+                    <span className="ov-map-title">
+                        {viewMode === 'table' ? t('Danh sách thiết bị', 'Device List') : t('Bản đồ thiết bị', 'Device Map')}
+                    </span>
+
+                    {/* Map/Table toggle */}
+                    <div style={{
+                        display: 'flex', alignItems: 'center',
+                        background: '#f1f5f9', borderRadius: 9,
+                        padding: 3, gap: 2, flexShrink: 0,
+                    }}>
+                        <button
+                            onClick={() => setViewMode('map')}
+                            title={t('Xem bản đồ', 'Map view')}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: 5,
+                                padding: '5px 10px', borderRadius: 7, border: 'none',
+                                background: viewMode === 'map' ? '#fff' : 'transparent',
+                                boxShadow: viewMode === 'map' ? '0 1px 4px rgba(0,0,0,0.1)' : 'none',
+                                color: viewMode === 'map' ? '#0f172a' : '#94a3b8',
+                                cursor: 'pointer', fontSize: 12, fontWeight: viewMode === 'map' ? 700 : 500,
+                                transition: 'all .15s',
+                            }}
+                        >
+                            <MapIcon size={13} />
+                            <span className="ov-toggle-label">{t('Bản đồ', 'Map')}</span>
+                        </button>
+                        <button
+                            onClick={() => setViewMode('table')}
+                            title={t('Xem danh sách', 'Table view')}
+                            style={{
+                                display: 'flex', alignItems: 'center', gap: 5,
+                                padding: '5px 10px', borderRadius: 7, border: 'none',
+                                background: viewMode === 'table' ? '#fff' : 'transparent',
+                                boxShadow: viewMode === 'table' ? '0 1px 4px rgba(0,0,0,0.1)' : 'none',
+                                color: viewMode === 'table' ? '#7c3aed' : '#94a3b8',
+                                cursor: 'pointer', fontSize: 12, fontWeight: viewMode === 'table' ? 700 : 500,
+                                transition: 'all .15s',
+                            }}
+                        >
+                            <LayoutList size={13} />
+                            <span className="ov-toggle-label">{t('Danh sách', 'List')}</span>
+                        </button>
+                    </div>
 
                     {/* Search box */}
                     {!loading && devices.length > 0 && (
@@ -1848,6 +2190,14 @@ const OverviewPage = () => {
                             <IcMap />
                         </div>
                         {t('Chưa có dữ liệu thiết bị', 'No device data')}
+                    </div>
+                ) : viewMode === 'table' ? (
+                    <div style={{ minHeight: mapHeight, display: 'flex', flexDirection: 'column' }}>
+                        <DeviceTable
+                            devices={regionFilter?.checkedProvs?.size ? regionFilteredDevices : filteredDevices}
+                            cruiseByImei={cruiseByImei}
+                            isEn={isEn}
+                        />
                     </div>
                 ) : (
                     <VietnamMapDrillDown

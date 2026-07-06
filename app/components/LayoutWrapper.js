@@ -5,9 +5,13 @@ import Navbar from './Navbar/Navbar';
 import StatusBar from './StatusBar/StatusBar';
 import TokenRefresher from './TokenRefresher';
 import AppFooter from './Footer/AppFooter';
+import { useAuthLogout } from '../hooks/useAuthLogout';
 
 export default function LayoutWrapper({ children }) {
     const pathname = usePathname();
+
+    // Bridge: axios interceptor → router.push (không reload trang)
+    useAuthLogout();
 
     const isLoginPage = pathname === '/login' || pathname === '/login/en' || pathname?.startsWith('/login');
 

@@ -143,6 +143,88 @@ const DevicePopup = ({ device, cruise, onClose }) => {
                     </table>
                 )}
             </div>
+
+            {/* ── Quick-action buttons ── */}
+            <div style={{
+                display: 'flex',
+                gap: 8,
+                padding: '10px 14px 12px',
+                borderTop: '1px solid #f3f4f6',
+                background: '#fafafa',
+            }}>
+                {/* Xem hành trình */}
+                <a
+                    href="/cruise"
+                    onClick={() => {
+                        try {
+                            localStorage.setItem('iky_preselect_imei', device.imei || '');
+                            localStorage.setItem('iky_preselect_device_id', device._id || '');
+                        } catch (_) {}
+                    }}
+                    style={{
+                        flex: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 5,
+                        padding: '7px 10px',
+                        borderRadius: 8,
+                        background: '#eff6ff',
+                        border: '1px solid #bfdbfe',
+                        color: '#1d4ed8',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        textDecoration: 'none',
+                        cursor: 'pointer',
+                        transition: 'background .15s',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = '#dbeafe'}
+                    onMouseLeave={e => e.currentTarget.style.background = '#eff6ff'}
+                >
+                    {/* Route icon */}
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6z"/>
+                        <line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="6" x2="15" y2="18"/>
+                    </svg>
+                    Hành trình
+                </a>
+
+                {/* Giám sát realtime */}
+                <a
+                    href="/"
+                    onClick={() => {
+                        try {
+                            localStorage.setItem('iky_preselect_imei', device.imei || '');
+                            localStorage.setItem('iky_preselect_device_id', device._id || '');
+                        } catch (_) {}
+                    }}
+                    style={{
+                        flex: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 5,
+                        padding: '7px 10px',
+                        borderRadius: 8,
+                        background: online ? '#f0fdf4' : '#fef2f2',
+                        border: `1px solid ${online ? '#bbf7d0' : '#fecaca'}`,
+                        color: online ? '#15803d' : '#dc2626',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        textDecoration: 'none',
+                        cursor: 'pointer',
+                        transition: 'background .15s',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = online ? '#dcfce7' : '#fee2e2'}
+                    onMouseLeave={e => e.currentTarget.style.background = online ? '#f0fdf4' : '#fef2f2'}
+                >
+                    {/* Monitor icon */}
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="2"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                    </svg>
+                    Giám sát
+                </a>
+            </div>
         </div>
     );
 };
