@@ -11,9 +11,36 @@ const { Title } = Typography;
 
 const formatTime = (tim) => {
     if (!tim) return '';
+    const timStr = String(tim);
+    
+    // Custom format: YYMMDDHHmmss (12 digits)
+    if (/^\d{12}$/.test(timStr)) {
+        const year = 2000 + parseInt(timStr.slice(0, 2), 10);
+        const month = parseInt(timStr.slice(2, 4), 10) - 1;
+        const day = parseInt(timStr.slice(4, 6), 10);
+        const hour = parseInt(timStr.slice(6, 8), 10);
+        const minute = parseInt(timStr.slice(8, 10), 10);
+        const second = parseInt(timStr.slice(10, 12), 10);
+        const d = new Date(year, month, day, hour, minute, second);
+        if (!isNaN(d.getTime())) return d.toLocaleTimeString('vi-VN') + ' ' + d.toLocaleDateString('vi-VN');
+    }
+    
+    // Custom format: YYYYMMDDHHmmss (14 digits)
+    if (/^\d{14}$/.test(timStr)) {
+        const year = parseInt(timStr.slice(0, 4), 10);
+        const month = parseInt(timStr.slice(4, 6), 10) - 1;
+        const day = parseInt(timStr.slice(6, 8), 10);
+        const hour = parseInt(timStr.slice(8, 10), 10);
+        const minute = parseInt(timStr.slice(10, 12), 10);
+        const second = parseInt(timStr.slice(12, 14), 10);
+        const d = new Date(year, month, day, hour, minute, second);
+        if (!isNaN(d.getTime())) return d.toLocaleTimeString('vi-VN') + ' ' + d.toLocaleDateString('vi-VN');
+    }
+
     const isNumStr = typeof tim === 'string' && /^\d+$/.test(tim);
     const parsedTim = isNumStr ? parseInt(tim, 10) : tim;
-    const finalTim = typeof parsedTim === 'number' && parsedTim < 1e12 ? parsedTim * 1000 : parsedTim;
+    // Multiplier for Unix timestamp in seconds (usually 10 digits)
+    const finalTim = typeof parsedTim === 'number' && parsedTim < 1e11 ? parsedTim * 1000 : parsedTim;
     const d = new Date(finalTim);
     if (isNaN(d.getTime())) return 'Invalid Date';
     return d.toLocaleTimeString('vi-VN') + ' ' + d.toLocaleDateString('vi-VN');
