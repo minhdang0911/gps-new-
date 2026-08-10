@@ -9,6 +9,16 @@ import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons';
 
 const { Title } = Typography;
 
+const formatTime = (tim) => {
+    if (!tim) return '';
+    const isNumStr = typeof tim === 'string' && /^\d+$/.test(tim);
+    const parsedTim = isNumStr ? parseInt(tim, 10) : tim;
+    const finalTim = typeof parsedTim === 'number' && parsedTim < 1e12 ? parsedTim * 1000 : parsedTim;
+    const d = new Date(finalTim);
+    if (isNaN(d.getTime())) return 'Invalid Date';
+    return d.toLocaleTimeString('vi-VN') + ' ' + d.toLocaleDateString('vi-VN');
+};
+
 export default function DeviceDetailView({
     t,
     isEn,
@@ -46,7 +56,7 @@ export default function DeviceDetailView({
                 </Button>
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                     {cruiseInfo?.tim
-                        ? (isEn ? 'Last update: ' : 'Cập nhật lúc: ') + new Date(cruiseInfo.tim).toLocaleTimeString('vi-VN')
+                        ? (isEn ? 'Last update: ' : 'Cập nhật lúc: ') + formatTime(cruiseInfo.tim)
                         : ''}
                 </Typography.Text>
                 <Title level={4}>{t.detailTitle}</Title>
