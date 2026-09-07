@@ -347,3 +347,33 @@
         padding: 6px 10px;
     }
 }
+
+/* ===============================
+   DARK MODE TOGGLE BUTTON
+================================= */
+.iky-nav__theme-btn {
+    border: none;
+    background: rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(6px);
+    border-radius: 999px;
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    transition: background 0.2s ease, transform 0.2s ease;
+    flex-shrink: 0;
+}
+
+.iky-nav__theme-btn:hover {
+    background: rgba(255, 255, 255, 0.32);
+    transform: scale(1.1) rotate(15deg);
+}
+
+.iky-nav__theme-btn:active {
+    transform: scale(0.95);
+}
+
