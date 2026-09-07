@@ -14,6 +14,9 @@ const nextConfig: NextConfig = {
         ],
     },
 
+    // ✅ Next.js 16: Turbopack enabled by default
+    turbopack: {},
+
     // ✅ Gzip/Brotli compression
     compress: true,
 
@@ -27,35 +30,6 @@ const nextConfig: NextConfig = {
     images: {
         formats: ['image/avif', 'image/webp'],
         minimumCacheTTL: 60,
-    },
-
-    // ✅ Webpack optimization cho production
-    webpack(config, { dev, isServer }) {
-        if (!dev && !isServer) {
-            // Tách antd thành chunk riêng để cache browser tốt hơn
-            config.optimization = {
-                ...config.optimization,
-                splitChunks: {
-                    ...(config.optimization?.splitChunks || {}),
-                    cacheGroups: {
-                        ...(config.optimization?.splitChunks?.cacheGroups || {}),
-                        antd: {
-                            name: 'antd',
-                            test: /[\\/]node_modules[\\/](antd|@ant-design)[\\/]/,
-                            chunks: 'all',
-                            priority: 10,
-                        },
-                        recharts: {
-                            name: 'recharts',
-                            test: /[\\/]node_modules[\\/](recharts|d3-[^/]+)[\\/]/,
-                            chunks: 'all',
-                            priority: 9,
-                        },
-                    },
-                },
-            };
-        }
-        return config;
     },
 };
 
