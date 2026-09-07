@@ -83,10 +83,10 @@ const PAGE_SIZE_KEY = 'iky_devices_page_size';
 export default function ManageDevicesPage() {
     // ✅ Role từ authStore thay vì localStorage trực tiếp
     const user = useAuthStore((s) => s.user);
-    const currentRole = user?.role || '';
+    const currentRole = user?.position || user?.role || '';
 
-    const canEditDevice = currentRole === 'administrator' || currentRole === 'distributor';
-    const canAddDevice = currentRole === 'administrator';
+    const canEditDevice   = currentRole === 'administrator' || currentRole === 'distributor';
+    const canAddDevice    = currentRole === 'administrator' || currentRole === 'distributor';
     const canDeleteDevice = currentRole === 'administrator';
 
     // ✅ useLang hook tập trung thay vì duplicate logic
