@@ -292,3 +292,19 @@
 .report-sider.is-collapsed .ant-menu-submenu-title .ant-menu-item-icon {
     margin-inline-end: 0 !important;
 }
+
+/* ✅ Page transition animation khi switch giữa các report */
+.report-content--animated {
+    animation: reportFadeIn 0.22s ease-out;
+}
+
+@keyframes reportFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

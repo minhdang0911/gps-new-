@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState, memo, startTransition } from 'react';
 import './cruise.css';
+import dynamic from 'next/dynamic';
 
 import markerIconImg from '../assets/xe2.webp';
 import { getCruiseHistory } from '../lib/api/cruise';
@@ -16,9 +17,19 @@ import CruiseExportButton from '../components/CruiseExportButton';
 
 import loading from '../assets/loading.gif';
 import Image from 'next/image';
-import { Select, Tabs, Modal, Tooltip, Tag, Switch } from 'antd';
+import { Select, Tabs, Modal, Tooltip, Tag, Switch, Skeleton } from 'antd';
 import { FixedSizeList as VirtualList } from 'react-window';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, CartesianGrid } from 'recharts';
+
+// ✅ Lazy-load Recharts — thư viện nặng, chỉ dùng trong chart tab
+const { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip: ReTooltip, CartesianGrid } = {
+    ResponsiveContainer: dynamic(() => import('recharts').then(m => m.ResponsiveContainer), { ssr: false, loading: () => <Skeleton active /> }),
+    LineChart: dynamic(() => import('recharts').then(m => m.LineChart), { ssr: false }),
+    Line: dynamic(() => import('recharts').then(m => m.Line), { ssr: false }),
+    XAxis: dynamic(() => import('recharts').then(m => m.XAxis), { ssr: false }),
+    YAxis: dynamic(() => import('recharts').then(m => m.YAxis), { ssr: false }),
+    Tooltip: dynamic(() => import('recharts').then(m => m.Tooltip), { ssr: false }),
+    CartesianGrid: dynamic(() => import('recharts').then(m => m.CartesianGrid), { ssr: false }),
+};
 
 // ✅ use shared reverse geocode (multi-provider)
 import { reverseGeocodeAddress } from '../lib/address/reverseGeocode';

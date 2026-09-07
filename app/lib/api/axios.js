@@ -1,27 +1,30 @@
 import axios from 'axios';
 import { refreshTokenApi } from './auth';
+import { useAuthStore } from '../../stores/authStore';
 
 const api = axios.create({
     baseURL: process.env.NEXT_PUBLIC_API_URL,
     withCredentials: true,
-    timeout: 15000, // 15s timeout — tránh request treo vô thời hạn
+    timeout: 15000,
 });
 
-/* ================= TOKEN UTILS ================= */
+/* ================= TOKEN UTILS (qua Zustand store) ================= */
 
-const getTokens = () => ({
-    accessToken: localStorage.getItem('accessToken'),
-    refreshToken: localStorage.getItem('refreshToken'),
-});
-
-const saveTokens = (access, refresh) => {
-    if (access) localStorage.setItem('accessToken', access);
-    if (refresh) localStorage.setItem('refreshToken', refresh);
+const getTokens = () => {
+    const { accessToken, refreshToken } = useAuthStore.getState();
+    return { accessToken, refreshToken };
 };
 
-const clearTokens = () => {
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
+const saveTokens = (access, refresh) => {
+    useAuthStore.getState().setTokens(access, refresh);
+};
+
+/** Xóa tokens + dispatch event để useAuthLogout redirect về /login */
+const clearAuthAndLogout = () => {
+    useAuthStore.getState().clearAll();
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('auth:logout'));
+    }
 };
 
 /* ================= REQUEST INTERCEPTOR ================= */
@@ -29,12 +32,9 @@ const clearTokens = () => {
 api.interceptors.request.use(
     (config) => {
         const { accessToken } = getTokens();
-
-        // Không gắn token cho refresh/login
         if (accessToken && !config.url.includes('/refresh') && !config.url.includes('/login')) {
             config.headers.Authorization = `Bearer ${accessToken}`;
         }
-
         return config;
     },
     (error) => Promise.reject(error),
@@ -43,30 +43,27 @@ api.interceptors.request.use(
 /* ================= RESPONSE INTERCEPTOR ================= */
 
 let isRefreshing = false;
-let failedQueue = [];
-let refreshSafetyTimer = null; // safety: reset isRefreshing nếu bị treo
+let failedQueue  = [];
+let refreshSafetyTimer = null;
 
 const processQueue = (error, token = null) => {
     const queue = failedQueue;
-    failedQueue = [];
-    queue.forEach((prom) => {
-        if (error) prom.reject(error);
-        else prom.resolve(token);
-    });
+    failedQueue  = [];
+    queue.forEach((p) => (error ? p.reject(error) : p.resolve(token)));
 };
 
 const setRefreshing = (value) => {
     isRefreshing = value;
     clearTimeout(refreshSafetyTimer);
     if (value) {
-        // Safety: nếu isRefreshing bị stuck >20s → tự reset và reject queue
+        // Safety: reset nếu isRefreshing bị stuck > 20s
         refreshSafetyTimer = setTimeout(() => {
             if (isRefreshing) {
                 console.warn('[axios] isRefreshing stuck >20s — force reset');
                 isRefreshing = false;
                 processQueue(new Error('Refresh timeout'));
             }
-        }, 20000);
+        }, 20_000);
     }
 };
 
@@ -75,71 +72,54 @@ api.interceptors.response.use(
     async (error) => {
         const originalRequest = error.config;
 
-        // Bỏ qua login & refresh
         if (originalRequest.url.includes('/login') || originalRequest.url.includes('/refresh')) {
             return Promise.reject(error);
         }
 
-        // Xử lý 401
+        // ── Xử lý 401 ──────────────────────────────────────────────
         if (error.response?.status === 401 && !originalRequest._retry) {
             originalRequest._retry = true;
 
             const { refreshToken } = getTokens();
-
             if (!refreshToken) {
-                clearTokens();
-                window.dispatchEvent(new CustomEvent('auth:logout'));
+                clearAuthAndLogout();
                 return Promise.reject(error);
             }
 
-            // Nếu đang refresh → xếp hàng
+            // Đang refresh → xếp hàng chờ
             if (isRefreshing) {
                 return new Promise((resolve, reject) => {
                     failedQueue.push({ resolve, reject });
-                })
-                    .then((token) => {
-                        originalRequest.headers.Authorization = `Bearer ${token}`;
-                        return api(originalRequest);
-                    })
-                    .catch((err) => Promise.reject(err));
+                }).then((token) => {
+                    originalRequest.headers.Authorization = `Bearer ${token}`;
+                    return api(originalRequest);
+                });
             }
 
             setRefreshing(true);
-
             try {
                 const data = await refreshTokenApi(refreshToken);
-
                 saveTokens(data.accessToken, data.refreshToken);
-
                 processQueue(null, data.accessToken);
-
                 originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
-
                 return api(originalRequest);
             } catch (err) {
                 const status = err?.response?.status;
-
                 processQueue(err, null);
-
-                // ✅ Chỉ redirect login khi refresh token thực sự hết hạn (401/403)
-                // Không redirect khi lỗi mạng tạm thời (500, network error, timeout)
                 if (status === 401 || status === 403) {
-                    console.warn('[axios] Refresh token expired — dispatching auth:logout');
-                    clearTokens();
-                    window.dispatchEvent(new CustomEvent('auth:logout'));
+                    console.warn('[axios] Refresh token expired — logout');
+                    clearAuthAndLogout();
                 } else {
-                    console.warn('[axios] Refresh failed (status:', status, ') — NOT redirecting (network issue?)');
+                    console.warn('[axios] Refresh failed (network?) — NOT redirecting, status:', status);
                 }
-
                 return Promise.reject(err);
             } finally {
                 setRefreshing(false);
             }
         }
 
-        // Xử lý lỗi timeout
+        // ── Timeout ─────────────────────────────────────────────────
         if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-            console.error('⏱️ Request timeout:', originalRequest?.url);
             return Promise.reject({
                 ...error,
                 isTimeout: true,
@@ -147,9 +127,8 @@ api.interceptors.response.use(
             });
         }
 
-        // Xử lý lỗi không có kết nối mạng
+        // ── No network ──────────────────────────────────────────────
         if (!error.response) {
-            console.error('📵 Network error (no response):', originalRequest?.url);
             return Promise.reject({
                 ...error,
                 isNetworkError: true,
@@ -162,21 +141,17 @@ api.interceptors.response.use(
 );
 
 /* ================= PROACTIVE REFRESH (shared lock) ================= */
-// Dùng chung isRefreshing + failedQueue với interceptor
-// → tránh double-refresh khi TokenRefresher và axios cùng fire một lúc
+
 export const proactiveRefresh = async () => {
-    // Nếu đang có refresh → chờ nó xong (không bỏ qua)
-    // → TokenRefresher sẽ nhận được timing đúng sau khi xong
     if (isRefreshing) {
         return new Promise((resolve, reject) => {
             failedQueue.push({ resolve, reject });
-        }).then(() => { /* thành công, không cần làm gì thêm */ });
+        }).then(() => {});
     }
 
     const { refreshToken } = getTokens();
     if (!refreshToken) {
-        clearTokens();
-        window.dispatchEvent(new CustomEvent('auth:logout'));
+        clearAuthAndLogout();
         return;
     }
 
@@ -184,16 +159,13 @@ export const proactiveRefresh = async () => {
     try {
         const data = await refreshTokenApi(refreshToken);
         saveTokens(data.accessToken, data.refreshToken);
-        // Giải phóng queue (nếu có request nào đang đợi)
         processQueue(null, data.accessToken);
     } catch (err) {
         const status = err?.response?.status;
         processQueue(err, null);
         if (status === 401 || status === 403) {
-            clearTokens();
-            window.dispatchEvent(new CustomEvent('auth:logout'));
+            clearAuthAndLogout();
         }
-        // Lỗi mạng/500 → không redirect, TokenRefresher sẽ retry
         throw err;
     } finally {
         setRefreshing(false);

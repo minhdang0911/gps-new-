@@ -1,7 +1,39 @@
 :root {
     --background: #ffffff;
     --foreground: #171717;
+    --surface: #f5f7fb;
+    --border: #e2e8f0;
+    --text-muted: #64748b;
 }
+
+/* ✅ Dark mode: apply khi html có class 'iky-dark' */
+html.iky-dark {
+    --background: #141414;
+    --foreground: #e6edf3;
+    --surface: #1e1e2e;
+    --border: #30363d;
+    --text-muted: #8b949e;
+}
+
+html.iky-dark body {
+    background: var(--background);
+    color: var(--foreground);
+}
+
+/* Dark mode: override một số custom class không dùng Ant Design */
+html.iky-dark .iky-status {
+    background: #1a1a2e !important;
+    border-color: #30363d !important;
+    color: #e6edf3 !important;
+}
+
+html.iky-dark .iky-status__time,
+html.iky-dark .iky-status__state-text,
+html.iky-dark .iky-status__breadcrumb,
+html.iky-dark .iky-status__notify-label {
+    color: #c9d1d9 !important;
+}
+
 
 *,
 *::before,

@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { Layout, Spin, Button, Drawer } from 'antd';
 import { MenuOutlined, CloseOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons';
 import SidebarMenu from './Sidebar';
+import { useLang } from '../hooks/useLang';
 
 const { Content } = Layout;
 
@@ -27,11 +28,7 @@ export default function ManageLayout({ children }) {
     }, [router]);
 
     // ==== detect lang ====
-    const lang = useMemo(() => {
-        const seg = (pathname || '').split('/').filter(Boolean);
-        const last = seg[seg.length - 1];
-        return last === 'en' ? 'en' : 'vi';
-    }, [pathname]);
+    const lang = useLang();
 
     const titleFull = lang === 'en' ? 'Manage' : 'Quản lý';
     const titleShort = lang === 'en' ? 'Mng' : 'QLý';

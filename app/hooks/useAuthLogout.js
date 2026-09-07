@@ -5,8 +5,6 @@ import { useRouter } from 'next/navigation';
 import { useAuthStore } from '../stores/authStore';
 import { resetDeviceCache } from './useDeviceCache';
 
-const AUTH_STORAGE_KEYS = ['accessToken', 'refreshToken', 'role', 'iky_user'];
-
 /**
  * useAuthLogout — Lắng nghe event 'auth:logout' từ axios interceptor
  *
@@ -17,25 +15,28 @@ const AUTH_STORAGE_KEYS = ['accessToken', 'refreshToken', 'role', 'iky_user'];
  * Mount 1 lần duy nhất tại LayoutWrapper.
  */
 export function useAuthLogout() {
-    const router = useRouter();
-    const clearUser = useAuthStore((s) => s.clearUser);
+    const router   = useRouter();
+    const clearAll = useAuthStore((s) => s.clearAll);
 
     useEffect(() => {
         const handleForceLogout = async () => {
-            // 1. Xoá Zustand store
-            clearUser();
+            // 1. Xoá toàn bộ auth state (Zustand persist tự xóa localStorage tokens)
+            clearAll();
 
-            // 2. Xoá IndexedDB device cache (tránh data user cũ bị giữ lại)
+            // 2. Xoá IndexedDB device cache
             await resetDeviceCache();
 
-            // 3. Xoá tất cả auth keys trong localStorage
-            AUTH_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
+            // 3. Xóa các key khác không nằm trong store
+            if (typeof window !== 'undefined') {
+                localStorage.removeItem('role');
+                localStorage.removeItem('currentUser');
+            }
 
-            // 4. Điều hướng bằng router → không reload trang, giữ React state
+            // 4. Redirect về login
             router.push('/login');
         };
 
         window.addEventListener('auth:logout', handleForceLogout);
         return () => window.removeEventListener('auth:logout', handleForceLogout);
-    }, [router, clearUser]);
+    }, [router, clearAll]);
 }

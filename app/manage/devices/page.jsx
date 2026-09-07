@@ -6,7 +6,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Form, message, Modal, DatePicker, Input } from 'antd';
 import dayjs from 'dayjs';
-import { usePathname } from 'next/navigation';
 
 // map icons
 import markerIconStop from '../../assets/marker-red.png';
@@ -43,7 +42,6 @@ import DeviceListView from '../../components/manageDevices/DeviceListView';
 import DeviceDetailView from '../../components/manageDevices/DeviceDetailView';
 import DeviceUpsertModal from '../../components/manageDevices/DeviceUpsertModal';
 import DeviceCommandBarModal from '../../components/manageDevices/DeviceCommandBarModal';
-// import DeviceAuditModal from '../../components/manageDevices/DeviceAuditModal';
 
 // ✅ Intro.js
 import 'intro.js/introjs.css';
@@ -51,6 +49,10 @@ import '../../styles/intro-custom.css';
 
 // ✅ guided tour
 import { useGuidedTour } from '../../hooks/common/useGuidedTour';
+
+// ✅ Centralized hooks
+import { useIsEn } from '../../hooks/useLang';
+import { useAuthStore } from '../../stores/authStore';
 
 const { TextArea } = Input;
 const locales = { vi, en };
@@ -74,34 +76,21 @@ function getConfirmedByFromLocalStorage() {
     return s;
 }
 
-export default function ManageDevicesPage() {
-    const pathname = usePathname() || '/';
+// ✅ Scroll restore constants
+const SCROLL_SESSION_KEY = 'iky_devices_scroll';
+const PAGE_SIZE_KEY = 'iky_devices_page_size';
 
-    const [currentRole] = useState(() => (typeof window === 'undefined' ? '' : localStorage.getItem('role') || ''));
+export default function ManageDevicesPage() {
+    // ✅ Role từ authStore thay vì localStorage trực tiếp
+    const user = useAuthStore((s) => s.user);
+    const currentRole = user?.role || '';
 
     const canEditDevice = currentRole === 'administrator' || currentRole === 'distributor';
     const canAddDevice = currentRole === 'administrator';
     const canDeleteDevice = currentRole === 'administrator';
 
-    const isEn = useMemo(() => {
-        if (typeof window === 'undefined') return false;
-
-        const segments = (pathname || '/').split('/').filter(Boolean);
-        const fromPath = segments[segments.length - 1] === 'en';
-        if (fromPath) {
-            try {
-                localStorage.setItem('iky_lang', 'en');
-            } catch {}
-            return true;
-        }
-
-        try {
-            return localStorage.getItem('iky_lang') === 'en';
-        } catch {
-            return false;
-        }
-    }, [pathname]);
-
+    // ✅ useLang hook tập trung thay vì duplicate logic
+    const isEn = useIsEn();
     const t = isEn ? locales.en.manageDevices : locales.vi.manageDevices;
 
     const FILTER_SESSION_KEY = 'iky_manage_devices_filters';
@@ -129,13 +118,19 @@ export default function ManageDevicesPage() {
     const [pendingFormValues, setPendingFormValues] = useState(null);
     const [form] = Form.useForm();
 
-    // ✅ audit review state
-    // const [auditOpen, setAuditOpen] = useState(false);
-    // const [auditNextValues, setAuditNextValues] = useState(null);
-    // const [auditSubmitting, setAuditSubmitting] = useState(false);
-
     const [currentPage, setCurrentPage] = useState(1);
-    const [pageSize, setPageSize] = useState(10);
+
+    // ✅ Persist pageSize vào localStorage
+    const [pageSize, setPageSize] = useState(() => {
+        if (typeof window === 'undefined') return 10;
+        const saved = parseInt(localStorage.getItem(PAGE_SIZE_KEY), 10);
+        return saved > 0 ? saved : 10;
+    });
+
+    // Lưu pageSize mỗi khi thay đổi
+    useEffect(() => {
+        try { localStorage.setItem(PAGE_SIZE_KEY, String(pageSize)); } catch {}
+    }, [pageSize]);
 
     const {
         devices,
@@ -248,9 +243,18 @@ export default function ManageDevicesPage() {
         setViewMode('list');
         setSelectedDevice(null);
         destroyMap();
+        // ✅ Restore scroll position sau khi back về list
+        setTimeout(() => {
+            try {
+                const saved = sessionStorage.getItem(SCROLL_SESSION_KEY);
+                if (saved) window.scrollTo({ top: parseInt(saved, 10), behavior: 'instant' });
+            } catch {}
+        }, 50);
     };
 
     const handleSelectDevice = (item) => {
+        // ✅ Lưu scroll position trước khi vào detail
+        try { sessionStorage.setItem(SCROLL_SESSION_KEY, String(window.scrollY)); } catch {}
         setSelectedDevice(item);
         setViewMode('detail');
     };
@@ -539,19 +543,7 @@ export default function ManageDevicesPage() {
                 currentRole={currentRole}
             />
 
-            {/* <DeviceAuditModal
-                open={auditOpen}
-                onCancel={() => setAuditOpen(false)}
-                onOk={handleConfirmAudit}
-                isEn={isEn}
-                t={t}
-                mode={modalMode}
-                original={pendingFormValues}
-                nextValues={auditNextValues}
-                confirmLoading={auditSubmitting}
-            /> */}
-
-            {/* ✅ NEW: Confirm maintenance modal */}
+            {/* ✅ Confirm maintenance modal */}
             <Modal
                 title={isEn ? 'Confirm maintenance' : 'Xác nhận bảo dưỡng'}
                 open={confirmOpen}

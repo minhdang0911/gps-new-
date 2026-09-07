@@ -5,6 +5,7 @@ import { Geist, Geist_Mono } from 'next/font/google';
 import LayoutWrapper from './components/LayoutWrapper';
 import ErrorBoundary from './components/ErrorBoundary';
 import SWRProvider from './providers/SWRProvider';
+import ThemeProvider from './providers/ThemeProvider';
 import 'leaflet/dist/leaflet.css';
 import { Analytics } from '@vercel/analytics/next';
 import Script from 'next/script';
@@ -70,11 +71,14 @@ export default function RootLayout({ children }) {
                 <Analytics />
 
                 <AntdRegistry>
-                    <SWRProvider>
-                        <ErrorBoundary>
-                            <LayoutWrapper>{children}</LayoutWrapper>
-                        </ErrorBoundary>
-                    </SWRProvider>
+                    {/* ✅ ThemeProvider: bọc Ant Design ConfigProvider với dark/light mode */}
+                    <ThemeProvider>
+                        <SWRProvider>
+                            <ErrorBoundary>
+                                <LayoutWrapper>{children}</LayoutWrapper>
+                            </ErrorBoundary>
+                        </SWRProvider>
+                    </ThemeProvider>
                 </AntdRegistry>
             </body>
         </html>

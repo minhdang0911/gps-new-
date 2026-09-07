@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useRef, useState, useEffect, useSyncExternalStore, useCallback } from 'react';
+import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import useSWR from 'swr';
 import {
     Card,
@@ -28,7 +28,6 @@ import {
     QuestionCircleOutlined,
     ReloadOutlined,
 } from '@ant-design/icons';
-import { usePathname } from 'next/navigation';
 
 import { createUser, updateUser, deleteUser, getUserInfo, getUserList } from '../../lib/api/user';
 import UserForm from '../../components/UserForm';
@@ -47,6 +46,10 @@ import '../../styles/intro-custom.css';
 
 // ✅ shared guided tour hook
 import { useGuidedTour } from '../../hooks/common/useGuidedTour';
+
+// ✅ Centralized hooks (tránh duplicate)
+import { useLocalStorageValue } from '../../hooks/useLocalStorageValue';
+import { useIsEn } from '../../hooks/useLang';
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -67,26 +70,6 @@ const EMPTY_FORM = {
     address_lng: null,
 };
 
-function useLocalStorageValue(key, fallback = '') {
-    const subscribe = (callback) => {
-        if (typeof window === 'undefined') return () => {};
-        const handler = (e) => {
-            if (!e || e.key === key) callback();
-        };
-        window.addEventListener('storage', handler);
-        return () => window.removeEventListener('storage', handler);
-    };
-
-    const getSnapshot = () => {
-        if (typeof window === 'undefined') return fallback;
-        return localStorage.getItem(key) ?? fallback;
-    };
-
-    const getServerSnapshot = () => fallback;
-
-    return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-}
-
 /** debounce value để khỏi setTimeout effect + setState warning */
 function useDebouncedValue(value, delay = 400) {
     const [debounced, setDebounced] = useState(value);
@@ -98,23 +81,15 @@ function useDebouncedValue(value, delay = 400) {
 }
 
 export default function ManageUserPage() {
-    const pathname = usePathname() || '/';
-
     // ✅ token/role/lang đọc trực tiếp (khỏi setState trong effect)
     const token = useLocalStorageValue('accessToken', '');
     const currentRole = useLocalStorageValue('role', '');
-    const langFromStorage = useLocalStorageValue('iky_lang', 'vi');
 
     // ✅ Fix dropdown trong Modal / layout bị “click không ra”
     const popupInParent = (triggerNode) => triggerNode?.parentElement || document.body;
 
-    const isEnFromPath = useMemo(() => {
-        const segments = pathname.split('/').filter(Boolean);
-        const last = segments[segments.length - 1];
-        return last === 'en';
-    }, [pathname]);
-
-    const isEn = isEnFromPath ? true : langFromStorage === 'en';
+    // ✅ Dùng useIsEn hook tập trung thay vì duplicate logic
+    const isEn = useIsEn();
     const t = isEn ? locales.en.manageUser : locales.vi.manageUser;
 
     const isAdmin = currentRole === 'administrator';

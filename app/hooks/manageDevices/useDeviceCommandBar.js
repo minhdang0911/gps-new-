@@ -11,6 +11,7 @@ export function useDeviceCommandBar({
     onExportExcel,
     onOpenAdd,
     onGoBack,
+    onRefresh, // ✅ Ctrl+R refresh callback
 }) {
     const [cmdOpen, setCmdOpen] = useState(false);
     const [cmdQuery, setCmdQuery] = useState('');
@@ -20,17 +21,32 @@ export function useDeviceCommandBar({
     const debounceRef = useRef(null);
 
     /* ===============================
-       Global Ctrl + K
+       Global Ctrl + K + Ctrl+R
     =============================== */
     useEffect(() => {
         const onKeyDown = (e) => {
+            const isCtrl = e.ctrlKey || e.metaKey;
             const isK = e.key.toLowerCase() === 'k';
-            const isCmdK = (e.ctrlKey || e.metaKey) && isK;
+            const isR = e.key.toLowerCase() === 'r';
 
-            if (isCmdK) {
+            if (isCtrl && isK) {
                 e.preventDefault();
                 setCmdOpen(true);
                 setCmdQuery('');
+                return;
+            }
+
+            // ✅ Ctrl+R → refresh data (không reload trang)
+            if (isCtrl && isR) {
+                // Chỉ intercept khi không trong input
+                const el = document.activeElement;
+                const tag = el?.tagName?.toLowerCase();
+                const isInput = tag === 'input' || tag === 'textarea' || el?.isContentEditable;
+                if (!isInput) {
+                    e.preventDefault();
+                    onRefresh?.();
+                    return;
+                }
             }
 
             if (e.key === 'Escape') {
@@ -40,7 +56,7 @@ export function useDeviceCommandBar({
 
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, []);
+    }, [onRefresh]);
 
     /* ===============================
        Smart Query Parser

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Skeleton, Popover } from 'antd';
+import { Skeleton, Popover, Spin } from 'antd';
 import {
     SearchOutlined,
     CloseOutlined,
@@ -15,8 +15,18 @@ import {
     ArrowUpDown, ArrowUp, ArrowDown,
 } from 'lucide-react';
 import Fuse from 'fuse.js';
+import dynamic from 'next/dynamic';
 
-import VietnamMapDrillDown from './VietnamMapDrillDown';
+// ✅ Lazy-load VietnamMapDrillDown (96KB) — Leaflet không support SSR
+const VietnamMapDrillDown = dynamic(() => import('./VietnamMapDrillDown'), {
+    ssr: false,
+    loading: () => (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 400, background: '#f5f7fb', borderRadius: 12 }}>
+            <Spin tip="Đang tải bản đồ..." size="large" />
+        </div>
+    ),
+});
+
 import { exportOverviewExcel, exportByRegion } from './useOverviewExcel';
 import './map.css';
 

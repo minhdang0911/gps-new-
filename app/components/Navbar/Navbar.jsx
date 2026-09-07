@@ -22,6 +22,8 @@ import flagEn from '../../assets/flag-en.webp';
 import { useAuthStore } from '../../stores/authStore';
 import { logoutApi } from '../../lib/api/auth';
 import { resetDeviceCache } from '../../hooks/useDeviceCache';
+import { useLang } from '../../hooks/useLang';
+import { useDarkMode } from '../../hooks/useDarkMode';
 
 const navItems = [
     { key: 'monitor', labelVi: 'Giám Sát', labelEn: 'Monitor', img: giamsat, path: '/' },
@@ -32,6 +34,7 @@ const navItems = [
     { key: 'manage', labelVi: 'Quản Lý', labelEn: 'Manage', img: quanly, path: '/manage', href: '/manage/devices' },
     { key: 'support', labelVi: 'Hỗ Trợ', labelEn: 'Support', img: hotro, path: '/support' },
 ];
+
 const Navbar = () => {
     const router = useRouter();
     const pathname = usePathname() || '/';
@@ -39,26 +42,31 @@ const Navbar = () => {
 
     const [openDropdown, setOpenDropdown] = useState(false);
     const [isLoggingOut, setIsLoggingOut] = useState(false);
-    const [isEn, setIsEn] = useState(false);
     const [mounted, setMounted] = useState(false);
     const [openProfile, setOpenProfile] = useState(false);
 
     const user = useAuthStore((s) => s.user);
     const hydrated = useAuthStore((s) => s.hydrated);
-    const clearUser = useAuthStore((s) => s.clearUser);
+    const clearAll  = useAuthStore((s) => s.clearAll);
 
-    const { isEnFromPath, normalizedPath } = useMemo(() => {
+    // ✅ Dùng useLang hook tập trung thay vì duplicate logic
+    const lang = useLang();
+    const isEn = lang === 'en';
+
+    // ✅ Dark mode
+    const { isDark, toggle: toggleDark } = useDarkMode();
+
+    const { normalizedPath } = useMemo(() => {
         const segments = pathname.split('/').filter(Boolean);
-        const last = segments[segments.length - 1];
-        const hasEn = last === 'en';
+        const hasEn = segments[segments.length - 1] === 'en';
 
         if (hasEn) {
             const baseSegments = segments.slice(0, -1);
             const basePath = baseSegments.length ? '/' + baseSegments.join('/') : '/';
-            return { isEnFromPath: true, normalizedPath: basePath };
+            return { normalizedPath: basePath };
         }
 
-        return { isEnFromPath: false, normalizedPath: pathname };
+        return { normalizedPath: pathname };
     }, [pathname]);
 
     const computedActiveKey = useMemo(() => {
@@ -71,18 +79,6 @@ const Navbar = () => {
     }, [normalizedPath]);
 
     useEffect(() => setMounted(true), []);
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-
-        if (isEnFromPath) {
-            setIsEn(true);
-            localStorage.setItem('iky_lang', 'en');
-        } else {
-            const saved = localStorage.getItem('iky_lang');
-            setIsEn(saved === 'en');
-        }
-    }, [isEnFromPath, pathname]);
 
     useEffect(() => {
         const handleClickOutside = (event) => {
@@ -124,13 +120,11 @@ const Navbar = () => {
         } catch (err) {
             console.error('Logout error:', err);
         } finally {
-            clearUser();
+            clearAll();
             await resetDeviceCache();
             if (typeof window !== 'undefined') {
-                localStorage.removeItem('accessToken');
-                localStorage.removeItem('refreshToken');
                 localStorage.removeItem('role');
-                localStorage.removeItem('iky_user');
+                localStorage.removeItem('currentUser');
             }
             setIsLoggingOut(false);
             router.push('/login');
@@ -179,6 +173,17 @@ const Navbar = () => {
                 </nav>
 
                 <div className="iky-nav__right">
+                    {/* ✅ Dark mode toggle */}
+                    {/* <button
+                        type="button"
+                        className="iky-nav__theme-btn"
+                        onClick={toggleDark}
+                        title={isDark ? (isEn ? 'Switch to light mode' : 'Chuyển sáng') : (isEn ? 'Switch to dark mode' : 'Chuyển tối')}
+                        aria-label="Toggle dark mode"
+                    >
+                        {isDark ? '☀️' : '🌙'}
+                    </button> */}
+
                     <div className="iky-nav__lang">
                         <button
                             type="button"

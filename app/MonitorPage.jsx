@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import './MonitorPage.css';
+import dynamic from 'next/dynamic';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
@@ -22,7 +23,12 @@ import { parseTimToDate, toLocalDateTimeInput, formatFixedDateTime } from './uti
 import { getDistanceMeters } from './util/geo';
 import { toNumberOrNull } from './util/number';
 
-import MqttConnector from './components/MqttConnector';
+// ✅ Lazy-load MqttConnector — chỉ cần khi có IMEI, không cần ở initial render
+const MqttConnector = dynamic(() => import('./components/MqttConnector'), {
+    ssr: false,
+    loading: () => null,
+});
+
 
 // i18n
 import vi from './locales/vi.json';

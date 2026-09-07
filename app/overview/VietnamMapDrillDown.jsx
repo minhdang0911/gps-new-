@@ -956,11 +956,10 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
                 }
             }, 50);
 
-            // ── OSM Tile layer (ẩn mặc định, hiện khi vào quận/thiết bị) ──
+            // ── Carto Tile layer (ẩn mặc định, hiện khi vào quận/thiết bị) ──
             const tile = Lf.tileLayer(
-                'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+                `https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png?key=${process.env.NEXT_PUBLIC_CARTO_KEY}`,
                 {
-                    subdomains: 'abcd',
                     maxZoom: 19,
                     opacity: 0,      // ẩn lúc khởi tạo
                     zIndex: 1,

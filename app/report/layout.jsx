@@ -24,6 +24,7 @@ import 'antd/dist/reset.css';
 
 import vi from '../locales/vi.json';
 import en from '../locales/en.json';
+import { useIsEn } from '../hooks/useLang';
 
 const { Sider, Content } = Layout;
 const { Title } = Typography;
@@ -40,26 +41,8 @@ const ReportLayout = ({ children }) => {
     // ✅ SSR-safe: chỉ mobile khi lg chắc chắn false (undefined => desktop)
     const isMobile = screens.lg === false;
 
-    const isEn = useMemo(() => {
-        if (typeof window === 'undefined') return false;
-
-        const parts = pathname.split('/').filter(Boolean);
-        const isEnFromPath = parts[parts.length - 1] === 'en';
-
-        if (isEnFromPath) {
-            try {
-                localStorage.setItem('iky_lang', 'en');
-            } catch {}
-            return true;
-        }
-
-        try {
-            const saved = localStorage.getItem('iky_lang');
-            return saved === 'en';
-        } catch {
-            return false;
-        }
-    }, [pathname]);
+    // ✅ Dùng useIsEn hook tập trung
+    const isEn = useIsEn();
 
     const t = isEn ? locales.en.report : locales.vi.report;
 
@@ -352,7 +335,7 @@ const ReportLayout = ({ children }) => {
             </Sider>
 
             <Layout className="report-main">
-                <Content className="report-content">{children}</Content>
+                <Content className="report-content report-content--animated">{children}</Content>
             </Layout>
         </Layout>
     );
