@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import * as turf from '@turf/turf';
@@ -2024,3 +2024,4 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
 };
 
 export default VietnamMapDrillDown;
+

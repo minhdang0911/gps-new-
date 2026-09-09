@@ -8,13 +8,15 @@ import { UpOutlined, DownOutlined } from '@ant-design/icons';
 import ProfileModal from '../ProfileModal';
 import Link from 'next/link';
 
+import { NavIconOverview } from './NavbarIcons'; // dự phòng nếu cần SVG
+
 import giamsat from '../../assets/giamsat.webp';
 import hanhtrinh from '../../assets/hanhtrinh.webp';
 import baocao from '../../assets/baocao.webp';
 import quanly from '../../assets/quanly.webp';
 import hotro from '../../assets/hotro.png';
+import tongquan from '../../assets/tongquan_scooter.png'; // scooter icon mới
 import logo from '../../assets/logo-iky.webp';
-import tongquan from '../../assets/tongquan.png';
 
 import flagVi from '../../assets/flag-vi.webp';
 import flagEn from '../../assets/flag-en.webp';
@@ -31,7 +33,6 @@ const navItems = [
         key: 'monitor',
         labelVi: 'Giám Sát', labelEn: 'Monitor',
         img: giamsat, path: '/',
-        // tất cả role đều thấy
     },
     {
         key: 'route',
@@ -42,7 +43,8 @@ const navItems = [
     {
         key: 'overview',
         labelVi: 'Tổng Quan', labelEn: 'Overview',
-        img: tongquan, path: '/overview',
+        img: tongquan,     // đổi thành tongquan_scooter sau khi copy file
+        path: '/overview',
         allowedRoles: ['administrator', 'distributor', 'reporter', 'technical'],
     },
     {
@@ -197,7 +199,10 @@ const Navbar = () => {
                             onClick={() => handleClickItem(item)}
                         >
                             <div className="iky-nav__item-icon">
-                                <Image src={item.img} alt={isEn ? item.labelEn : item.labelVi} width={26} height={26} />
+                                {item.Icon
+                                    ? <item.Icon active={item.key === computedActiveKey} />
+                                    : <Image src={item.img} alt={isEn ? item.labelEn : item.labelVi} width={26} height={26} unoptimized style={{ mixBlendMode: 'screen' }} />
+                                }
                             </div>
                             <span className="iky-nav__item-label">{isEn ? item.labelEn : item.labelVi}</span>
                         </button>
