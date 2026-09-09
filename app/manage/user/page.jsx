@@ -100,21 +100,22 @@ export default function ManageUserPage() {
     const canCreate = isAdmin;
     const canDelete = isAdmin;
 
-    // ✅ thêm reporter
     const roleLabelMap = useMemo(
         () =>
             isEn
                 ? {
-                      administrator: 'Admin',
-                      distributor: 'Distributor',
-                      reporter: 'Reporter',
-                      customer: 'Customer',
+                      administrator: 'Administrator',
+                      distributor:   'Distributor',
+                      reporter:      'Reporter',
+                      technical:     'Technical',
+                      customer:      'Customer',
                   }
                 : {
-                      administrator: 'Quản trị',
-                      distributor: 'Đại lý',
-                      reporter: 'Giám sát',
-                      customer: 'Khách hàng',
+                      administrator: 'Quản trị hệ thống',
+                      distributor:   'Đại lý',
+                      reporter:      'Giám sát',
+                      technical:     'Kỹ thuật',
+                      customer:      'Khách hàng',
                   },
         [isEn],
     );
@@ -175,6 +176,10 @@ export default function ManageUserPage() {
             revalidateOnFocus: false,
             dedupingInterval: 10_000,
             onError: (err) => {
+                // 401/403 → token hết hạn hoặc đang logout
+                // axios interceptor đã handle redirect → không hiện toast ở đây
+                const status = err?.response?.status;
+                if (status === 401 || status === 403) return;
                 console.log('LOAD USER ERROR', err);
                 message.error(t.messages.loadUsersError);
             },
@@ -330,7 +335,8 @@ export default function ManageUserPage() {
                     position: data.position,
                 };
 
-                if (data.position === 'customer' || data.position === 'reporter') {
+                const needsDist = ['customer', 'reporter', 'technical'].includes(data.position);
+                if (needsDist) {
                     payload.distributor_id = data.distributor_id || null;
                 }
 

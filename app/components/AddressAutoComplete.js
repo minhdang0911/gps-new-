@@ -218,8 +218,13 @@ export default function AddressAutoComplete({ value, onChange, placeholder }) {
             options={options}
             style={{ width: '100%' }}
             allowClear
+            // ✅ onSearch là API đúng của Ant Design để trigger dropdown
+            onSearch={(q) => {
+                setInnerValue(q);
+                fetchSuggestions(q);
+            }}
             onChange={(val) => {
-                // chỉ đổi state nội bộ (khi clear hoặc khi AutoComplete thay đổi)
+                // Khi clear (val = undefined/null) → reset innerValue
                 setInnerValue(val || '');
             }}
             onSelect={(val, option) => {
@@ -231,12 +236,6 @@ export default function AddressAutoComplete({ value, onChange, placeholder }) {
             <Input
                 placeholder={placeholder || 'Nhập địa chỉ...'}
                 prefix={<EnvironmentOutlined />}
-                value={innerValue}
-                onChange={(e) => {
-                    const v = e.target.value;
-                    setInnerValue(v); // gõ mượt
-                    fetchSuggestions(v); // ✅ thay cho AutoComplete.onSearch
-                }}
             />
         </AutoComplete>
     );

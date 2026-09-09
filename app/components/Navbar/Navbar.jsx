@@ -25,14 +25,44 @@ import { resetDeviceCache } from '../../hooks/useDeviceCache';
 import { useLang } from '../../hooks/useLang';
 import { useDarkMode } from '../../hooks/useDarkMode';
 
+// allowedRoles: undefined = tất cả role đều thấy
 const navItems = [
-    { key: 'monitor', labelVi: 'Giám Sát', labelEn: 'Monitor', img: giamsat, path: '/' },
-    { key: 'route', labelVi: 'Hành Trình', labelEn: 'Cruise', img: hanhtrinh, path: '/cruise' },
-    { key: 'overview', labelVi: 'Tổng Quan', labelEn: 'Overview', img: tongquan, path: '/overview' },
-    // href ≠ path: path dùng detect active (/report/*), href navigate thẳng đến trang đầu tiên
-    { key: 'report', labelVi: 'Báo cáo', labelEn: 'Report', img: baocao, path: '/report', href: '/report/usage-session' },
-    { key: 'manage', labelVi: 'Quản Lý', labelEn: 'Manage', img: quanly, path: '/manage', href: '/manage/devices' },
-    { key: 'support', labelVi: 'Hỗ Trợ', labelEn: 'Support', img: hotro, path: '/support' },
+    {
+        key: 'monitor',
+        labelVi: 'Giám Sát', labelEn: 'Monitor',
+        img: giamsat, path: '/',
+        // tất cả role đều thấy
+    },
+    {
+        key: 'route',
+        labelVi: 'Hành Trình', labelEn: 'Cruise',
+        img: hanhtrinh, path: '/cruise',
+        allowedRoles: ['administrator', 'distributor', 'reporter', 'technical'],
+    },
+    {
+        key: 'overview',
+        labelVi: 'Tổng Quan', labelEn: 'Overview',
+        img: tongquan, path: '/overview',
+        allowedRoles: ['administrator', 'distributor', 'reporter', 'technical'],
+    },
+    {
+        key: 'report',
+        labelVi: 'Báo cáo', labelEn: 'Report',
+        img: baocao, path: '/report', href: '/report/usage-session',
+        allowedRoles: ['administrator', 'distributor', 'reporter', 'technical'],
+    },
+    {
+        key: 'manage',
+        labelVi: 'Quản Lý', labelEn: 'Manage',
+        img: quanly, path: '/manage', href: '/manage/devices',
+        allowedRoles: ['administrator', 'distributor'],
+    },
+    {
+        key: 'support',
+        labelVi: 'Hỗ Trợ', labelEn: 'Support',
+        img: hotro, path: '/support',
+        allowedRoles: ['administrator', 'distributor', 'reporter', 'technical'],
+    },
 ];
 
 const Navbar = () => {
@@ -94,7 +124,14 @@ const Navbar = () => {
     if (!mounted) return null;
     if (pathname === '/login' || pathname === '/login/en') return null;
 
-    const role = user?.role || '';
+    const role = user?.position || user?.role || '';
+
+    // Lọc nav items theo role — ẩn luôn những trang không có quyền
+    const visibleNavItems = navItems.filter((item) => {
+        if (!item.allowedRoles) return true;          // không giới hạn → luôn hiện
+        if (!role) return false;                       // chưa load role → ẩn
+        return item.allowedRoles.includes(role);
+    });
 
     const handleClickItem = (item) => {
         // Dùng href (nếu có) thay vì path để navigate thẳng đến trang đầu tiên
@@ -140,11 +177,6 @@ const Navbar = () => {
         }
     };
 
-    const filteredNavItems = navItems.filter((item) => {
-        if (role === 'reporter' && item.key === 'manage') return false;
-        return true;
-    });
-
     return (
         <>
             <ProfileModal open={openProfile} onClose={() => setOpenProfile(false)} isEn={isEn} />
@@ -155,7 +187,7 @@ const Navbar = () => {
                 </Link>
 
                 <nav className="iky-nav__menu">
-                    {filteredNavItems.map((item) => (
+                    {visibleNavItems.map((item) => (
                         <button
                             key={item.key}
                             type="button"
