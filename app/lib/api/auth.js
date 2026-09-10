@@ -18,7 +18,6 @@ export const login = async (username, password, device = '') => {
     }
 };
 
-// ✅ POST /refresh — không cần Authorization header
 export const refreshTokenApi = (refreshToken) =>
     api.post('/refresh', { refreshToken }).then((res) => res.data);
 

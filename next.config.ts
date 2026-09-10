@@ -14,6 +14,13 @@ const nextConfig: NextConfig = {
         ],
     },
 
+    // ✅ Automatically remove console.log in production (keep error & warn for debugging)
+    compiler: {
+        removeConsole: process.env.NODE_ENV === 'production'
+            ? { exclude: ['error', 'warn'] }
+            : false,
+    },
+
     // ✅ Next.js 16: Turbopack enabled by default
     turbopack: {},
 
