@@ -2,6 +2,8 @@
 
 import useSWR from 'swr';
 
+import { isDatBikeDevice, getDatBikeStateInfo } from '../../util/cruiseUtils';
+
 export function useDeviceDetail({ viewMode, selectedDevice, isEn, getLastCruise, getBatteryStatusByImei }) {
 
     const selectedImei = selectedDevice?.imei;
@@ -27,13 +29,27 @@ export function useDeviceDetail({ viewMode, selectedDevice, isEn, getLastCruise,
 
     const isAccOff = (acc) => acc === 1;
 
-    const getEngineStatusText = (cruise) =>
-        isAccOff(cruise?.acc) ? (isEn ? 'Engine off' : 'Tắt máy') : isEn ? 'Engine on' : 'Mở máy';
+    const getEngineStatusText = (cruise) => {
+        const isDatBike = isDatBikeDevice(selectedDevice);
+        const rawState = cruise?.onl ?? cruise?.ste ?? cruise?.state ?? cruise?.sta;
+        const datBikeState = (isDatBike || rawState != null) ? getDatBikeStateInfo(rawState, isEn) : null;
+        if (datBikeState) {
+            return datBikeState.isEngineOn ? (isEn ? 'Engine on' : 'Mở máy') : (isEn ? 'Engine off' : 'Tắt máy');
+        }
+        return isAccOff(cruise?.acc) ? (isEn ? 'Engine off' : 'Tắt máy') : isEn ? 'Engine on' : 'Mở máy';
+    };
 
     const getVehicleStatusText = (cruise) => {
-        if (isAccOff(cruise?.acc)) return isEn ? 'Parked' : 'Đổ xe';
-        if (cruise?.spd !== null && cruise?.spd !== undefined) {
-            return isEn ? `Moving ${cruise.spd} km/h` : `Chạy xe ${cruise.spd} km/h`;
+        const isDatBike = isDatBikeDevice(selectedDevice);
+        const rawState = cruise?.onl ?? cruise?.ste ?? cruise?.state ?? cruise?.sta;
+        const datBikeState = (isDatBike || rawState != null) ? getDatBikeStateInfo(rawState, isEn) : null;
+        if (datBikeState) {
+            return datBikeState.label;
+        }
+        if (isAccOff(cruise?.acc)) return isEn ? 'Parked' : 'Đỗ xe';
+        const spd = cruise?.spd ?? cruise?.vlp ?? cruise?.vgp;
+        if (spd !== null && spd !== undefined && Number(spd) > 0) {
+            return isEn ? `Moving ${spd} km/h` : `Chạy xe ${spd} km/h`;
         }
         return isEn ? 'Stopped' : 'Dừng xe';
     };

@@ -306,18 +306,76 @@ export const popupText = (isEn) => ({
     loadingAddress: isEn ? 'Fetching address...' : 'Đang lấy địa chỉ...',
 });
 
-// ===============================
-// ✅ Status logic (CHỐT)
-// acc=1 => PARK (tắt máy)
-// else: vgp>0 => RUN, vgp<=0/undefined => STOP
-// ===============================
+
+export const isDatBikeDevice = (device) => {
+    if (!device) return false;
+    const vName = (device?.vehicle_category_id?.name || '').toLowerCase();
+    const vModel = (device?.vehicle_category_id?.model || '').toLowerCase();
+    return vName.includes('dat bike') || vName.includes('datbike') || vModel.includes('quantum');
+};
+
+export const DAT_BIKE_STATE_ENUM = {
+    0: { key: 'OFF', vi: 'Tắt nguồn (OFF)', en: 'Power off (OFF)', isEngineOn: false, isMoving: false },
+    1: { key: 'STAND_BY', vi: 'Chế độ chờ (STAND_BY)', en: 'Standby (STAND_BY)', isEngineOn: true, isMoving: false },
+    2: { key: 'PARKING', vi: 'Chế độ Parking (P)', en: 'Parking mode (P)', isEngineOn: true, isMoving: false },
+    3: { key: 'DRIVE', vi: 'Chế độ Driving (D)', en: 'Driving mode (D)', isEngineOn: true, isMoving: true },
+    4: { key: 'SUPER', vi: 'Chế độ Super (S)', en: 'Super mode (S)', isEngineOn: true, isMoving: true },
+    5: { key: 'CRUISE_CONTROL', vi: 'Cruise Control (Giữ ga tự động)', en: 'Cruise Control', isEngineOn: true, isMoving: true },
+    6: { key: 'REVERSE', vi: 'Chế độ lùi (R)', en: 'Reverse mode (R)', isEngineOn: true, isMoving: true },
+    7: { key: 'LOCK', vi: 'Khóa xe (LOCK)', en: 'Locked (LOCK)', isEngineOn: false, isMoving: false },
+    8: { key: 'TURTLE', vi: 'Chế độ Rùa (Turtle)', en: 'Turtle mode (Turtle)', isEngineOn: true, isMoving: true },
+};
+
+export const getDatBikeStateInfo = (rawState, isEn = false) => {
+    if (rawState === null || rawState === undefined || rawState === '') return null;
+    let code = rawState;
+    if (typeof rawState === 'string') {
+        const upper = rawState.trim().toUpperCase();
+        const strMap = {
+            OFF: 0,
+            STAND_BY: 1,
+            STANDBY: 1,
+            PARKING: 2,
+            DRIVE: 3,
+            SUPER: 4,
+            CRUISE_CONTROL: 5,
+            CRUISE: 5,
+            REVERSE: 6,
+            LOCK: 7,
+            TURTLE: 8,
+        };
+        if (upper in strMap) {
+            code = strMap[upper];
+        } else {
+            const num = Number(rawState);
+            if (!Number.isNaN(num)) code = num;
+        }
+    }
+    const numCode = Number(code);
+    const item = DAT_BIKE_STATE_ENUM[numCode];
+    if (!item) return null;
+    return {
+        ...item,
+        label: isEn ? item.en : item.vi,
+    };
+};
+
+ 
 export const toNum = (v) => {
     if (v === null || v === undefined || v === '') return undefined;
     const n = Number(v);
     return Number.isFinite(n) ? n : undefined;
 };
 
-export const getStatusType = ({ acc, spd }) => {
+export const getStatusType = ({ acc, spd, onl, ste, state }) => {
+    const rawState = onl ?? ste ?? state;
+    const datBikeState = getDatBikeStateInfo(rawState);
+    if (datBikeState) {
+        if (!datBikeState.isEngineOn) return 'PARK';
+        if (datBikeState.isMoving) return 'RUN';
+        return 'STOP';
+    }
+
     const accNum = toNum(acc);
     const speed = toNum(spd) ?? 0;
     if (accNum === 1) return 'PARK';
@@ -325,10 +383,23 @@ export const getStatusType = ({ acc, spd }) => {
     return 'STOP';
 };
 
-export const buildStatusHard = ({ acc, spd }, isEn) => {
+export const buildStatusHard = ({ acc, spd, onl, ste, state }, isEn) => {
     const t = popupText(isEn);
-    const accNum = toNum(acc);
+    const rawState = onl ?? ste ?? state;
+    const datBikeState = getDatBikeStateInfo(rawState, isEn);
     const speed = toNum(spd) ?? 0;
+
+    if (datBikeState) {
+        return {
+            machineStatus: datBikeState.isEngineOn ? t.engineOn : t.engineOff,
+            vehicleStatus: datBikeState.label,
+            speedText: `${speed} km/h`,
+            speedNum: speed,
+            type: datBikeState.isMoving && speed > 0 ? 'RUN' : datBikeState.isEngineOn ? 'STOP' : 'PARK',
+        };
+    }
+
+    const accNum = toNum(acc);
 
     if (accNum === 1) {
         return {
@@ -422,9 +493,7 @@ export const formatDuration = (sec) => {
     return `${ss} giây`;
 };
 
-// ===============================
-// Popup HTML
-// ===============================
+
 export const buildPopupHtml = (p, isEn) => {
     const t = popupText(isEn);
     const status = buildStatusHard({ acc: p.acc, spd: p.spd ?? p.velocityNum ?? p.velocity }, isEn);

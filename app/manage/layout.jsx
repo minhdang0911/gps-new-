@@ -146,8 +146,11 @@ export default function ManageLayout({ children }) {
                 <Content style={{ padding: 20, minWidth: 0 }}>
                 {allowed === null ? (
                     // Đang kiểm tra quyền — hiện loading ngắn
-                    <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
-                        <Spin tip={lang === 'en' ? 'Checking permissions...' : 'Đang kiểm tra quyền...'} />
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 60, gap: 12 }}>
+                        <Spin size="large" />
+                        <span style={{ color: '#888', fontSize: 13 }}>
+                            {lang === 'en' ? 'Checking permissions...' : 'Đang kiểm tra quyền...'}
+                        </span>
                     </div>
                 ) : (
                     children

@@ -6,12 +6,25 @@ import markerIconStop from '../../assets/marker-red.png';
 import markerRun from '../../assets/marker-run.png';
 import markerRun50 from '../../assets/marker-run50.png';
 import markerRun80 from '../../assets/marker-run80.png';
+import { getDatBikeStateInfo } from '../../util/cruiseUtils';
 
 const pickMarkerAsset = (cruiseInfo) => {
+    const rawState = cruiseInfo?.onl ?? cruiseInfo?.ste ?? cruiseInfo?.state ?? cruiseInfo?.sta;
+    const datBikeState = getDatBikeStateInfo(rawState);
+    if (datBikeState) {
+        if (!datBikeState.isEngineOn || !datBikeState.isMoving) return markerIconStop;
+        const spdRaw = cruiseInfo?.spd ?? cruiseInfo?.vlp ?? cruiseInfo?.vgp ?? 0;
+        const spdNum = Number(spdRaw);
+        if (!Number.isFinite(spdNum) || spdNum <= 0) return markerIconStop;
+        if (spdNum >= 80) return markerRun80;
+        if (spdNum >= 50) return markerRun50;
+        return markerRun;
+    }
+
     const accNum = cruiseInfo?.acc == null ? null : Number(cruiseInfo.acc);
     if (accNum === 1) return markerIconStop;
 
-    const spdRaw = cruiseInfo?.spd ?? cruiseInfo?.vgp ?? 0;
+    const spdRaw = cruiseInfo?.spd ?? cruiseInfo?.vlp ?? cruiseInfo?.vgp ?? 0;
     const spdNum = Number(spdRaw);
 
     if (!Number.isFinite(spdNum) || spdNum <= 0) return markerIconStop;
@@ -96,7 +109,7 @@ export function useLeafletDeviceMap({
                 <b>${t.imei}:</b> ${selectedDevice.imei}<br/>
                 <b>${t.plate}:</b> ${selectedDevice.license_plate || '-'}<br/>
                 <b>${t.deviceType}:</b> ${selectedDevice.device_category_id?.name || '-'}<br/>
-                <b>${t.speed}:</b> ${cruiseInfo?.spd ?? 0} km/h<br/>
+                <b>${t.speed}:</b> ${cruiseInfo?.spd ?? cruiseInfo?.vlp ?? cruiseInfo?.vgp ?? 0} km/h<br/>
                 <b>${isEn ? 'Engine status' : 'Trạng thái máy'}:</b> ${getEngineStatusText(cruiseInfo)}<br/>
                 <b>${isEn ? 'Vehicle status' : 'Trạng thái xe'}:</b> ${getVehicleStatusText(cruiseInfo)}<br/>
                 <b>${t.battery}:</b> ${batteryInfo?.soc ?? '--'}%
@@ -143,7 +156,7 @@ export function useLeafletDeviceMap({
             <b>${t.imei}:</b> ${selectedDevice?.imei}<br/>
             <b>${t.plate}:</b> ${selectedDevice?.license_plate || '-'}<br/>
             <b>${t.deviceType}:</b> ${selectedDevice?.device_category_id?.name || '-'}<br/>
-            <b>${t.speed}:</b> ${cruiseInfo?.spd ?? 0} km/h<br/>
+            <b>${t.speed}:</b> ${cruiseInfo?.spd ?? cruiseInfo?.vlp ?? cruiseInfo?.vgp ?? 0} km/h<br/>
             <b>${isEn ? 'Engine status' : 'Trạng thái máy'}:</b> ${getEngineStatusText(cruiseInfo)}<br/>
             <b>${isEn ? 'Vehicle status' : 'Trạng thái xe'}:</b> ${getVehicleStatusText(cruiseInfo)}<br/>
             <b>${t.battery}:</b> ${batteryInfo?.soc ?? '--'}%

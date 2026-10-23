@@ -22,6 +22,7 @@ import { reverseGeocodeAddress } from './lib/address/reverseGeocode';
 import { parseTimToDate, toLocalDateTimeInput, formatFixedDateTime } from './util/time';
 import { getDistanceMeters } from './util/geo';
 import { toNumberOrNull } from './util/number';
+import { isDatBikeDevice, getDatBikeStateInfo } from './util/cruiseUtils';
 
 // ✅ Lazy-load MqttConnector — chỉ cần khi có IMEI, không cần ở initial render
 const MqttConnector = dynamic(() => import('./components/MqttConnector'), {
@@ -150,12 +151,20 @@ const MonitorPage = () => {
         return lastCruise?.acc;
     };
 
-    // ✅ SPEED: chỉ MQTT hoặc lastCruise (ưu tiên spd rồi vgp) - KHÔNG batteryStatus
+    // ✅ SPEED: chỉ MQTT hoặc lastCruise (ưu tiên vlp rồi spd rồi vgp) - KHÔNG batteryStatus
     const pickSpeed = ({ liveTelemetry, lastCruise }, lastMqttAtRef) => {
         if (isMqttAlive(lastMqttAtRef)) {
-            return liveTelemetry?.spd ?? liveTelemetry?.vgp;
+            return liveTelemetry?.vlp ?? liveTelemetry?.spd ?? liveTelemetry?.vgp;
         }
-        return lastCruise?.spd ?? lastCruise?.vgp;
+        return lastCruise?.vlp ?? lastCruise?.spd ?? lastCruise?.vgp;
+    };
+
+    // ✅ DAT BIKE STATE: đọc từ liveTelemetry hoặc lastCruise (ưu tiên onl theo spec IKY rồi ste / state / sta)
+    const pickBikeState = ({ liveTelemetry, lastCruise }, lastMqttAtRef) => {
+        if (isMqttAlive(lastMqttAtRef)) {
+            return liveTelemetry?.onl ?? liveTelemetry?.ste ?? liveTelemetry?.state ?? liveTelemetry?.sta;
+        }
+        return lastCruise?.onl ?? lastCruise?.ste ?? lastCruise?.state ?? lastCruise?.sta;
     };
 
     // ✅ driver name helper (lấy từ API field `driver`)
@@ -290,7 +299,16 @@ const MonitorPage = () => {
     }, []);
 
     // ===== Marker icon selector (4 icons) =====
-    const getMarkerAssetByStatus = ({ accValNum, usedSpeed }) => {
+    const getMarkerAssetByStatus = ({ accValNum, usedSpeed, datBikeState }) => {
+        if (datBikeState) {
+            if (!datBikeState.isEngineOn || !datBikeState.isMoving) return markerIconStop;
+            const spd = Number(usedSpeed ?? 0);
+            if (!Number.isFinite(spd) || spd <= 0) return markerIconStop;
+            if (spd >= 80) return markerRun80;
+            if (spd >= 50) return markerRun50;
+            return markerRun;
+        }
+
         if (accValNum === 1) return markerIconStop;
 
         const spd = Number(usedSpeed ?? 0);
@@ -407,7 +425,12 @@ const MonitorPage = () => {
         const accValNum = toNumberOrNull(pickAcc({ liveTelemetry, lastCruise }, lastMqttAtRef));
         const usedSpeed = toNumberOrNull(pickSpeed({ liveTelemetry, lastCruise }, lastMqttAtRef));
 
-        const nextAsset = getMarkerAssetByStatus({ accValNum, usedSpeed });
+        const info = deviceInfo || selectedDevice;
+        const isDatBike = isDatBikeDevice(info);
+        const bikeStateVal = pickBikeState({ liveTelemetry, lastCruise }, lastMqttAtRef);
+        const datBikeState = (isDatBike || bikeStateVal != null) ? getDatBikeStateInfo(bikeStateVal, isEn) : null;
+
+        const nextAsset = getMarkerAssetByStatus({ accValNum, usedSpeed, datBikeState });
 
         const current = currentMarkerAssetRef.current;
         const changed = (current?.src || current) !== (nextAsset?.src || nextAsset);
@@ -855,6 +878,10 @@ const MonitorPage = () => {
                 if (data.acc == null) delete updated.acc;
                 if (data.spd == null) delete updated.spd;
                 if (data.vgp == null) delete updated.vgp;
+                if (data.vlp == null) delete updated.vlp;
+                if (data.onl == null) delete updated.onl;
+                if (data.ste == null) delete updated.ste;
+                if (data.state == null) delete updated.state;
             }
 
             if (isTelemetryPacket && data.gps == null) delete updated.gps;
@@ -1001,17 +1028,29 @@ const MonitorPage = () => {
 
         const gpsValNum = toNumberOrNull(pickField('gps', ctx, lastMqttAtRef));
 
-        const isEngineOff = accValNum === 1;
-        const machineStatus = isEngineOff ? t.statusInfo.engineOff : t.statusInfo.engineOn;
+        const isDatBike = isDatBikeDevice(info);
+        const bikeStateVal = pickBikeState({ liveTelemetry, lastCruise }, lastMqttAtRef);
+        const datBikeState = (isDatBike || bikeStateVal != null) ? getDatBikeStateInfo(bikeStateVal, isEn) : null;
 
-        let vehicleStatus = t.statusInfo.vehicleStopped;
-        if (isEngineOff) {
-            vehicleStatus = t.statusInfo.vehicleParking;
+        let machineStatus;
+        let vehicleStatus;
+
+        if (datBikeState) {
+            machineStatus = datBikeState.isEngineOn ? t.statusInfo.engineOn : t.statusInfo.engineOff;
+            vehicleStatus = datBikeState.label;
         } else {
-            if (usedSpeed != null && usedSpeed > 0) {
-                vehicleStatus = t.statusInfo.vehicleRunning.replace('{speed}', String(usedSpeed));
+            const isEngineOff = accValNum === 1;
+            machineStatus = isEngineOff ? t.statusInfo.engineOff : t.statusInfo.engineOn;
+
+            vehicleStatus = t.statusInfo.vehicleStopped;
+            if (isEngineOff) {
+                vehicleStatus = t.statusInfo.vehicleParking;
             } else {
-                vehicleStatus = t.statusInfo.vehicleStopped;
+                if (usedSpeed != null && usedSpeed > 0) {
+                    vehicleStatus = t.statusInfo.vehicleRunning.replace('{speed}', String(usedSpeed));
+                } else {
+                    vehicleStatus = t.statusInfo.vehicleStopped;
+                }
             }
         }
 
@@ -1046,9 +1085,10 @@ const MonitorPage = () => {
                     {t.statusInfo.vehicleStatus} {vehicleStatus}
                 </div>
 
-                {usedSpeed != null && usedSpeed > 0 && (
+                {/* Vận tốc: Luôn hiển thị cho Dat Bike (kể cả 0 km/h) như yêu cầu, và cho xe thường khi có vận tốc */}
+                {(isDatBike || (usedSpeed != null && usedSpeed > 0)) && (
                     <div>
-                        {t.statusInfo.speed} {usedSpeed} km/h
+                        {t.statusInfo.speed} {usedSpeed != null ? usedSpeed : 0} km/h
                     </div>
                 )}
 

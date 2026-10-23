@@ -21,8 +21,9 @@ import dynamic from 'next/dynamic';
 const VietnamMapDrillDown = dynamic(() => import('./VietnamMapDrillDown'), {
     ssr: false,
     loading: () => (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 400, background: '#f5f7fb', borderRadius: 12 }}>
-            <Spin tip="Đang tải bản đồ..." size="large" />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 400, background: '#f5f7fb', borderRadius: 12, gap: 10 }}>
+            <Spin size="large" />
+            <span style={{ color: '#888', fontSize: 13 }}>Đang tải bản đồ...</span>
         </div>
     ),
 });
