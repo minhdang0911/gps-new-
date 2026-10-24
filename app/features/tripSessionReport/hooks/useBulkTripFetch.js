@@ -1,18 +1,10 @@
 // features/tripSessionReport/hooks/useBulkTripFetch.js
 //
-// ✅ Parallel chunked fetch — không dùng total từ BE (thường sai).
-//    Stop condition: khi 1 page trả về items.length < chunkSize → đó là page cuối.
-//
-//    Với 93,964 records, chunkSize=2000, concurrent=10:
-//      Batch 1: pages  1–10 → 20k records (~300ms)
-//      Batch 2: pages 11–20 → 20k records (~300ms)
-//      Batch 3: pages 21–30 → 20k records (~300ms)
-//      Batch 4: pages 31–40 → 20k records (~300ms)
-//      Batch 5: pages 41–47 → last page  (~300ms)
-//      Total: ~1.5s vs 14s (limit=9_999_999)
-//
-//    Module-level in-memory cache (TTL = 5 min, key = stable filter JSON)
-//    force=true → bypass cache ("Làm mới")
+// ⚠️ [DEPRECATED / ARCHIVED]
+// File này trước đây dùng cơ chế chunked parallel fetch (51 requests song song) để kéo 95k records về RAM.
+// Hiện tại dự án đã chuyển hoàn toàn sang True Server-Side Pagination tại `useTripSessionData.js`
+// (chỉ gọi 1 request duy nhất với limit=200/page, phản hồi ~200ms thay vì vét hàng chục nghìn dòng vào RAM).
+// File này được giữ lại làm tài liệu tham khảo, không còn được import hay gọi trong luồng chạy chính.
 
 import { useCallback, useRef, useState } from 'react';
 

@@ -1,13 +1,14 @@
 import { message } from 'antd';
-import * as XLSX from 'xlsx';
 import { formatDateTime, formatStatus } from '../utils';
 
 export function useTripReportExcel({ isEn, t, getDistributorLabel }) {
-    const exportExcel = (processedData) => {
+    const exportExcel = async (processedData) => {
         if (!processedData || processedData.length === 0) {
             message.warning(isEn ? 'No data to export' : 'Không có dữ liệu để xuất');
             return;
         }
+
+        const XLSX = await import('xlsx');
 
         const rows = processedData.map((item, index) => ({
             [t.table.index]: index + 1,

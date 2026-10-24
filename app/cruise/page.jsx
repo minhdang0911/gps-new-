@@ -9,6 +9,7 @@ import { getCruiseHistory } from '../lib/api/cruise';
 import { getDevices } from '../lib/api/devices';
 import cruiseCacheManager from '../lib/cache/CruiseCacheManager';
 
+import { useIsEn } from '../hooks/useLang';
 import vi from '../locales/vi.json';
 import en from '../locales/en.json';
 import { usePathname } from 'next/navigation';
@@ -90,23 +91,8 @@ const Row = memo(function Row({ index, style, data }) {
 // ===============================
 const CruisePage = () => {
     const pathname = usePathname() || '/';
-    const [isEn, setIsEn] = useState(false);
-
-    useEffect(() => {
-        const segments = pathname.split('/').filter(Boolean);
-        const last = segments[segments.length - 1];
-        const isEnFromPath = last === 'en';
-        if (typeof window === 'undefined') return;
-
-        if (isEnFromPath) {
-            setIsEn(true);
-            localStorage.setItem('iky_lang', 'en');
-        } else {
-            const saved = localStorage.getItem('iky_lang');
-            setIsEn(saved === 'en');
-        }
-    }, [pathname]);
-
+    // ✅ Dùng useIsEn hook tập trung
+    const isEn = useIsEn();
     const t = isEn ? locales.en.cruise : locales.vi.cruise;
 
     const [playbackRate, setPlaybackRate] = useState(1);
@@ -224,7 +210,7 @@ const CruisePage = () => {
         const fetchDevices = async () => {
             try {
                 setLoadingDevices(true);
-                const res = await getDevices(token);
+                const res = await getDevices();
                 const devices = res.devices || [];
                 setDeviceList(devices);
                 if (devices.length > 0) {

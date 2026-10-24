@@ -1,9 +1,18 @@
 .iky-monitor__refreshing-bar {
-    font-size: 12px;
-    padding: 4px 8px;
-    border-bottom: 1px solid #eee;
-    color: #666;
-    background: #fafafa;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #2563eb, #38bdf8, #2563eb);
+    background-size: 200% 100%;
+    animation: ikyBarLoading 1.5s infinite linear;
+    z-index: 10;
+}
+
+@keyframes ikyBarLoading {
+    0% { background-position: 100% 0; }
+    100% { background-position: -100% 0; }
 }
 
 .iky-status-dot {

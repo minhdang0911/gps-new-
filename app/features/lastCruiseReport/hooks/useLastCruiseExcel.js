@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx';
 import { message } from 'antd';
 import { formatDateTimeFactory, parseTimToDate } from '../utils';
 
@@ -55,6 +54,7 @@ export function useLastCruiseExcel({ processedData, isEn, t }) {
             };
         });
 
+        const XLSX = await import('xlsx');
         const worksheet = XLSX.utils.json_to_sheet(rows);
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, 'LastCruise');

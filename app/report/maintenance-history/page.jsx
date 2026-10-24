@@ -23,6 +23,7 @@ import {
 import { SearchOutlined, ReloadOutlined, FileExcelOutlined, BarChartOutlined } from '@ant-design/icons';
 
 import { usePathname } from 'next/navigation'; // ✅ add
+import { useIsEn } from '../../hooks/useLang';
 import { useMaintenanceDeviceMap } from '../../hooks/useMaintenanceDeviceMap';
 import { getMaintenanceHistory } from '../../lib/api/maintain';
 import { getUserList } from '../../lib/api/user';
@@ -297,25 +298,8 @@ function downloadWorkbook(wb, filename) {
 export default function MaintenanceHistoryReportPage() {
     const pathname = usePathname() || '/'; // ✅ add
 
-    // ✅ detect EN giống Navbar
-    const { isEnFromPath } = useMemo(() => {
-        const segments = pathname.split('/').filter(Boolean);
-        const last = segments[segments.length - 1];
-        return { isEnFromPath: last === 'en' };
-    }, [pathname]);
-
-    const [isEn, setIsEn] = useState(false);
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-
-        if (isEnFromPath) {
-            setIsEn(true);
-            localStorage.setItem('iky_lang', 'en');
-        } else {
-            const saved = localStorage.getItem('iky_lang');
-            setIsEn(saved === 'en');
-        }
-    }, [isEnFromPath, pathname]);
+    // ✅ Centralized language hook
+    const isEn = useIsEn();
 
     // ✅ dictionary
     const t = useMemo(() => {

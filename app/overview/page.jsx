@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Skeleton, Popover, Spin } from 'antd';
+import { Skeleton, Popover, Spin, Pagination } from 'antd';
 import {
     SearchOutlined,
     CloseOutlined,
@@ -30,6 +30,7 @@ const VietnamMapDrillDown = dynamic(() => import('./VietnamMapDrillDown'), {
 
 import { exportOverviewExcel, exportByRegion } from './useOverviewExcel';
 import './map.css';
+import './overview.css';
 
 import { getDevices } from '../lib/api/devices';
 import api from '../lib/api/axios';
@@ -37,6 +38,8 @@ import { usePathname } from 'next/navigation';
 import { findNearest } from '../util/geo';
 import { useAuthStore } from '../stores/authStore';
 import { Select } from 'antd';
+import { useClickOutside } from '../hooks/useClickOutside';
+import { MAX_DEVICE_LIMIT, ONLINE_THRESHOLD_MS, EXPIRING_THRESHOLD_MS, OVERVIEW_AUTO_REFRESH_MS } from '../lib/constants';
 
 const PROVINCE_API = 'https://esgoo.net/api-tinhthanh/1/0.htm';
 const DISTRICT_API = (provinceId) => `https://esgoo.net/api-tinhthanh/2/${provinceId}.htm`;
@@ -45,14 +48,14 @@ const isOnline = (cruiseItem) => {
     if (!cruiseItem) return false;
     const updated = cruiseItem.updatedAt || cruiseItem.createdAt;
     if (!updated) return false;
-    return Date.now() - new Date(updated).getTime() < 24 * 60 * 60 * 1000;
+    return Date.now() - new Date(updated).getTime() < ONLINE_THRESHOLD_MS;
 };
 
 const isExpiringSoon = (device) => {
     if (!device?.date_exp) return false;
     const exp = new Date(device.date_exp).getTime();
     const now = Date.now();
-    return exp > now && exp - now < 7 * 24 * 60 * 60 * 1000;
+    return exp > now && exp - now < EXPIRING_THRESHOLD_MS;
 };
 
 // ── Inline SVG icons — no external deps needed ─────────────────
@@ -146,14 +149,10 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
         return counts;
     }, [hoveredProv, districtCache, cruiseByImei, provinces]);
 
-    useEffect(() => {
-        const handler = (e) => {
-            if (ref.current && !ref.current.contains(e.target)) setOpen(false);
-            if (exportMenuRef.current && !exportMenuRef.current.contains(e.target)) setShowExportMenu(false);
-        };
-        document.addEventListener('mousedown', handler);
-        return () => document.removeEventListener('mousedown', handler);
-    }, []);
+    // ✅ useClickOutside hook thay vì manual addEventListener
+    useClickOutside(ref, useCallback(() => setOpen(false), []), open);
+    useClickOutside(exportMenuRef, useCallback(() => setShowExportMenu(false), []), showExportMenu);
+
 
 
     // Click province → fetch + cache districts, reset district search
@@ -568,11 +567,8 @@ const ExcelDropdown = ({ onExport, disabled, regionActive, regionCount, isEn }) 
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
 
-    useEffect(() => {
-        const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-        document.addEventListener('mousedown', handler);
-        return () => document.removeEventListener('mousedown', handler);
-    }, []);
+    // ✅ useClickOutside hook
+    useClickOutside(ref, useCallback(() => setOpen(false), []), open);
 
     const options = regionActive
         ? [
@@ -681,16 +677,9 @@ const SearchBox = ({ devices, cruiseByImei, onSelect, isEn }) => {
         return fuse.search(q).slice(0, 8).map(r => r.item);
     }, [fuse, query]);
 
-    // Close dropdown on outside click
-    useEffect(() => {
-        const handler = (e) => {
-            if (wrapRef.current && !wrapRef.current.contains(e.target)) {
-                setOpen(false);
-            }
-        };
-        document.addEventListener('mousedown', handler);
-        return () => document.removeEventListener('mousedown', handler);
-    }, []);
+    // ✅ useClickOutside hook
+    useClickOutside(wrapRef, useCallback(() => setOpen(false), []), open);
+
 
     const handleSelect = useCallback((device) => {
         setQuery(device.license_plate || device.imei || '');
@@ -889,15 +878,23 @@ const StatCard = ({ icon, label, value, sub, accentColor, loading: cardLoading, 
 );
 
 // ── Device Table View ────────────────────────────────────────
-const DeviceTable = ({ devices, cruiseByImei, isEn }) => {
+const DeviceTable = ({ devices, cruiseByImei, isEn, onlineMap }) => {
     const t = (vi, en) => (isEn ? en : vi);
     const [sortKey, setSortKey]   = useState('status'); // 'status'|'plate'|'spd'|'mil'|'updated'|'exp'
     const [sortDir, setSortDir]   = useState('asc');    // 'asc'|'desc'
     const [tableSearch, setTableSearch] = useState('');
+    const [page, setPage]         = useState(1);
+    const [pageSize, setPageSize] = useState(50);
 
     const handleSort = (key) => {
         if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
         else { setSortKey(key); setSortDir('asc'); }
+        setPage(1);
+    };
+
+    const handleSearchChange = (val) => {
+        setTableSearch(val);
+        setPage(1);
     };
 
     const SortIcon = ({ col }) => {
@@ -923,8 +920,10 @@ const DeviceTable = ({ devices, cruiseByImei, isEn }) => {
             const cb = cruiseByImei[b.imei];
             let va, vb;
             if (sortKey === 'status') {
-                va = isOnline(ca) ? 0 : 1;
-                vb = isOnline(cb) ? 0 : 1;
+                const aOn = onlineMap ? onlineMap.get(a.imei) : isOnline(ca);
+                const bOn = onlineMap ? onlineMap.get(b.imei) : isOnline(cb);
+                va = aOn ? 0 : 1;
+                vb = bOn ? 0 : 1;
             } else if (sortKey === 'plate') {
                 va = (a.license_plate || a.imei || '').toLowerCase();
                 vb = (b.license_plate || b.imei || '').toLowerCase();
@@ -936,18 +935,24 @@ const DeviceTable = ({ devices, cruiseByImei, isEn }) => {
                 va = ca?.mil ?? -1;
                 vb = cb?.mil ?? -1;
             } else if (sortKey === 'updated') {
-                va = ca ? new Date(ca.updatedAt || ca.createdAt || 0).getTime() : 0;
-                vb = cb ? new Date(cb.updatedAt || cb.createdAt || 0).getTime() : 0;
+                va = ca?._ts ?? (ca ? (ca._ts = new Date(ca.updatedAt || ca.createdAt || 0).getTime()) : 0);
+                vb = cb?._ts ?? (cb ? (cb._ts = new Date(cb.updatedAt || cb.createdAt || 0).getTime()) : 0);
             } else if (sortKey === 'exp') {
-                va = a.date_exp ? new Date(a.date_exp).getTime() : Infinity;
-                vb = b.date_exp ? new Date(b.date_exp).getTime() : Infinity;
+                va = a._expTs ?? (a.date_exp ? (a._expTs = new Date(a.date_exp).getTime()) : Infinity);
+                vb = b._expTs ?? (b.date_exp ? (b._expTs = new Date(b.date_exp).getTime()) : Infinity);
             } else {
                 va = 0; vb = 0;
             }
             return sortDir === 'asc' ? va - vb : vb - va;
         });
         return list;
-    }, [devices, cruiseByImei, sortKey, sortDir, tableSearch]);
+    }, [devices, cruiseByImei, onlineMap, sortKey, sortDir, tableSearch]);
+
+    // ✅ Virtual slice 50 rows per page để browser không bị đơ DOM khi có 10.000+ xe
+    const paginatedRows = useMemo(() => {
+        const start = (page - 1) * pageSize;
+        return rows.slice(start, start + pageSize);
+    }, [rows, page, pageSize]);
 
     const formatUpdated = (cruise) => {
         if (!cruise) return '—';
@@ -1009,12 +1014,12 @@ const DeviceTable = ({ devices, cruiseByImei, isEn }) => {
                     <SearchOutlined style={{ fontSize: 13, color: '#94a3b8' }} />
                     <input
                         value={tableSearch}
-                        onChange={e => setTableSearch(e.target.value)}
+                        onChange={e => handleSearchChange(e.target.value)}
                         placeholder={t('Tìm biển số / IMEI / lái xe…', 'Search plate / IMEI / driver…')}
                         style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 12.5, color: '#1e293b', width: '100%', fontFamily: 'inherit' }}
                     />
                     {tableSearch && (
-                        <button onClick={() => setTableSearch('')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#94a3b8', display: 'flex' }}>
+                        <button onClick={() => handleSearchChange('')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#94a3b8', display: 'flex' }}>
                             <X size={12} />
                         </button>
                     )}
@@ -1065,9 +1070,9 @@ const DeviceTable = ({ devices, cruiseByImei, isEn }) => {
                         </tr>
                     </thead>
                     <tbody>
-                        {rows.map((d, i) => {
+                        {paginatedRows.map((d, i) => {
                             const cruise = cruiseByImei[d.imei];
-                            const online = isOnline(cruise);
+                            const online = onlineMap ? !!onlineMap.get(d.imei) : isOnline(cruise);
                             const moving = online && cruise?.acc === 0;
                             return (
                                 <tr
@@ -1176,6 +1181,25 @@ const DeviceTable = ({ devices, cruiseByImei, isEn }) => {
                     </tbody>
                 </table>
             </div>
+
+            {/* ✅ Pagination bar — mượt mà khi có 10.000+ xe */}
+            {rows.length > pageSize && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, flexWrap: 'wrap', gap: 8, padding: '4px 2px' }}>
+                    <span style={{ fontSize: 12, color: '#64748b' }}>
+                        {t(`Hiển thị ${(page - 1) * pageSize + 1} - ${Math.min(page * pageSize, rows.length)} trong ${rows.length} thiết bị`,
+                           `Showing ${(page - 1) * pageSize + 1} - ${Math.min(page * pageSize, rows.length)} of ${rows.length} devices`)}
+                    </span>
+                    <Pagination
+                        size="small"
+                        current={page}
+                        pageSize={pageSize}
+                        total={rows.length}
+                        showSizeChanger
+                        pageSizeOptions={['25', '50', '100', '200']}
+                        onChange={(p, ps) => { setPage(p); setPageSize(ps); }}
+                    />
+                </div>
+            )}
         </div>
     );
 };
@@ -1327,6 +1351,21 @@ const OverviewPage = () => {
         return [...map.values()].sort((a, b) => a.label.localeCompare(b.label, 'vi'));
     }, [devices, isAdmin]);
 
+    // ✅ Precompute online lookup map: O(1) hash table thay vì parse Date lặp đi lặp lại
+    const onlineMap = useMemo(() => {
+        const map = new Map();
+        const now = Date.now();
+        for (const imei in cruiseByImei) {
+            const c = cruiseByImei[imei];
+            if (!c) continue;
+            const updated = c.updatedAt || c.createdAt;
+            if (updated && (now - new Date(updated).getTime() < ONLINE_THRESHOLD_MS)) {
+                map.set(imei, true);
+            }
+        }
+        return map;
+    }, [cruiseByImei]);
+
     // ─ Distributor stats (admin only) — phân bổ tổng / online / offline theo từng đại lý
     const distributorStats = useMemo(() => {
         if (!isAdmin || !devices.length) return [];
@@ -1338,20 +1377,20 @@ const OverviewPage = () => {
             if (!map.has(id)) map.set(id, { id, label, total: 0, online: 0 });
             const entry = map.get(id);
             entry.total++;
-            if (isOnline(cruiseByImei[d.imei])) entry.online++;
+            if (onlineMap.get(d.imei)) entry.online++;
         });
         return [...map.values()]
             .map(e => ({ ...e, offline: e.total - e.online }))
             .sort((a, b) => b.total - a.total);
-    }, [devices, cruiseByImei, isAdmin, isEn]);
+    }, [devices, onlineMap, isAdmin, isEn]);
 
     // ─ Filter chain: mapFilter → distributorFilter → regionFilter → displayDevices
     // filteredByMap: filter online/offline
     const filteredByMap = useMemo(() => {
-        if (mapFilter === 'online')  return devices.filter((d) => isOnline(cruiseByImei[d.imei]));
-        if (mapFilter === 'offline') return devices.filter((d) => !isOnline(cruiseByImei[d.imei]));
+        if (mapFilter === 'online')  return devices.filter((d) => onlineMap.get(d.imei));
+        if (mapFilter === 'offline') return devices.filter((d) => !onlineMap.get(d.imei));
         return devices;
-    }, [devices, cruiseByImei, mapFilter]);
+    }, [devices, onlineMap, mapFilter]);
 
     // filteredByDistributor: filter theo đại lý (admin only)
     const filteredByDistributor = useMemo(() => {
@@ -1388,12 +1427,12 @@ const OverviewPage = () => {
 
     // ─ Stat counts tính từ statDevices (reactive theo tất cả filter + map drill level)
     const displayTotal    = statDevices.length;
-    const displayOnline   = useMemo(() => statDevices.filter(d => isOnline(cruiseByImei[d.imei])).length, [statDevices, cruiseByImei]);
+    const displayOnline   = useMemo(() => statDevices.filter(d => onlineMap.get(d.imei)).length, [statDevices, onlineMap]);
     const displayOffline  = displayTotal - displayOnline;
     const displayExpiring = useMemo(() => statDevices.filter(isExpiringSoon).length, [statDevices]);
 
     // Legacy (giữ cho Excel export total)
-    const onlineDevices  = useMemo(() => devices.filter((d) => isOnline(cruiseByImei[d.imei])).length, [devices, cruiseByImei]);
+    const onlineDevices  = useMemo(() => devices.filter((d) => onlineMap.get(d.imei)).length, [devices, onlineMap]);
     const offlineDevices = totalDevices - onlineDevices;
     const expiringSoon   = useMemo(() => devices.filter(isExpiringSoon).length, [devices]);
 
@@ -2208,6 +2247,7 @@ const OverviewPage = () => {
                             devices={regionFilter?.checkedProvs?.size ? regionFilteredDevices : filteredDevices}
                             cruiseByImei={cruiseByImei}
                             isEn={isEn}
+                            onlineMap={onlineMap}
                         />
                     </div>
                 ) : (

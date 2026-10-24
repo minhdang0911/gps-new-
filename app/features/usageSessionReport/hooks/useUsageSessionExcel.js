@@ -1,7 +1,6 @@
 // features/usageSessionReport/hooks/useUsageSessionExcel.js
 import { useState } from 'react';
 import { message } from 'antd';
-import * as XLSX from 'xlsx';
 import { buildParams, formatDateTime } from '../utils';
 
 export function useUsageSessionExcel({ form, getUsageSessions, t, isEn }) {
@@ -10,6 +9,7 @@ export function useUsageSessionExcel({ form, getUsageSessions, t, isEn }) {
     const exportExcel = async () => {
         try {
             setExporting(true);
+            const XLSX = await import('xlsx');
             const values = form.getFieldsValue();
             const params = buildParams(values, 1, 100000);
             const res = await getUsageSessions(params);

@@ -200,40 +200,82 @@ const providerNominatim = async (lat, lon, lang) => {
 };
 
 // ===============================
+// 💾 IN-MEMORY CACHE ĐỊA CHỈ (LRU max 500)
+// Tọa độ làm tròn 4 số thập phân (~11m sai số) để tăng cache hit rate
+// ===============================
+const addressMemoryCache = new Map();
+const MAX_ADDRESS_CACHE = 500;
+
+// ===============================
 // ⭐ HÀM CHÍNH reverseGeocodeAddress
 // ===============================
 export const reverseGeocodeAddress = async (lat, lon, opts = {}) => {
     const lang = opts.lang || 'vi';
     const isEn = opts.isEn || false;
 
-    // 1️⃣ Ưu tiên Goong (có key rotation riêng, giữ logic cũ)
-    const goong = await callGoongWithRotation(lat, lon, lang);
-    if (goong) return goong;
+    const latNum = Number(lat);
+    const lonNum = Number(lon);
+    if (!Number.isFinite(latNum) || !Number.isFinite(lonNum)) return null;
 
-    // 2️⃣ Fallback providers — chạy song song, lấy kết quả nào về trước
-    const providers = [
-        () => providerVietMap(lat, lon),
-        () => providerTrackAsia(lat, lon),
-        () => providerOpenCage(lat, lon, lang),
-        () => providerMap4D(lat, lon),
-        () => providerTomTom(lat, lon, isEn),
-        () => providerMapbox(lat, lon, isEn),
-        () => providerNominatim(lat, lon, lang),
+    // Check memory cache
+    const cacheKey = `${latNum.toFixed(4)},${lonNum.toFixed(4)}_${lang}`;
+    if (addressMemoryCache.has(cacheKey)) {
+        return addressMemoryCache.get(cacheKey);
+    }
+
+    const saveToCache = (result) => {
+        if (!result || !result.address) return result;
+        if (addressMemoryCache.size >= MAX_ADDRESS_CACHE) {
+            const oldestKey = addressMemoryCache.keys().next().value;
+            addressMemoryCache.delete(oldestKey);
+        }
+        addressMemoryCache.set(cacheKey, result);
+        return result;
+    };
+
+    // 1️⃣ Ưu tiên Goong (có key rotation riêng, giữ logic cũ)
+    const goong = await callGoongWithRotation(latNum, lonNum, lang);
+    if (goong) return saveToCache(goong);
+
+    // 2️⃣ Fallback providers — 2 batch để tiết kiệm bandwidth
+    //    Batch 1: 2 provider nhanh nhất (VietMap, TrackAsia)
+    //    Batch 2: còn lại (chỉ gọi nếu batch 1 fail)
+    const batch1 = [
+        () => providerVietMap(latNum, lonNum),
+        () => providerTrackAsia(latNum, lonNum),
+    ];
+    const batch2 = [
+        () => providerOpenCage(latNum, lonNum, lang),
+        () => providerMap4D(latNum, lonNum),
+        () => providerTomTom(latNum, lonNum, isEn),
+        () => providerMapbox(latNum, lonNum, isEn),
+        () => providerNominatim(latNum, lonNum, lang),
     ];
 
-    try {
-        const addr = await Promise.any(
-            providers.map((fn) =>
-                fn().then((result) => {
-                    // Reject nếu không có kết quả → để Promise.any thử provider khác
-                    if (!result) return Promise.reject(new Error('empty'));
-                    return result;
-                }),
-            ),
-        );
-        return { address: addr, deprecatedAddress: '' };
-    } catch {
-        // AggregateError: tất cả providers đều fail
-        return null;
-    }
+    const tryBatch = async (batch) => {
+        try {
+            const addr = await Promise.any(
+                batch.map((fn) =>
+                    fn().then((result) => {
+                        if (!result) return Promise.reject(new Error('empty'));
+                        return result;
+                    }),
+                ),
+            );
+            return addr;
+        } catch {
+            return null;
+        }
+    };
+
+    // Batch 1 trước
+    const result1 = await tryBatch(batch1);
+    if (result1) return saveToCache({ address: result1, deprecatedAddress: '' });
+
+    // Batch 2 fallback
+    const result2 = await tryBatch(batch2);
+    if (result2) return saveToCache({ address: result2, deprecatedAddress: '' });
+
+    return null;
 };
+

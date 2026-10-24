@@ -5,6 +5,7 @@ import dayjs from 'dayjs';
 import { Card, Empty, Spin, Table, Tag, Typography, message, Button, Space } from 'antd';
 import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons';
 import { usePathname } from 'next/navigation';
+import { useIsEn } from '../../hooks/useLang';
 
 import MaintenanceReportFilters from '../components/MaintenanceReportFilters';
 import { useMaintenanceDeviceMap } from '../../hooks/useMaintenanceDeviceMap';
@@ -274,43 +275,11 @@ export default function MaintenanceDueReportPage() {
     const { imeiToPlate } = useMaintenanceDeviceMap();
     const pathname = usePathname() || '/';
 
-    const [mounted, setMounted] = useState(false);
-    const [isEn, setIsEn] = useState(false);
+    const isEn = useIsEn();
 
     const [filterImei, setFilterImei] = useState('');
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(false);
-
-    // detect EN từ URL giống Navbar
-    const { isEnFromPath, normalizedPath } = useMemo(() => {
-        const segments = pathname.split('/').filter(Boolean);
-        const last = segments[segments.length - 1];
-        const hasEn = last === 'en';
-
-        if (hasEn) {
-            const baseSegments = segments.slice(0, -1);
-            const basePath = baseSegments.length ? '/' + baseSegments.join('/') : '/';
-            return { isEnFromPath: true, normalizedPath: basePath };
-        }
-
-        return { isEnFromPath: false, normalizedPath: pathname };
-    }, [pathname]);
-
-    useEffect(() => {
-        setMounted(true);
-    }, []);
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-
-        if (isEnFromPath) {
-            setIsEn(true);
-            localStorage.setItem('iky_lang', 'en');
-        } else {
-            const saved = localStorage.getItem('iky_lang');
-            setIsEn(saved === 'en');
-        }
-    }, [isEnFromPath, pathname]);
 
     const t = useMemo(() => {
         return {

@@ -1,13 +1,14 @@
 import { message } from 'antd';
-import * as XLSX from 'xlsx';
 import { formatDateTime } from '../utils';
 
 export function useChargingSessionExcel({ isEn, t }) {
-    const exportExcel = (source) => {
+    const exportExcel = async (source) => {
         if (!source || source.length === 0) {
             message.warning(isEn ? 'No data to export' : 'Không có dữ liệu để xuất');
             return;
         }
+
+        const XLSX = await import('xlsx');
 
         const rows = source.map((item, index) => ({
             [t.table.index]: index + 1,

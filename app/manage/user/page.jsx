@@ -152,7 +152,7 @@ export default function ManageUserPage() {
             email: dEmail || undefined,
             phone: dPhone || undefined,
             page: 1,
-            limit: 50,
+            limit: 200,
         };
         if (dRole) params.position = dRole;
         return params;
@@ -768,6 +768,11 @@ export default function ManageUserPage() {
                         className="user-page__table"
                         scroll={{ x: 900 }}
                         size="middle"
+                        pagination={{
+                            pageSize: 20,
+                            showSizeChanger: true,
+                            pageSizeOptions: ['10', '20', '50', '100', '200'],
+                        }}
                     />
                 </div>
             </Card>

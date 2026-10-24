@@ -123,6 +123,9 @@ export function useLeafletDeviceMap({
         destroyMap();
         initMap();
 
+        return () => {
+            destroyMap();
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [enabled, selectedDevice?._id]);
 

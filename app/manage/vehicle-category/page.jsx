@@ -29,6 +29,7 @@ import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
 
 import { useLocalStorageValue } from '../../hooks/useLocalStorageValue';
+import { useIsEn } from '../../hooks/useLang';
 import {
     buildMapOptions,
     buildDeviceTypeOptions,
@@ -54,15 +55,7 @@ const VehicleCategoryPage = () => {
 
     const token = useLocalStorageValue('accessToken', '');
     const role = useLocalStorageValue('role', '');
-    const langFromStorage = useLocalStorageValue('iky_lang', 'vi');
-
-    const isEnFromPath = useMemo(() => {
-        const segments = pathname.split('/').filter(Boolean);
-        const last = segments[segments.length - 1];
-        return last === 'en';
-    }, [pathname]);
-
-    const isEn = isEnFromPath ? true : langFromStorage === 'en';
+    const isEn = useIsEn();
     const t = isEn ? locales.en.vehicleCategory : locales.vi.vehicleCategory;
 
     const isAdmin = role === 'administrator';
@@ -516,6 +509,7 @@ const VehicleCategoryPage = () => {
                             pageSize: pagination.pageSize,
                             total: apiTotal,
                             showSizeChanger: true,
+                            pageSizeOptions: ['10', '20', '50', '100', '200'],
                         }}
                         onChange={handleTableChange}
                         className="vc-table"

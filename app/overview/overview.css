@@ -1,0 +1,355 @@
+/* ── Overview Page Styles ─────────────────────────────── */
+/* Extracted from inline <style> in overview/page.jsx      */
+
+@keyframes ov-spin { to { transform: rotate(360deg); } }
+
+.ov-page {
+    padding: 22px 26px 32px;
+    background: #f4f6fb;
+    min-height: calc(100vh - 100px);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+}
+@media (max-width: 768px) {
+    .ov-page { padding: 14px 14px 24px; }
+}
+
+.ov-map-card:fullscreen {
+    padding: 16px 20px;
+    background: #fff;
+    width: 100vw;
+    height: 100vh;
+    box-sizing: border-box;
+    overflow: hidden;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+    display: flex;
+    flex-direction: column;
+}
+.ov-map-card:fullscreen .ov-map-card-header {
+    margin-bottom: 12px;
+}
+
+/* ── Header ─────────────────── */
+.ov-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    gap: 12px;
+}
+@media (max-width: 768px) {
+    .ov-header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+        margin-bottom: 14px;
+    }
+}
+.ov-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.ov-title-icon {
+    width: 36px; height: 36px;
+    border-radius: 10px;
+    background: linear-gradient(135deg,#1677ff,#4096ff);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(22,119,255,0.3);
+    flex-shrink: 0;
+}
+.ov-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #0f172a;
+    letter-spacing: -.2px;
+}
+.ov-subtitle {
+    font-size: 11.5px;
+    color: #94a3b8;
+    margin-top: 2px;
+    font-weight: 400;
+}
+
+/* ── Refresh button ─────────── */
+.ov-refresh-btn {
+    display: flex; align-items: center; gap: 7px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 9px;
+    padding: 0 16px;
+    height: 32px;
+    font-size: 12.5px;
+    color: #334155;
+    cursor: pointer;
+    font-weight: 500;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    transition: background .15s, box-shadow .15s, transform .1s;
+    white-space: nowrap;
+}
+.ov-refresh-btn:hover:not(:disabled) {
+    background: #f8fafc;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+.ov-refresh-btn:active:not(:disabled) { transform: scale(0.97); }
+.ov-refresh-btn:disabled { opacity: .6; cursor: not-allowed; }
+
+/* ── Stats grid ─────────────── */
+.ov-stats-row {
+    display: grid;
+    grid-template-columns: repeat(var(--stat-cols, 4), 1fr);
+    gap: 14px;
+    margin-bottom: 18px;
+}
+@media (max-width: 1200px) { .ov-stats-row { --stat-cols: 3 !important; gap: 12px; } }
+@media (max-width: 900px)  { .ov-stats-row { --stat-cols: 2 !important; gap: 12px; } }
+@media (max-width: 560px)  { .ov-stats-row { --stat-cols: 2 !important; gap: 8px; margin-bottom: 12px; } }
+@media (max-width: 380px)  { .ov-stats-row { --stat-cols: 1 !important; gap: 8px; } }
+
+/* ── Header actions ─────────── */
+.ov-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+@media (max-width: 768px) {
+    .ov-header-actions {
+        justify-content: flex-start;
+        gap: 6px;
+        width: 100%;
+    }
+    .ov-header-actions > * {
+        flex: 1 !important;
+        min-width: 0 !important;
+    }
+    .ov-header-actions .ov-refresh-btn {
+        width: 100% !important;
+        justify-content: center;
+        font-size: 12px;
+        padding: 7px 10px;
+    }
+}
+
+/* ── Search Box responsive ── */
+.ov-search-box-wrap {
+    width: 260px;
+    flex-shrink: 0;
+}
+@media (max-width: 560px) {
+    .ov-search-box-wrap {
+        width: 100% !important;
+        margin-top: 4px;
+    }
+}
+
+/* ── Region Panel bottom sheet ── */
+.ov-region-panel {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 10px 36px rgba(0,0,0,0.16);
+    z-index: 9999;
+    width: 500px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+.ov-region-body {
+    display: flex;
+    height: 320px;
+}
+.ov-region-left {
+    width: 220px;
+    border-right: 1px solid #f1f5f9;
+    display: flex;
+    flex-direction: column;
+}
+.ov-region-footer {
+    padding: 10px 15px;
+    border-top: 1px solid #f1f5f9;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #f8fafc;
+    flex-shrink: 0;
+}
+@media (max-width: 560px) {
+    .ov-region-panel {
+        position: fixed !important;
+        top: auto !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        width: 100% !important;
+        height: 70vh !important;
+        max-height: 500px !important;
+        border-radius: 16px 16px 0 0 !important;
+        border: none !important;
+        box-shadow: 0 -4px 24px rgba(0,0,0,0.15) !important;
+        z-index: 99999 !important;
+    }
+    .ov-region-body {
+        flex: 1 !important;
+        height: auto !important;
+        min-height: 0 !important;
+    }
+    .ov-region-left {
+        width: 45% !important;
+        min-width: 140px !important;
+    }
+    .ov-region-footer {
+        padding: 12px 14px 20px !important;
+        flex-wrap: wrap !important;
+        justify-content: space-between !important;
+        gap: 8px !important;
+    }
+    .ov-region-footer-label {
+        width: 100% !important;
+        margin-bottom: 2px !important;
+        font-size: 11px !important;
+    }
+    .ov-region-footer-btn {
+        flex: 1 !important;
+        justify-content: center !important;
+        min-width: 0 !important;
+    }
+}
+
+.ov-stat-card {
+    background: #fff;
+    border-radius: 14px;
+    padding: 18px 20px 28px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
+    border: 1px solid rgba(0,0,0,0.045);
+    position: relative;
+    overflow: hidden;
+    transition: transform .18s, box-shadow .18s, outline .15s;
+}
+.ov-stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.10);
+}
+@media (max-width: 560px) {
+    .ov-stat-card {
+        padding: 14px 14px 22px;
+        gap: 12px;
+        border-radius: 12px;
+    }
+    .ov-stat-value { font-size: 24px !important; }
+    .ov-stat-icon { width: 38px !important; height: 38px !important; border-radius: 10px !important; }
+}
+.ov-stat-accent {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    border-radius: 14px 14px 0 0;
+    /* gradient glow from solid color — will be overridden by inline style background */
+    filter: brightness(1.05);
+}
+.ov-stat-body { flex: 1; min-width: 0; }
+.ov-stat-label {
+    font-size: 10.5px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: .7px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    white-space: nowrap;
+}
+.ov-stat-value {
+    font-size: 30px;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 4px;
+    letter-spacing: -.5px;
+}
+.ov-stat-sub {
+    font-size: 11px;
+    color: #b0bec5;
+    white-space: nowrap;
+}
+.ov-stat-icon {
+    width: 46px; height: 46px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+}
+
+/* ── Map card ───────────────── */
+.ov-map-card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 18px 20px 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
+    border: 1px solid rgba(0,0,0,0.045);
+}
+@media (max-width: 768px) {
+    .ov-map-card { padding: 14px 12px 14px; border-radius: 12px; }
+}
+.ov-map-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+    row-gap: 8px;
+}
+@media (max-width: 768px) {
+    .ov-map-card-header { margin-bottom: 10px; }
+    .ov-map-hint { display: none; }
+    .ov-toggle-label { display: none; }
+}
+.ov-map-search-wrap {
+    flex: 1;
+    min-width: 0;
+    max-width: 260px;
+}
+.ov-map-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #0f172a;
+    white-space: nowrap;
+}
+.ov-map-hint {
+    margin-left: auto;
+    font-size: 11px;
+    color: #94a3b8;
+    font-weight: 400;
+    background: #f1f5f9;
+    padding: 3px 11px;
+    border-radius: 20px;
+    border: 1px solid #e2e8f0;
+}
+.ov-map-icon-wrap {
+    width: 28px; height: 28px;
+    border-radius: 8px;
+    background: linear-gradient(135deg,#0f766e,#14b8a6);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(20,184,166,0.3);
+    flex-shrink: 0;
+}
+
+/* ── Device Table ───────────── */
+.ov-table-cell {
+    padding: 8px 12px;
+    border-bottom: 1px solid #f1f5f9;
+}
+.ov-table-row:hover {
+    background: #f0f9ff !important;
+}
+.ov-table-row--even {
+    background: #fff;
+}
+.ov-table-row--odd {
+    background: #fafafa;
+}

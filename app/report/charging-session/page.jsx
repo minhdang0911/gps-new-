@@ -421,7 +421,7 @@ const ChargingSessionReportPage = () => {
                                     pageSize: pagination.pageSize,
                                     total: pagination.total,
                                     showSizeChanger: true,
-                                    pageSizeOptions: ['10', '20', '50', '100'],
+                                    pageSizeOptions: ['20', '50', '100', '200'],
                                     showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
                                     showQuickJumper: true,
                                 }}

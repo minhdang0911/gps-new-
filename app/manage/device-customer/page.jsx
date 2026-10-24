@@ -23,6 +23,8 @@ import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
 
 import { useLocalStorageValue } from '@/app/hooks/useLocalStorageValue';
+import { useIsEn } from '@/app/hooks/useLang';
+import { MAX_DEVICE_LIMIT } from '@/app/lib/constants';
 import DeviceCustomerAddModal from './DeviceCustomerAddModal';
 import { exportCustomerDevicesExcel } from './deviceCustomer.exportExcel';
 
@@ -42,15 +44,7 @@ export default function DeviceCustomerPage() {
 
     const token = useLocalStorageValue('accessToken', '');
     const role = useLocalStorageValue('role', '');
-    const langFromStorage = useLocalStorageValue('iky_lang', 'vi');
-
-    const isEnFromPath = useMemo(() => {
-        const segments = pathname.split('/').filter(Boolean);
-        const last = segments[segments.length - 1];
-        return last === 'en';
-    }, [pathname]);
-
-    const isEn = isEnFromPath ? true : langFromStorage === 'en';
+    const isEn = useIsEn();
     const t = isEn ? locales.en.deviceCustomer : locales.vi.deviceCustomer;
 
     const isAdmin = role === 'administrator';
@@ -105,7 +99,7 @@ export default function DeviceCustomerPage() {
     } = useSWR(
         devicesKey,
         async ([, tk, customerId]) => {
-            const res = await getDeviceCustomerList(tk, customerId, { page: 1, limit: 50 });
+            const res = await getDeviceCustomerList(tk, customerId, { page: 1, limit: 200 });
             return res.devices || [];
         },
         {
@@ -130,8 +124,8 @@ export default function DeviceCustomerPage() {
         mutate: mutateAllDevices,
     } = useSWR(
         allDevicesKey,
-        async ([, tk]) => {
-            const res = await getDevices(tk, { page: 1, limit: 200 });
+        async () => {
+            const res = await getDevices({ page: 1, limit: MAX_DEVICE_LIMIT });
             return res.devices || res.items || [];
         },
         {
@@ -409,7 +403,7 @@ export default function DeviceCustomerPage() {
                         loading={loadingDevices || validatingDevices}
                         columns={columns}
                         dataSource={devices}
-                        pagination={false}
+                        pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
                         scroll={{ x: 800 }}
                     />
                 </div>

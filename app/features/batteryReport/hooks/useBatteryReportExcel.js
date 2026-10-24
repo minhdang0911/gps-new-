@@ -1,12 +1,13 @@
-import * as XLSX from 'xlsx';
 import { message } from 'antd';
 
 export function useBatteryReportExcel({ processedData, isEn, t, formatDateTime, formatStatus }) {
-    const exportExcel = () => {
+    const exportExcel = async () => {
         if (!processedData || processedData.length === 0) {
             message.warning(isEn ? 'No data to export' : 'Không có dữ liệu để xuất');
             return;
         }
+
+        const XLSX = await import('xlsx');
 
         const rows = processedData.map((item) => {
             const lastLocation =

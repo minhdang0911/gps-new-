@@ -4,7 +4,6 @@
 //    (sort theo startTime desc, slice 1000 đầu)
 
 import { message } from 'antd';
-import * as XLSX from 'xlsx';
 import { formatDateTime, formatDuration } from '../utils';
 
 export function useTripSessionExcel({ isEn, t }) {
@@ -14,11 +13,13 @@ export function useTripSessionExcel({ isEn, t }) {
      * @param {any[]}  opts.allData   - toàn bộ records đã fetch về FE
      * @param {object} opts.pagination - { current, pageSize, total }
      */
-    const exportExcel = ({ allData, pagination }) => {
+    const exportExcel = async ({ allData, pagination }) => {
         if (!allData || allData.length === 0) {
             message.warning(isEn ? 'No data to export' : 'Không có dữ liệu để xuất');
             return;
         }
+
+        const XLSX = await import('xlsx');
 
         // Lấy 1000 records gần nhất (sort theo startTime mới nhất trước)
         const EXPORT_LIMIT = 1000;

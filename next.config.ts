@@ -11,6 +11,10 @@ const nextConfig: NextConfig = {
             'lucide-react',
             'recharts',
             '@ant-design/charts',
+            '@dnd-kit/core',
+            '@dnd-kit/sortable',
+            '@dnd-kit/utilities',
+            'idb-keyval',
         ],
     },
 

@@ -26,6 +26,7 @@ import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
 
 import { useLocalStorageValue } from '../../hooks/useLocalStorageValue';
+import { useIsEn } from '../../hooks/useLang';
 import { useMadeInFromOptions } from './hooks/useMadeInFromOptions';
 import DeviceCategoryFilters from './components/DeviceCategoryFilters';
 import DeviceCategoryModal from './components/DeviceCategoryModal';
@@ -45,15 +46,7 @@ export default function DeviceCategoryPage() {
 
     const token = useLocalStorageValue('accessToken', '');
     const role = useLocalStorageValue('role', '');
-    const langFromStorage = useLocalStorageValue('iky_lang', 'vi');
-
-    const isEnFromPath = useMemo(() => {
-        const segments = pathname.split('/').filter(Boolean);
-        const last = segments[segments.length - 1];
-        return last === 'en';
-    }, [pathname]);
-
-    const isEn = isEnFromPath ? true : langFromStorage === 'en';
+    const isEn = useIsEn();
     const t = isEn ? locales.en.deviceCategory : locales.vi.deviceCategory;
 
     const isAdmin = role === 'administrator';
@@ -381,6 +374,7 @@ export default function DeviceCategoryPage() {
                             pageSize: pagination.pageSize,
                             total: apiTotal,
                             showSizeChanger: true,
+                            pageSizeOptions: ['10', '20', '50', '100', '200'],
                         }}
                         onChange={handleTableChange}
                         className="dc-table"

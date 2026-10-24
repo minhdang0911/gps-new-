@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import dayjs from 'dayjs';
 import {
     Card,
@@ -21,7 +21,8 @@ import {
 } from 'antd';
 
 import { startMaintenance, confirmMaintenance, getMaintenanceDue } from '../lib/api/maintain';
-import { getDevices } from '../lib/api/devices'; // ✅ chỉnh path cho đúng project
+import { getDevices } from '../lib/api/devices';
+import { MAX_DEVICE_LIMIT } from '../lib/constants';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -51,7 +52,7 @@ function ensureRandomStarted(devices) {
         const id = d?._id;
         if (!id) return;
         if (current[id] === undefined) {
-            current[id] = Math.random() < 0.3; // random 30%
+            current[id] = false;
             changed = true;
         }
     });
@@ -116,7 +117,7 @@ export default function MaintenanceActivatePage() {
 
             const res = await getDevices({
                 page: 1,
-                limit: 200000,
+                limit: MAX_DEVICE_LIMIT,
                 ...(license_plate ? { license_plate } : {}),
                 ...(imei ? { imei } : {}),
             });
@@ -142,7 +143,7 @@ export default function MaintenanceActivatePage() {
 
             const res = await getMaintenanceDue({
                 page: 1,
-                limit: 200000,
+                limit: MAX_DEVICE_LIMIT,
                 ...(license_plate ? { license_plate } : {}),
                 ...(imei ? { imei } : {}),
             });
@@ -267,29 +268,32 @@ export default function MaintenanceActivatePage() {
         }
     };
 
-    const doSearch = async () => {
+    const doSearch = useCallback(async () => {
         const license_plate = searchPlate.trim();
         const imei = searchImei.trim();
 
-        // Table search theo Due
-        await loadTableDevices({ license_plate, imei });
-
-        // Select search theo Devices (có thể bạn muốn luôn sync theo search)
-        await loadSelectDevices({ license_plate, imei });
+        // ✅ Fetch song song — giảm ~50% thời gian chờ
+        await Promise.all([
+            loadTableDevices({ license_plate, imei }),
+            loadSelectDevices({ license_plate, imei }),
+        ]);
 
         setSelectedDeviceId('');
-    };
+    }, [searchPlate, searchImei]);
 
-    const doReload = async () => {
+    const doReload = useCallback(async () => {
         const license_plate = searchPlate.trim();
         const imei = searchImei.trim();
 
-        await loadTableDevices({ license_plate, imei });
-        await loadSelectDevices({ license_plate, imei });
-    };
+        await Promise.all([
+            loadTableDevices({ license_plate, imei }),
+            loadSelectDevices({ license_plate, imei }),
+        ]);
+    }, [searchPlate, searchImei]);
 
     // ✅ Table columns (giữ nguyên)
-    const columns = [
+    // ✅ Memoize columns — tránh re-create mỗi render
+    const columns = useMemo(() => [
         {
             title: 'Tên thiết bị',
             key: 'deviceName',
@@ -325,7 +329,7 @@ export default function MaintenanceActivatePage() {
                 </Button>
             ),
         },
-    ];
+    ], []);
 
     const loadingAny = loadingTable || loadingSelect;
 

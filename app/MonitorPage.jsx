@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react';
 import './MonitorPage.css';
 import dynamic from 'next/dynamic';
 
@@ -9,6 +9,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getDevices, getDeviceInfo } from './lib/api/devices';
 import { getBatteryStatusByImei } from './lib/api/batteryStatus';
 import { getLastCruise } from './lib/api/cruise';
+import { MAX_DEVICE_LIMIT } from './lib/constants';
+import { useIsEn } from './hooks/useLang';
 
 import markerIconStop from './assets/marker-red.webp';
 import markerRun from './assets/marker-run.webp';
@@ -88,6 +90,13 @@ const saveSocCache = (socMap) => {
     } catch {}
 };
 
+// ✅ driver name helper (lấy từ API field `driver`)
+const getDriverName = (d) => {
+    const raw = d?.driver;
+    const s = typeof raw === 'string' ? raw.trim() : '';
+    return s || '';
+};
+
 /** =========================
  *  Battery UI
  *  ========================= */
@@ -97,7 +106,7 @@ const clampSoc = (soc) => {
     return Math.max(0, Math.min(100, Math.round(n)));
 };
 
-const BatteryBadge = ({ soc, showText = true, title, compact = true }) => {
+const BatteryBadge = React.memo(({ soc, showText = true, title, compact = true }) => {
     const s = clampSoc(soc);
     const level = s == null ? 'na' : s < 20 ? 'low' : s < 40 ? 'mid' : 'ok';
 
@@ -109,7 +118,91 @@ const BatteryBadge = ({ soc, showText = true, title, compact = true }) => {
             {showText && <span className={`iky-battery__text ${level}`}>{s == null ? '--' : `${s}%`}</span>}
         </div>
     );
-};
+});
+BatteryBadge.displayName = 'BatteryBadge';
+
+/** =========================
+ *  ✅ DeviceListItem (React.memo để tránh re-render cả danh sách khi telemetry/map cập nhật)
+ *  ========================= */
+const DeviceListItem = React.memo(({ d, idx, isActive, socForItem, isEn, unknownPlateText, phoneLabel, onSelectDevice }) => {
+    const driverName = getDriverName(d);
+    const NA_TEXT = isEn ? 'N/A' : 'Chưa rõ';
+
+    return (
+        <div
+            className={'iky-monitor__device-item' + (isActive ? ' iky-monitor__device-item--active' : '')}
+            onClick={() => onSelectDevice(d)}
+        >
+            <div className="iky-monitor__device-row">
+                <span className="iky-monitor__stt-badge">{idx + 1}</span>
+
+                <div className="iky-monitor__device-main">
+                    <div className="iky-monitor__plate-row">
+                        <div
+                            className="plate"
+                            title={isEn ? 'Click to copy plate' : 'Click để copy biển số'}
+                            style={{ cursor: 'pointer' }}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                const txt = d.license_plate || '';
+                                if (!txt) return;
+                                navigator.clipboard.writeText(txt).then(() => {
+                                    message.success({ content: isEn ? `Copied: ${txt}` : `Đã copy: ${txt}`, duration: 1.5 });
+                                }).catch(() => {
+                                    message.error(isEn ? 'Copy failed' : 'Copy thất bại');
+                                });
+                            }}
+                        >
+                            {d.license_plate || unknownPlateText}
+                        </div>
+
+                        <BatteryBadge
+                            soc={socForItem}
+                            showText
+                            compact
+                            title={
+                                socForItem == null
+                                    ? isEn
+                                        ? 'No battery data yet'
+                                        : 'Chưa có dữ liệu pin'
+                                    : isEn
+                                      ? `Battery: ${socForItem}%`
+                                      : `Pin: ${socForItem}%`
+                            }
+                        />
+                    </div>
+
+                    <div className="iky-monitor__meta" style={{ marginTop: 2 }}>
+                        <span
+                            className="imei"
+                            title={isEn ? 'Click to copy IMEI' : 'Click để copy IMEI'}
+                            style={{ cursor: 'pointer' }}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(d.imei || '').then(() => {
+                                    message.success({ content: isEn ? `Copied IMEI: ${d.imei}` : `Đã copy IMEI: ${d.imei}`, duration: 1.5 });
+                                }).catch(() => {
+                                    message.error(isEn ? 'Copy failed' : 'Copy thất bại');
+                                });
+                            }}
+                        >IMEI: {d.imei}</span>
+                        <span className="dot">•</span>
+                        <span className="phone">
+                            {phoneLabel}{' '}
+                            {d.phone_number || 'Chưa gán'}
+                        </span>
+                        <span className="dot">•</span>
+                        <span className="driver">
+                            {isEn ? 'Driver' : 'Lái xe'}:{' '}
+                            {driverName || NA_TEXT}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+});
+DeviceListItem.displayName = 'DeviceListItem';
 
 const MonitorPage = () => {
     const router = useRouter();
@@ -123,7 +216,7 @@ const MonitorPage = () => {
     }, []);
 
     // ----- LANG -----
-    const [isEn, setIsEn] = useState(false);
+    const isEn = useIsEn();
     const [deprecatedAddress, setDeprecatedAddress] = useState('');
     const [role, setRole] = useState('');
 
@@ -167,36 +260,11 @@ const MonitorPage = () => {
         return lastCruise?.onl ?? lastCruise?.ste ?? lastCruise?.state ?? lastCruise?.sta;
     };
 
-    // ✅ driver name helper (lấy từ API field `driver`)
-    const getDriverName = (d) => {
-        const raw = d?.driver;
-        const s = typeof raw === 'string' ? raw.trim() : '';
-        return s || '';
-    };
-
     useEffect(() => {
         if (typeof window === 'undefined') return;
         const r = localStorage.getItem('role') || '';
         setRole(r);
     }, []);
-
-    const isEnFromPath = useMemo(() => {
-        const segments = pathname.split('/').filter(Boolean);
-        const last = segments[segments.length - 1];
-        return last === 'en';
-    }, [pathname]);
-
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-
-        if (isEnFromPath) {
-            setIsEn(true);
-            localStorage.setItem('iky_lang', 'en');
-        } else {
-            const saved = localStorage.getItem('iky_lang');
-            setIsEn(saved === 'en');
-        }
-    }, [isEnFromPath]);
 
     const t = isEn ? locales.en.monitor : locales.vi.monitor;
     const NA_TEXT = isEn ? 'N/A' : 'Chưa rõ';
@@ -214,8 +282,13 @@ const MonitorPage = () => {
     const [historyMessageType, setHistoryMessageType] = useState('');
 
     const [searchText, setSearchText] = useState('');
+    const deferredSearchText = useDeferredValue(searchText);
     const [statusFilter, setStatusFilter] = useState('all');
     const [selectedDevice, setSelectedDevice] = useState(null);
+    const selectedDeviceRef = useRef(selectedDevice);
+    useEffect(() => {
+        selectedDeviceRef.current = selectedDevice;
+    }, [selectedDevice]);
 
     // giữ state như cũ để UI không phải rewrite sâu
     const [batteryStatus, setBatteryStatus] = useState(null);
@@ -266,7 +339,7 @@ const MonitorPage = () => {
     const lastCruiseInFlightRef = useRef(false);
     const lastCruiseCallAtRef = useRef(0);
     const LAST_CRUISE_DEBOUNCE_MS = 800;
-    const LAST_CRUISE_MIN_INTERVAL_MS = 15_000;
+    const LAST_CRUISE_MIN_INTERVAL_MS = 10_000;
 
     useEffect(() => {
         const loadLeaflet = async () => {
@@ -279,7 +352,51 @@ const MonitorPage = () => {
 
     const mapRef = useRef(null);
     const markerRef = useRef(null);
-    const [markerScreenPos, setMarkerScreenPos] = useState(null);
+    const popupWrapperRef = useRef(null);
+
+    // ✅ Cập nhật vị trí popup trực tiếp vào DOM style, không gọi setState để tránh re-render toàn bộ MonitorPage khi kéo map (60 FPS)
+    const updatePopupPosition = useCallback((immediate = false) => {
+        if (!markerRef.current || !mapRef.current) return;
+        const doUpdate = () => {
+            const map = mapRef.current;
+            const marker = markerRef.current;
+            const popup = popupWrapperRef.current;
+
+            if (popup && marker && map && map._loaded && !map._removed && map._mapPane) {
+                try {
+                    const latlng = marker.getLatLng();
+                    if (!latlng || latlng.lat == null || latlng.lng == null) return;
+                    const point = map.latLngToContainerPoint(latlng);
+                    if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) {
+                        popup.style.left = `${point.x}px`;
+                        popup.style.top = `${point.y}px`;
+                    }
+                } catch {
+                    // Tránh lỗi _leaflet_pos khi Leaflet mapPane đang render
+                }
+            }
+        };
+
+        if (immediate) {
+            if (popupRafRef.current) cancelAnimationFrame(popupRafRef.current);
+            popupRafRef.current = null;
+            doUpdate();
+            return;
+        }
+
+        if (popupRafRef.current) cancelAnimationFrame(popupRafRef.current);
+        popupRafRef.current = requestAnimationFrame(() => {
+            doUpdate();
+            popupRafRef.current = null;
+        });
+    }, []);
+
+    // Cập nhật vị trí popup ngay khi popup bật lên
+    useEffect(() => {
+        if (showPopup) {
+            updatePopupPosition(true);
+        }
+    }, [showPopup, updatePopupPosition]);
 
     // giữ makeIcon + state mobile + asset hiện tại để resize / update icon
     const makeIconRef = useRef(null);
@@ -362,26 +479,20 @@ const MonitorPage = () => {
         const marker = LMap.marker([lat, lng], { icon: makeIcon(markerIconStop, isMobileNow()) }).addTo(map);
         markerRef.current = marker;
 
-        const updatePopupPosition = () => {
-            // ✅ RAF throttle: tối đa 1 setState/frame thay vì hàng chục lần/frame khi kéo map
-            if (popupRafRef.current) cancelAnimationFrame(popupRafRef.current);
-            popupRafRef.current = requestAnimationFrame(() => {
-                const point = map.latLngToContainerPoint(marker.getLatLng());
-                setMarkerScreenPos(point);
-                popupRafRef.current = null;
-            });
-        };
+        updatePopupPosition(true);
 
-        updatePopupPosition();
-
-        marker.on('click', () => setShowPopup(true));
+        marker.on('click', () => {
+            setShowPopup(true);
+            updatePopupPosition(true);
+        });
         map.on('click', () => setShowPopup(false));
-        map.on('move zoom', updatePopupPosition);
+        map.on('move zoom', () => updatePopupPosition(false));
 
         map.on('zoomend', () => {
             if (markerRef.current) {
                 const pos = markerRef.current.getLatLng();
                 map.setView(pos, map.getZoom(), { animate: false });
+                updatePopupPosition(true);
             }
         });
 
@@ -389,7 +500,7 @@ const MonitorPage = () => {
 
         const handleResize = () => {
             map.invalidateSize();
-            updatePopupPosition();
+            updatePopupPosition(true);
 
             const nowIsMobile = isMobileNow();
             if (nowIsMobile !== lastIsMobile) {
@@ -409,12 +520,11 @@ const MonitorPage = () => {
                 popupRafRef.current = null;
             }
             window.removeEventListener('resize', handleResize);
-            map.off('move', updatePopupPosition);
-            map.off('zoom', updatePopupPosition);
+            map.off('move zoom');
             map.off('zoomend');
             map.remove();
         };
-    }, [LMap, lat, lng]);
+    }, [LMap, lat, lng, updatePopupPosition]);
 
     // tự update icon theo trạng thái (stop/run/50/80)
     useEffect(() => {
@@ -448,7 +558,7 @@ const MonitorPage = () => {
     const devicesQuery = useQuery({
         queryKey: ['monitor', 'devices', token],
         enabled: !!token,
-        queryFn: () => getDevices(token),
+        queryFn: () => getDevices({ page: 1, limit: MAX_DEVICE_LIMIT }),
 
         // ✅ Cache 1 phút — tránh refetch liên tục gây flash UI
         staleTime: 60_000,
@@ -518,12 +628,20 @@ const MonitorPage = () => {
         setCruiseError(null);
 
         if (mapRef.current && markerRef.current && cruise.lat && cruise.lon && LMap) {
-            const newLatLng = LMap.latLng(cruise.lat, cruise.lon);
-            markerRef.current.setLatLng(newLatLng);
-            mapRef.current.setView(newLatLng, 16);
+            try {
+                const map = mapRef.current;
+                if (map && map._loaded && !map._removed && map._mapPane) {
+                    const newLatLng = LMap.latLng(cruise.lat, cruise.lon);
+                    markerRef.current.setLatLng(newLatLng);
+                    map.setView(newLatLng, 16);
+                    updatePopupPosition(true);
 
-            lastCoordsRef.current = { lat: cruise.lat, lon: cruise.lon };
-            fetchAddress(cruise.lat, cruise.lon);
+                    lastCoordsRef.current = { lat: cruise.lat, lon: cruise.lon };
+                    fetchAddress(cruise.lat, cruise.lon);
+                }
+            } catch (err) {
+                console.warn('Cruise map view error:', err);
+            }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [lastCruiseQuery.data, selectedDevice?.imei, LMap, isEn]);
@@ -617,7 +735,7 @@ const MonitorPage = () => {
                 const cruise = await queryClient.fetchQuery({
                     queryKey: ['monitor', 'lastCruise', token, imei],
                     queryFn: () => getLastCruise(imei),
-                    staleTime: 60_000,
+                    staleTime: 10_000,
                 });
 
                 if (!cruise || cruise.error) return;
@@ -626,12 +744,20 @@ const MonitorPage = () => {
                 setCruiseError(null);
 
                 if (mapRef.current && markerRef.current && cruise.lat && cruise.lon && LMap) {
-                    const newLatLng = LMap.latLng(cruise.lat, cruise.lon);
-                    markerRef.current.setLatLng(newLatLng);
-                    mapRef.current.setView(newLatLng, 16);
+                    try {
+                        const map = mapRef.current;
+                        if (map && map._loaded && !map._removed && map._mapPane) {
+                            const newLatLng = LMap.latLng(cruise.lat, cruise.lon);
+                            markerRef.current.setLatLng(newLatLng);
+                            map.setView(newLatLng, 16);
+                            updatePopupPosition(true);
 
-                    lastCoordsRef.current = { lat: cruise.lat, lon: cruise.lon };
-                    fetchAddress(cruise.lat, cruise.lon);
+                            lastCoordsRef.current = { lat: cruise.lat, lon: cruise.lon };
+                            fetchAddress(cruise.lat, cruise.lon);
+                        }
+                    } catch (err) {
+                        console.warn('scheduleRefreshLastCruise map view error:', err);
+                    }
                 }
             } catch (e) {
                 console.error('Refresh lastCruise error:', e);
@@ -678,9 +804,9 @@ const MonitorPage = () => {
         }
     };
 
-    // ✅ SEARCH: thêm driver vào điều kiện search
+    // ✅ SEARCH: dùng deferredSearchText để gõ chữ siêu mượt, không giật lag CPU
     const filteredDevices = useMemo(() => {
-        const keyword = searchText.trim().toLowerCase();
+        const keyword = deferredSearchText.trim().toLowerCase();
 
         return deviceList.filter((d) => {
             const plate = (d.license_plate || '').toLowerCase();
@@ -702,12 +828,14 @@ const MonitorPage = () => {
 
             return matchSearch && matchStatus;
         });
-    }, [deviceList, searchText, statusFilter]);
+    }, [deviceList, deferredSearchText, statusFilter]);
 
-    const handleSelectDevice = async (device) => {
+    // ✅ Callback cố định: Sử dụng selectedDeviceRef để tránh re-render toàn bộ danh sách khi chuyển xe
+    const handleSelectDevice = useCallback(async (device) => {
         if (!device) return;
 
-        const sameDevice = selectedDevice?._id === device._id && selectedDevice?.imei === device.imei;
+        const currentSel = selectedDeviceRef.current;
+        const sameDevice = currentSel?._id === device._id && currentSel?.imei === device.imei;
 
         // ✅ Click lại đúng device đang active
         if (sameDevice) {
@@ -717,7 +845,7 @@ const MonitorPage = () => {
 
             // === Check stale theo dataUpdatedAt ===
             const now = Date.now();
-            const STALE_MS = 60_000;
+            const STALE_MS = 10_000; // 10s cache
 
             const keyBattery = ['monitor', 'batteryStatus', token, device.imei];
             const keyInfo = ['monitor', 'deviceInfo', token, device._id];
@@ -731,10 +859,8 @@ const MonitorPage = () => {
 
             const shouldRefetch = isStaleKey(keyBattery) || isStaleKey(keyInfo) || isStaleKey(keyCruise);
 
-            // ✅ Đủ 1 phút => refetch ngay (khỏi cần qua device khác)
+            // ✅ Đủ 10s => refetch ngay (khỏi cần qua device khác)
             if (shouldRefetch) {
-                // Nếu muốn hiện thanh loading "refreshing"
-                // (isFetching của query sẽ bật lên tự nhiên)
                 await Promise.all([
                     queryClient.refetchQueries({ queryKey: keyBattery, exact: true }),
                     queryClient.refetchQueries({ queryKey: keyInfo, exact: true }),
@@ -771,7 +897,7 @@ const MonitorPage = () => {
         setAddress('');
         setAddressError(null);
         lastCoordsRef.current = { lat: null, lon: null };
-    };
+    }, [token, queryClient]);
 
     const handleLockDevice = () => {
         publishControlCommand({ sos: 1 });
@@ -899,23 +1025,45 @@ const MonitorPage = () => {
             const lonNum = Number(data.lon);
 
             if (!Number.isNaN(latNum) && !Number.isNaN(lonNum)) {
-                const pos = LMap.latLng(latNum, lonNum);
-                markerRef.current.setLatLng(pos);
-                mapRef.current.setView(pos, 16);
+                try {
+                    const map = mapRef.current;
+                    const marker = markerRef.current;
+                    if (!map || !map._loaded || map._removed || !map._mapPane) return;
 
-                const prev = lastCoordsRef.current;
-                const MIN_MOVE_METERS = 15;
+                    const currentPos = marker.getLatLng();
+                    const hasMoved =
+                        !currentPos ||
+                        Math.abs(currentPos.lat - latNum) > 0.00002 ||
+                        Math.abs(currentPos.lng - lonNum) > 0.00002;
 
-                let tooClose = false;
+                    if (hasMoved) {
+                        const pos = LMap.latLng(latNum, lonNum);
+                        marker.setLatLng(pos);
+                        updatePopupPosition(true);
 
-                if (prev.lat != null && prev.lon != null) {
-                    const dist = getDistanceMeters(prev.lat, prev.lon, latNum, lonNum);
-                    if (dist != null && dist < MIN_MOVE_METERS) tooClose = true;
-                }
+                        // Chỉ pan mượt mà nếu xe chạy ra khỏi tầm nhìn (tránh giật map và giật popup mỗi giây)
+                        const bounds = map.getBounds();
+                        if (bounds && !bounds.contains(pos)) {
+                            map.panTo(pos, { animate: true, duration: 0.5 });
+                        }
 
-                if (!tooClose) {
-                    lastCoordsRef.current = { lat: latNum, lon: lonNum };
-                    fetchAddress(latNum, lonNum);
+                        const prev = lastCoordsRef.current;
+                        const MIN_MOVE_METERS = 15;
+
+                        let tooClose = false;
+
+                        if (prev.lat != null && prev.lon != null) {
+                            const dist = getDistanceMeters(prev.lat, prev.lon, latNum, lonNum);
+                            if (dist != null && dist < MIN_MOVE_METERS) tooClose = true;
+                        }
+
+                        if (!tooClose) {
+                            lastCoordsRef.current = { lat: latNum, lon: lonNum };
+                            fetchAddress(latNum, lonNum);
+                        }
+                    }
+                } catch (err) {
+                    console.warn('Map update error suppressed:', err);
                 }
             }
         }
@@ -1103,13 +1251,15 @@ const MonitorPage = () => {
                 <div className="iky-monitor__location-row">
                     <span className="iky-monitor__location-label">{t.statusInfo.location}</span>
                     <span className="iky-monitor__location-text">
-                        {loadingAddress
-                            ? isEn
-                                ? 'Resolving address...'
-                                : 'Đang xác định vị trí...'
-                            : addressError
-                              ? addressError
-                              : address || (isEn ? 'No location data' : 'Chưa có dữ liệu vị trí')}
+                        {address
+                            ? address
+                            : loadingAddress
+                              ? isEn
+                                  ? 'Resolving address...'
+                                  : 'Đang xác định vị trí...'
+                              : addressError
+                                ? addressError
+                                : (isEn ? 'No location data' : 'Chưa có dữ liệu vị trí')}
                     </span>
                 </div>
 
@@ -1279,92 +1429,19 @@ const MonitorPage = () => {
                                         )}
 
                                         {!loadingDevices &&
-                                            filteredDevices.map((d, idx) => {
-                                                const isActive = selectedDevice?._id === d._id;
-                                                const socForItem = socByImei[d.imei];
-                                                const driverName = getDriverName(d);
-
-                                                return (
-                                                    <div
-                                                        key={d._id}
-                                                        className={
-                                                            'iky-monitor__device-item' +
-                                                            (isActive ? ' iky-monitor__device-item--active' : '')
-                                                        }
-                                                        onClick={() => handleSelectDevice(d)}
-                                                    >
-                                                        <div className="iky-monitor__device-row">
-                                                            <span className="iky-monitor__stt-badge">{idx + 1}</span>
-
-                                                            <div className="iky-monitor__device-main">
-                                                                <div className="iky-monitor__plate-row">
-                                                                    <div
-                                                                        className="plate"
-                                                                        title={isEn ? 'Click to copy plate' : 'Click để copy biển số'}
-                                                                        style={{ cursor: 'pointer' }}
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            const txt = d.license_plate || '';
-                                                                            if (!txt) return;
-                                                                            navigator.clipboard.writeText(txt).then(() => {
-                                                                                message.success({ content: isEn ? `Copied: ${txt}` : `Đã copy: ${txt}`, duration: 1.5 });
-                                                                            }).catch(() => {
-                                                                                message.error(isEn ? 'Copy failed' : 'Copy thất bại');
-                                                                            });
-                                                                        }}
-                                                                    >
-                                                                        {d.license_plate || t.list.unknownPlate}
-                                                                    </div>
-
-                                                                    <BatteryBadge
-                                                                        soc={socForItem}
-                                                                        showText
-                                                                        compact
-                                                                        title={
-                                                                            socForItem == null
-                                                                                ? isEn
-                                                                                    ? 'No battery data yet'
-                                                                                    : 'Chưa có dữ liệu pin'
-                                                                                : isEn
-                                                                                  ? `Battery: ${socForItem}%`
-                                                                                  : `Pin: ${socForItem}%`
-                                                                        }
-                                                                    />
-                                                                </div>
-
-                                                                <div
-                                                                    className="iky-monitor__meta"
-                                                                    style={{ marginTop: 2 }}
-                                                                >
-                                                                    <span
-                                                                        className="imei"
-                                                                        title={isEn ? 'Click to copy IMEI' : 'Click để copy IMEI'}
-                                                                        style={{ cursor: 'pointer' }}
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            navigator.clipboard.writeText(d.imei || '').then(() => {
-                                                                                message.success({ content: isEn ? `Copied IMEI: ${d.imei}` : `Đã copy IMEI: ${d.imei}`, duration: 1.5 });
-                                                                            }).catch(() => {
-                                                                                message.error(isEn ? 'Copy failed' : 'Copy thất bại');
-                                                                            });
-                                                                        }}
-                                                                    >IMEI: {d.imei}</span>
-                                                                    <span className="dot">•</span>
-                                                                    <span className="phone">
-                                                                        {t.list.phoneLabel}{' '}
-                                                                        {d.phone_number || 'Chưa gán'}
-                                                                    </span>
-                                                                    <span className="dot">•</span>
-                                                                    <span className="driver">
-                                                                        {isEn ? 'Driver' : 'Lái xe'}:{' '}
-                                                                        {driverName || NA_TEXT}
-                                                                    </span>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
+                                            filteredDevices.map((d, idx) => (
+                                                <DeviceListItem
+                                                    key={d._id}
+                                                    d={d}
+                                                    idx={idx}
+                                                    isActive={selectedDevice?._id === d._id}
+                                                    socForItem={socByImei[d.imei]}
+                                                    isEn={isEn}
+                                                    unknownPlateText={t.list.unknownPlate}
+                                                    phoneLabel={t.list.phoneLabel}
+                                                    onSelectDevice={handleSelectDevice}
+                                                />
+                                            ))}
                                     </div>
                                 </div>
                             </div>
@@ -1437,10 +1514,10 @@ const MonitorPage = () => {
                     <div className="iky-monitor__map">
                         <div id="iky-map" className="iky-monitor__map-inner" />
 
-                        {markerScreenPos && showPopup && (
+                        {showPopup && (
                             <div
+                                ref={popupWrapperRef}
                                 className="iky-monitor__popup-wrapper"
-                                style={{ left: markerScreenPos.x, top: markerScreenPos.y }}
                             >
                                 <div className="iky-monitor__popup">
                                     <div className="iky-monitor__popup-tabs">

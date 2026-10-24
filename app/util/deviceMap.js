@@ -1,13 +1,14 @@
 // util/deviceMap.js
 import { getDevices } from '../lib/api/devices';
+import { MAX_DEVICE_LIMIT } from '../lib/constants';
 
 /**
  * Build 2 maps:
  * - imeiToPlate: imei -> license_plate
  * - plateToImeis: license_plate(lowercase) -> [imei, imei, ...]
  */
-export const buildImeiToLicensePlateMap = async (token) => {
-    const res = await getDevices(token, { page: 1, limit: 200000 });
+export const buildImeiToLicensePlateMap = async () => {
+    const res = await getDevices({ page: 1, limit: MAX_DEVICE_LIMIT });
     const devices = res?.devices || [];
 
     const imeiToPlate = new Map();

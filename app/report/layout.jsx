@@ -34,6 +34,38 @@ const locales = { vi, en };
 
 const LS_KEY = 'iky_report_sider_collapsed_v1';
 
+// ✅ Extracted outside ReportLayout — tránh re-create component mỗi render
+const HelpIcon = React.memo(({ text, isMobile: isMobileLocal }) => {
+    if (!text) return null;
+
+    return (
+        <Tooltip
+            title={text}
+            placement="right"
+            trigger={isMobileLocal ? ['click'] : ['hover']}
+            mouseEnterDelay={0.1}
+            mouseLeaveDelay={0.1}
+            classNames={{ root: 'report-help-tooltip' }}
+            styles={{
+                root: { maxWidth: 320 },
+                container: { maxWidth: 320 },
+            }}
+        >
+            <span
+                className="help-icon-wrapper"
+                onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }}
+                style={{ pointerEvents: 'auto' }}
+            >
+                <QuestionCircleOutlined className="help-icon" />
+            </span>
+        </Tooltip>
+    );
+});
+HelpIcon.displayName = 'HelpIcon';
+
 const ReportLayout = ({ children }) => {
     const pathname = usePathname();
     const screens = useBreakpoint();
@@ -180,35 +212,6 @@ const ReportLayout = ({ children }) => {
         });
     }, []);
 
-    const HelpIcon = ({ text, isMobile: isMobileLocal }) => {
-        if (!text) return null;
-
-        return (
-            <Tooltip
-                title={text}
-                placement="right"
-                trigger={isMobileLocal ? ['click'] : ['hover']}
-                mouseEnterDelay={0.1}
-                mouseLeaveDelay={0.1}
-                classNames={{ root: 'report-help-tooltip' }}
-                styles={{
-                    root: { maxWidth: 320 },
-                    container: { maxWidth: 320 },
-                }}
-            >
-                <span
-                    className="help-icon-wrapper"
-                    onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                    }}
-                    style={{ pointerEvents: 'auto' }}
-                >
-                    <QuestionCircleOutlined className="help-icon" />
-                </span>
-            </Tooltip>
-        );
-    };
 
     // =========================
     // MOBILE LAYOUT

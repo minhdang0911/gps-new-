@@ -264,17 +264,17 @@ const TripSessionReportPage = () => {
         });
     }, [processedData, isEn, t]);
 
-    // ✅ totalKm: cộng từ TẤT CẢ records đã fetch (allData)
+    // ✅ totalKm: tính từ các bản ghi đang xem
     const totalKm = useMemo(() => {
-        return (allData || []).reduce((sum, r) => {
+        return (serverData || []).reduce((sum, r) => {
             const km = r?.distanceKm;
             if (typeof km !== 'number' || !Number.isFinite(km) || km < 0 || km > 100_000) return sum;
             return sum + km;
         }, 0);
-    }, [allData]);
+    }, [serverData]);
 
-    // ✅ totalTrips: = allData.length (FE, chính xác sau khi fetch xong)
-    const totalTrips = allData.length;
+    // ✅ totalTrips: lấy từ BE total (chính xác 95.744 bản ghi, không cần fetch vét cả 51 trang)
+    const totalTrips = pagination.total || serverData.length;
 
     return (
         <div className="usage-report-page">
@@ -388,28 +388,11 @@ const TripSessionReportPage = () => {
                     >
                         {viewMode === 'table' ? (
                             <>
-                                {/* Progress bar — hiển thị khi đang fetch */}
-                                {loading && (
-                                    <div style={{ marginBottom: 8 }}>
-                                        <Progress
-                                            percent={progress.total > 0 ? progress.percent : undefined}
-                                            status="active"
-                                            size="small"
-                                            strokeColor={{ from: '#108ee9', to: '#87d068' }}
-                                            format={() =>
-                                                progress.loaded > 0
-                                                    ? `${isEn ? 'Loading' : 'Đang tải'} ${progress.loaded.toLocaleString()} records...`
-                                                    : (isEn ? 'Connecting...' : 'Đang kết nối...')
-                                            }
-                                        />
-                                    </div>
-                                )}
-
                                 {/* Summary row */}
                                 <Row gutter={[12, 12]} style={{ marginBottom: 8 }}>
                                     <Col xs={12} sm="auto">
                                         <Statistic
-                                            title={isEn ? 'Total distance' : 'Tổng quãng đường'}
+                                            title={isEn ? 'Total distance (page)' : 'Quãng đường (trang này)'}
                                             value={totalKm}
                                             formatter={(v) => formatDistance(Number(v), isEn ? 'en' : 'vi')}
                                         />
@@ -442,7 +425,7 @@ const TripSessionReportPage = () => {
                                         pageSize: pagination.pageSize,
                                         total: pagination.total,
                                         showSizeChanger: true,
-                                        pageSizeOptions: ['10', '20', '50', '100'],
+                                        pageSizeOptions: ['50', '100', '200', '500'],
                                         showQuickJumper: true,
                                         showTotal: (total) => t.table.showTotal.replace('{total}', String(total)),
                                     }}
