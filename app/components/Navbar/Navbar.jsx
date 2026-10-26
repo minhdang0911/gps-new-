@@ -15,7 +15,7 @@ import hanhtrinh from '../../assets/hanhtrinh.webp';
 import baocao from '../../assets/baocao.webp';
 import quanly from '../../assets/quanly.webp';
 import hotro from '../../assets/hotro.png';
-import tongquan from '../../assets/tongquan_scooter.png'; // scooter icon mới
+import tongquan from '../../assets/tongquan_scooter.png'; 
 import logo from '../../assets/logo-iky.webp';
 
 import flagVi from '../../assets/flag-vi.webp';

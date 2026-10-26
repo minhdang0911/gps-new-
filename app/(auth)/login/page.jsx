@@ -1,15 +1,15 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Form, Input, Button, Typography, message } from 'antd';
-import { UserOutlined, LockOutlined } from '@ant-design/icons';
+import { Form, Typography, message } from 'antd';
 import { useRouter, usePathname } from 'next/navigation';
 import Image from 'next/image';
-import { login } from '../../lib/api/auth';
 import './Login.css';
 import { useAuthStore } from '../../stores/authStore';
-
+import { login } from '../../lib/api/auth';
 import logo from '../../assets/ChatGPT Image 14_36_56 5 thg 12, 2025.png';
+import LanguageDropdown from './components/LanguageDropdown';
+import LoginForm from './components/LoginForm';
 
 const { Title, Text } = Typography;
 
@@ -48,7 +48,6 @@ const LoginPage = () => {
         }
     }, [isEnFromPath]);
 
-    // Close language dropdown when clicking outside
     useEffect(() => {
         const onMouseDown = (e) => {
             if (!dropdownRef.current) return;
@@ -74,13 +73,13 @@ const LoginPage = () => {
         setIsEn(true);
 
         const newPath = normalizedPath === '/login' ? '/login/en' : `${normalizedPath}/en`;
-
         router.push(newPath);
     };
 
     const getRandomDeviceId = () => 'dev_' + Math.random().toString(36).substring(2, 12);
 
     const setUser = useAuthStore((state) => state.setUser);
+    const [form] = Form.useForm();
 
     const onFinish = async (values) => {
         try {
@@ -119,31 +118,19 @@ const LoginPage = () => {
 
     return (
         <div className="iky-login">
-            {/* Top Bar Language Selector */}
-            <div className="iky-login__top-bar">
-                <div className="iky-login__lang-dropdown" ref={dropdownRef}>
-                    <button type="button" className="iky-login__lang-trigger" onClick={() => setLangOpen((p) => !p)}>
-                        <span className="iky-login__lang-badge">{isEn ? 'EN' : 'VI'}</span>
-                        <span className="iky-login__lang-name">{isEn ? 'English' : 'Tiếng Việt'}</span>
-                        <span className="iky-login__caret">▾</span>
-                    </button>
-
-                    {langOpen && (
-                        <div className="iky-login__lang-menu">
-                            <button onClick={() => handleSwitchLang('vi')}>VI - Tiếng Việt</button>
-                            <button onClick={() => handleSwitchLang('en')}>EN - English</button>
-                        </div>
-                    )}
-                </div>
-            </div>
-
             <div className="iky-login__card">
-                {/* Logo */}
+                <LanguageDropdown
+                    isEn={isEn}
+                    langOpen={langOpen}
+                    setLangOpen={setLangOpen}
+                    handleSwitchLang={handleSwitchLang}
+                    dropdownRef={dropdownRef}
+                />
+
                 <div className="iky-login__logo">
-                    <Image src={logo} alt="IKY GPS Logo" width={96} height={96} priority />
+                    <Image src={logo} alt="IKY GPS Logo" width={200} height={80} priority />
                 </div>
 
-                {/* Header */}
                 <div className="iky-login__header">
                     <Title level={3} className="iky-login__title">
                         {isEn ? 'Welcome back' : 'Chào mừng trở lại'}
@@ -153,50 +140,13 @@ const LoginPage = () => {
                     </Text>
                 </div>
 
-                {/* Form */}
-                <Form layout="vertical" onFinish={onFinish} requiredMark={false} className="iky-login__form">
-                    <Form.Item
-                        label={isEn ? 'Username' : 'Tên đăng nhập'}
-                        name="username"
-                        rules={[
-                            {
-                                required: true,
-                                message: isEn ? 'Please enter username' : 'Vui lòng nhập tên đăng nhập',
-                            },
-                        ]}
-                    >
-                        <Input
-                            size="large"
-                            prefix={<UserOutlined />}
-                            placeholder={isEn ? 'Enter username' : 'Nhập tên đăng nhập'}
-                            autoComplete="username"
-                        />
-                    </Form.Item>
+                <LoginForm
+                    form={form}
+                    loading={loading}
+                    isEn={isEn}
+                    onFinish={onFinish}
+                />
 
-                    <Form.Item
-                        label={isEn ? 'Password' : 'Mật khẩu'}
-                        name="password"
-                        rules={[
-                            {
-                                required: true,
-                                message: isEn ? 'Please enter password' : 'Vui lòng nhập mật khẩu',
-                            },
-                        ]}
-                    >
-                        <Input.Password
-                            size="large"
-                            prefix={<LockOutlined />}
-                            placeholder={isEn ? 'Enter password' : 'Nhập mật khẩu'}
-                            autoComplete="current-password"
-                        />
-                    </Form.Item>
-
-                    <Button type="primary" htmlType="submit" size="large" block loading={loading} className="iky-login__submit-btn">
-                        {isEn ? 'Login' : 'Đăng nhập'}
-                    </Button>
-                </Form>
-
-                {/* Footer */}
                 <div className="iky-login__footer">
                     <Text>
                         © {new Date().getFullYear()} <b>IKY GPS</b>
