@@ -280,6 +280,11 @@ export default function MaintenanceDueReportPage() {
     const [filterImei, setFilterImei] = useState('');
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     const t = useMemo(() => {
         return {
