@@ -38,10 +38,12 @@ import { buildPendingFormValues, validatePhone, extractErrorMsg } from '../../ut
 
 import { useUndoDeleteToast } from '../../hooks/common/useUndoDeleteToast';
 
+import dynamic from 'next/dynamic';
+
 import DeviceListView from '../../components/manageDevices/DeviceListView';
-import DeviceDetailView from '../../components/manageDevices/DeviceDetailView';
-import DeviceUpsertModal from '../../components/manageDevices/DeviceUpsertModal';
-import DeviceCommandBarModal from '../../components/manageDevices/DeviceCommandBarModal';
+const DeviceDetailView = dynamic(() => import('../../components/manageDevices/DeviceDetailView'), { ssr: false });
+const DeviceUpsertModal = dynamic(() => import('../../components/manageDevices/DeviceUpsertModal'), { ssr: false });
+const DeviceCommandBarModal = dynamic(() => import('../../components/manageDevices/DeviceCommandBarModal'), { ssr: false });
 
 // ✅ Intro.js
 import 'intro.js/introjs.css';
@@ -81,9 +83,8 @@ const SCROLL_SESSION_KEY = 'iky_devices_scroll';
 const PAGE_SIZE_KEY = 'iky_devices_page_size';
 
 export default function ManageDevicesPage() {
-    // ✅ Role từ authStore thay vì localStorage trực tiếp
     const user = useAuthStore((s) => s.user);
-    const currentRole = user?.position || user?.role || '';
+    const currentRole = user?.position || user?.role || (typeof window !== 'undefined' ? localStorage.getItem('role') || '' : '');
 
     const canEditDevice   = currentRole === 'administrator' || currentRole === 'distributor';
     const canAddDevice    = currentRole === 'administrator' || currentRole === 'distributor';
@@ -132,6 +133,15 @@ export default function ManageDevicesPage() {
         try { localStorage.setItem(PAGE_SIZE_KEY, String(pageSize)); } catch {}
     }, [pageSize]);
 
+    // ✅ Ưu tiên load danh sách thiết bị trước, sau đó mới load options (hoặc ngay khi mở modal)
+    const [optionsReady, setOptionsReady] = useState(false);
+    useEffect(() => {
+        const t = setTimeout(() => setOptionsReady(true), 600);
+        return () => clearTimeout(t);
+    }, []);
+
+    const shouldLoadOptions = modalMode !== null || optionsReady;
+
     const {
         devices,
         total,
@@ -145,17 +155,19 @@ export default function ManageDevicesPage() {
         dcLoading,
         vcLoading,
         usersLoading,
-        prefetchOptions,
     } = useManageDevicesData({
         currentPage,
         pageSize,
         filters,
         getDevices,
-        getDeviceCategories,
-        getVehicleCategories,
-        getUserList,
-        modalMode,
+        loadOptions: shouldLoadOptions,
     });
+
+    const handleRefresh = async () => {
+        message.loading({ content: isEn ? 'Refreshing...' : 'Đang làm mới...', key: 'refresh_devices', duration: 1 });
+        await mutateDevices();
+        message.success({ content: isEn ? 'Refreshed' : 'Đã làm mới dữ liệu', key: 'refresh_devices', duration: 1.5 });
+    };
 
     const { cruiseInfo, mutateCruise, batteryInfo, getEngineStatusText, getVehicleStatusText } = useDeviceDetail({
         viewMode,
@@ -191,7 +203,6 @@ export default function ManageDevicesPage() {
 
     const openAdd = () => {
         if (!canAddDevice) return message.warning(t.noPermissionAdd);
-        prefetchOptions();
         setSelectedDevice(null);
         setPendingFormValues(null);
         setModalMode('add');
@@ -199,7 +210,6 @@ export default function ManageDevicesPage() {
 
     const openEdit = (item) => {
         if (!canEditDevice) return message.warning(t.noPermissionEdit);
-        prefetchOptions();
         setSelectedDevice(item);
         setPendingFormValues(buildPendingFormValues(item));
         setModalMode('edit');
@@ -474,7 +484,7 @@ export default function ManageDevicesPage() {
                     onActivateDevice={handleActivateDevice}
                     onMaintainDevice={openMaintainModal}
                     activatingId={activatingId}
-                    onRefresh={() => mutateDevices()}
+                    onRefresh={handleRefresh}
 
                 />
             ) : (

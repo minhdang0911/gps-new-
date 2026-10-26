@@ -8,7 +8,7 @@ export const FETCH_PAGE_LIMIT = 1000;
 
 // Map sampling (polyline + playback)
 export const VISUAL_MAX_POINTS_ON_MAP = 3000;
-export const MAP_MIN_SAMPLE_DIST_M = 60;
+export const MAP_MIN_SAMPLE_DIST_M = 15;
 
 // Playback/UI perf
 export const UI_FPS = 30;                            // 30 FPS — smooth marker movement

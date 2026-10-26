@@ -1,17 +1,62 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import * as turf from '@turf/turf';
 
 // ✅ Module-level GeoJSON cache — dữ liệu tĩnh, không bao giờ thay đổi → cache suốt session
 let _geoJsonCache = null;
-let _vnBoundsCache = null;
+let _geoJsonPromise = null;
+let _vnBoundsCache = [[8.18, 102.14], [23.39, 109.46]];
+let _vnGeoCache = null;
 
 // ============================================================
 // CONSTANTS — esgoo API for province/district centroids
 // ============================================================
 const PROVINCE_API = 'https://esgoo.net/api-tinhthanh/1/0.htm';
 const DISTRICT_API = (provinceId) => `https://esgoo.net/api-tinhthanh/2/${provinceId}.htm`;
+
+// Loader quận/huyện 36MB: chỉ tải 1 lần, hỗ trợ tải ngầm khi rảnh rỗi (idle)
+export const loadDistrictGeoJson = () => {
+    if (_geoJsonCache) return Promise.resolve(_geoJsonCache);
+    if (_geoJsonPromise) return _geoJsonPromise;
+    _geoJsonPromise = fetch('/geojson/VietNam63.geojson')
+        .then((r) => r.json())
+        .then((geo) => {
+            geo.features.forEach((f) => {
+                f._center = turf.centroid(f);
+            });
+            _geoJsonCache = geo;
+            return geo;
+        })
+        .catch((err) => {
+            console.error('Failed to load district geojson:', err);
+            _geoJsonPromise = null;
+            return null;
+        });
+    return _geoJsonPromise;
+};
+
+// Cache danh sách 63 tỉnh thành vào localStorage (0ms cho các lần sau)
+export const getProvincesCached = async () => {
+    if (typeof window !== 'undefined') {
+        const cached = localStorage.getItem('iky_provinces_cache');
+        if (cached) {
+            try { return JSON.parse(cached); } catch {}
+        }
+    }
+    try {
+        const res = await fetch(PROVINCE_API);
+        const d = await res.json();
+        const list = d.data || [];
+        if (list.length > 0 && typeof window !== 'undefined') {
+            try { localStorage.setItem('iky_provinces_cache', JSON.stringify(list)); } catch {}
+        }
+        return list;
+    } catch (e) {
+        console.error('Failed to fetch provinces:', e);
+        return [];
+    }
+};
 
 // Haversine distance (km)
 const haversine = (lat1, lon1, lat2, lon2) => {
@@ -234,10 +279,13 @@ const DevicePopup = ({ device, cruise, onClose }) => {
 // ============================================================
 // SVG Icons — inline, không cần import
 const IconMap = () => (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6z"/>
-        <line x1="9" y1="3" x2="9" y2="21"/>
-        <line x1="15" y1="6" x2="15" y2="18"/>
+    <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor">
+        <circle cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="1.4" strokeDasharray="3.5 2" />
+        <line x1="10" y1="1" x2="10" y2="4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <line x1="10" y1="16" x2="10" y2="19" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <line x1="1" y1="10" x2="4" y2="10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <line x1="16" y1="10" x2="19" y2="10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <path d="M10 6L12.5 12.5L10 11.2L7.5 12.5L10 6Z" fill="#38bdf8" stroke="currentColor" strokeWidth="0.8" strokeLinejoin="round" />
     </svg>
 );
 const IconInfo = () => (
@@ -980,46 +1028,23 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
     }, []);
 
     useEffect(() => {
-        // ✅ GeoJSON cache: chỉ fetch 1 lần/session — GeoJSON tỉnh/huyện VN không thay đổi
+        // Chỉ tải VietNam63.geojson (36MB) khi người dùng bấm chọn tỉnh
+        if (!selectedProvince) return;
         if (_geoJsonCache) {
             setDistrictGeoJson(_geoJsonCache);
             return;
         }
-        fetch('/geojson/VietNam63.geojson')
-            .then((r) => r.json())
-            .then((geo) => {
-                geo.features.forEach((f) => {
-                    f._center = turf.centroid(f);
-                });
+        loadDistrictGeoJson().then((geo) => {
+            if (geo) setDistrictGeoJson(geo);
+        });
+    }, [selectedProvince]);
 
-                // ✅ Tính bounds toàn quốc dùng reduce (an toàn với mảng lớn)
-                // Không dùng Math.min(...array) vì sẽ stack-overflow với GeoJSON lớn
-                let minLat = Infinity, maxLat = -Infinity;
-                let minLon = Infinity, maxLon = -Infinity;
-                geo.features.forEach((f) => {
-                    const geom = f.geometry;
-                    if (!geom) return;
-                    const polys = geom.type === 'MultiPolygon'
-                        ? geom.coordinates.map((p) => p[0])
-                        : [geom.coordinates[0]];
-                    polys.forEach((ring) => {
-                        if (!ring) return;
-                        ring.forEach(([lon, lat]) => {
-                            if (lat < minLat) minLat = lat;
-                            if (lat > maxLat) maxLat = lat;
-                            if (lon < minLon) minLon = lon;
-                            if (lon > maxLon) maxLon = lon;
-                        });
-                    });
-                });
-                if (isFinite(minLat)) {
-                    _vnBoundsCache = [[minLat, minLon], [maxLat, maxLon]];
-                }
-
-                _geoJsonCache = geo;
-                setDistrictGeoJson(geo);
-            })
-            .catch(console.error);
+    // Tải trước ngầm (pre-warm) sau 4s khi country map đã vẽ xong
+    useEffect(() => {
+        const t = setTimeout(() => {
+            loadDistrictGeoJson();
+        }, 4000);
+        return () => clearTimeout(t);
     }, []);
 
     const findDistrictByPoint = (lat, lon, geojson) => {
@@ -1059,12 +1084,9 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
 
         return null;
     };
-    // ── Fetch provinces from esgoo ────────────────────────────
+    // ── Fetch provinces from esgoo (cached in localStorage) ───
     useEffect(() => {
-        fetch(PROVINCE_API)
-            .then((r) => r.json())
-            .then((d) => setProvinces(d.data || []))
-            .catch(console.error);
+        getProvincesCached().then(setProvinces);
     }, []);
 
     // ── Draw province GeoJSON outline + province labels ───────
@@ -1076,8 +1098,14 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
         }
         if (labelsLayerRef.current) labelsLayerRef.current.clearLayers();
 
-        fetch('/vn_geo.json')
-            .then((r) => r.json())
+        const loadGeo = async () => {
+            if (_vnGeoCache) return _vnGeoCache;
+            const r = await fetch('/vn_geo.json');
+            _vnGeoCache = await r.json();
+            return _vnGeoCache;
+        };
+
+        loadGeo()
             .then((geo) => {
                 if (!leafletMapRef.current) return;
 
@@ -1145,34 +1173,31 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
                 districtLayerRef.current.remove();
                 districtLayerRef.current = null;
             }
-            fetch('/geojson/VietNam63.geojson')
-                .then((r) => r.json())
-                .then((geo) => {
-                    if (!leafletMapRef.current) return;
-                    const fc = {
-                        type: 'FeatureCollection',
-                        features: geo.features.filter((f) => f.properties.Ten_Tinh === provinceName),
-                    };
-                    if (!fc.features.length) return;
-                    districtLayerRef.current = L.geoJSON(fc, {
-                        style: {
-                            color: '#6d28d9',
-                            weight: 2,
-                            dashArray: '5 4',
-                            fillColor: 'transparent',
-                            fillOpacity: 0,
-                            opacity: 0.75,
-                        },
-                        onEachFeature: (feature, layer) => {
-                            layer.bindTooltip(`<b>${feature.properties.Ten_Huyen}</b>`, {
-                                sticky: true,
-                                className: 'vn-district-tip',
-                                direction: 'top',
-                            });
-                        },
-                    }).addTo(leafletMapRef.current);
-                })
-                .catch(console.error);
+            loadDistrictGeoJson().then((geo) => {
+                if (!geo || !leafletMapRef.current) return;
+                const fc = {
+                    type: 'FeatureCollection',
+                    features: geo.features.filter((f) => f.properties.Ten_Tinh === provinceName),
+                };
+                if (!fc.features.length) return;
+                districtLayerRef.current = L.geoJSON(fc, {
+                    style: {
+                        color: '#6d28d9',
+                        weight: 2,
+                        dashArray: '5 4',
+                        fillColor: 'transparent',
+                        fillOpacity: 0,
+                        opacity: 0.75,
+                    },
+                    onEachFeature: (feature, layer) => {
+                        layer.bindTooltip(`<b>${feature.properties.Ten_Huyen}</b>`, {
+                            sticky: true,
+                            className: 'vn-district-tip',
+                            direction: 'top',
+                        });
+                    },
+                }).addTo(leafletMapRef.current);
+            });
         },
         [L],
     );

@@ -27,7 +27,8 @@ import en from '../../locales/en.json';
 
 import { useLocalStorageValue } from '../../hooks/useLocalStorageValue';
 import { useIsEn } from '../../hooks/useLang';
-import { useMadeInFromOptions } from './hooks/useMadeInFromOptions';
+import { useMasterMadeInFromOptions, MASTER_KEYS } from '../../hooks/useMasterData';
+import { mutate } from 'swr';
 import DeviceCategoryFilters from './components/DeviceCategoryFilters';
 import DeviceCategoryModal from './components/DeviceCategoryModal';
 import { exportDeviceCategoryExcel, getMadeInFromLabel as getMifLabelUtil } from './utils/deviceCategoryUtils';
@@ -44,8 +45,10 @@ const locales = { vi, en };
 export default function DeviceCategoryPage() {
     const pathname = usePathname() || '/';
 
-    const token = useLocalStorageValue('accessToken', '');
-    const role = useLocalStorageValue('role', '');
+    const localToken = typeof window !== 'undefined' ? localStorage.getItem('accessToken') || '' : '';
+    const token = useLocalStorageValue('accessToken', localToken) || localToken;
+    const localRole = typeof window !== 'undefined' ? localStorage.getItem('role') || '' : '';
+    const role = useLocalStorageValue('role', localRole) || localRole;
     const isEn = useIsEn();
     const t = isEn ? locales.en.deviceCategory : locales.vi.deviceCategory;
 
@@ -69,7 +72,10 @@ export default function DeviceCategoryPage() {
 
     const popupInParent = (triggerNode) => triggerNode?.parentElement || document.body;
 
-    const { mifOptions, mifLoading, mifValidating, mutateMIF } = useMadeInFromOptions({ t });
+    const { madeInFromRes, mifLoading, mifValidating, mutateMadeInFrom: mutateMIF } = useMasterMadeInFromOptions();
+    const mifOptions = useMemo(() => {
+        return Object.entries(madeInFromRes || {}).map(([value, label]) => ({ value, label }));
+    }, [madeInFromRes]);
     const showMifLoading = mifLoading || mifValidating;
 
     const getMadeInFromLabel = (value) => getMifLabelUtil({ value, mifOptions, isEn });
@@ -113,20 +119,8 @@ export default function DeviceCategoryPage() {
 
     const handleTableChange = (pag) => setPagination({ current: pag.current, pageSize: pag.pageSize });
 
-    const prefetchMIF = () => {
-        try {
-            mutateMIF?.();
-        } catch (_) {}
-    };
-
-    useEffect(() => {
-        if (isModalOpen) prefetchMIF();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isModalOpen]);
-
     const openCreateModal = () => {
         if (!isAdmin) return message.warning(t.noPermissionCreate);
-        prefetchMIF();
         setEditingItem(null);
         form.resetFields();
         setIsModalOpen(true);
@@ -134,7 +128,6 @@ export default function DeviceCategoryPage() {
 
     const openEditModal = (record) => {
         if (!canEdit) return message.warning(t.noPermissionEdit);
-        prefetchMIF();
         setEditingItem(record);
         form.setFieldsValue({
             code: record.code,
@@ -153,6 +146,7 @@ export default function DeviceCategoryPage() {
             await deleteDeviceCategory(record._id);
             message.success(t.deleteSuccess);
             mutateList();
+            mutate(MASTER_KEYS.DEVICE_CATEGORIES);
         } catch (err) {
             console.error('Delete device category error:', err);
             message.error(t.deleteFailed);
@@ -184,6 +178,7 @@ export default function DeviceCategoryPage() {
             setIsModalOpen(false);
             form.resetFields();
             mutateList();
+            mutate(MASTER_KEYS.DEVICE_CATEGORIES);
         } catch (err) {
             if (err?.errorFields) return;
 
@@ -327,7 +322,14 @@ export default function DeviceCategoryPage() {
                             <Button shape="circle" icon={<QuestionCircleOutlined />} onClick={tour.start} />
                         </Tooltip>
 
-                        <Button icon={<ReloadOutlined />} onClick={() => mutateList()}>
+                        <Button
+                            icon={<ReloadOutlined />}
+                            onClick={async () => {
+                                message.loading({ content: isEn ? 'Refreshing...' : 'Đang làm mới...', key: 'dc_refresh', duration: 1 });
+                                await mutateList();
+                                message.success({ content: isEn ? 'Refreshed' : 'Đã làm mới dữ liệu', key: 'dc_refresh', duration: 1.5 });
+                            }}
+                        >
                             {t.refresh}
                         </Button>
 
@@ -366,7 +368,7 @@ export default function DeviceCategoryPage() {
                 <div data-tour="tableWrap">
                     <Table
                         rowKey="_id"
-                        loading={listLoading || listValidating}
+                        loading={listLoading && (!data || data.length === 0)}
                         columns={columns}
                         dataSource={data}
                         pagination={{

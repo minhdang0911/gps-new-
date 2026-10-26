@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react';
-import useSWR from 'swr';
+import useSWR, { mutate } from 'swr';
+import { MASTER_KEYS } from '../../hooks/useMasterData';
 import {
     Card,
     Input,
@@ -29,12 +30,11 @@ import {
     ReloadOutlined,
 } from '@ant-design/icons';
 
+import dynamic from 'next/dynamic';
 import { createUser, updateUser, deleteUser, getUserInfo, getUserList } from '../../lib/api/user';
-import UserForm from '../../components/UserForm';
+const UserForm = dynamic(() => import('../../components/UserForm'), { ssr: false });
 import './ManageUserPage.css';
 
-import * as XLSX from 'xlsx-js-style';
-import { saveAs } from 'file-saver';
 import { getTodayForFileName } from '../../util/FormatDate';
 
 import vi from '../../locales/vi.json';
@@ -82,8 +82,11 @@ function useDebouncedValue(value, delay = 400) {
 
 export default function ManageUserPage() {
     // ✅ token/role/lang đọc trực tiếp (khỏi setState trong effect)
-    const token = useLocalStorageValue('accessToken', '');
-    const currentRole = useLocalStorageValue('role', '');
+    // ✅ token/role/lang đọc trực tiếp (khỏi setState trong effect)
+    const localRole = typeof window !== 'undefined' ? localStorage.getItem('role') || '' : '';
+    const currentRole = useLocalStorageValue('role', localRole) || localRole;
+    const localToken = typeof window !== 'undefined' ? localStorage.getItem('accessToken') || '' : '';
+    const token = useLocalStorageValue('accessToken', localToken) || localToken;
 
     // ✅ Fix dropdown trong Modal / layout bị “click không ra”
     const popupInParent = (triggerNode) => triggerNode?.parentElement || document.body;
@@ -377,6 +380,7 @@ export default function ManageUserPage() {
 
             closeUserModal();
             mutateUsers();
+            mutate(MASTER_KEYS.USER_OPTIONS);
         } catch (err) {
             console.log('SAVE USER ERROR', err);
 
@@ -408,6 +412,7 @@ export default function ManageUserPage() {
                     await deleteUser(record._id);
                     message.success(t.messages.deleteSuccess);
                     mutateUsers();
+                    mutate(MASTER_KEYS.USER_OPTIONS);
                 } catch (err) {
                     console.log('DELETE USER ERROR', err);
                     message.error(t.messages.deleteFailed);
@@ -419,7 +424,7 @@ export default function ManageUserPage() {
     /* =========================
         EXPORT EXCEL
     ========================= */
-    const exportExcel = () => {
+    const exportExcel = async () => {
         if (!canExport) return;
 
         if (!users.length) {
@@ -428,6 +433,12 @@ export default function ManageUserPage() {
         }
 
         try {
+            message.loading({ content: isEn ? 'Exporting...' : 'Đang xuất file...', key: 'export_users' });
+            const [XLSX, { saveAs }] = await Promise.all([
+                import('xlsx-js-style'),
+                import('file-saver'),
+            ]);
+
             const excelData = users.map((u) => {
                 let distributorText = '';
                 if (u.distributor_id) {
@@ -763,7 +774,7 @@ export default function ManageUserPage() {
                     <Table
                         rowKey="_id"
                         columns={userColumns}
-                        loading={loadingUsers || validatingUsers}
+                        loading={loadingUsers && (!users || users.length === 0)}
                         dataSource={users}
                         className="user-page__table"
                         scroll={{ x: 900 }}

@@ -1,19 +1,20 @@
 'use client';
 
-import { useMemo, useEffect } from 'react';
+import { useMemo } from 'react';
 import useSWR from 'swr';
+import {
+    useMasterDeviceCategories,
+    useMasterVehicleCategories,
+    useMasterUserOptions,
+} from '../useMasterData';
 
 export function useManageDevicesData({
     currentPage,
     pageSize,
     filters,
     getDevices,
-    getDeviceCategories,
-    getVehicleCategories,
-    getUserList,
-    modalMode,
+    loadOptions = true,
 }) {
-
     const listParams = useMemo(
         () => ({
             page: currentPage,
@@ -43,54 +44,21 @@ export function useManageDevicesData({
         devicesRes?.pagination?.total ??
         (Array.isArray(devicesRes?.devices) ? devicesRes.devices.length : 0);
 
-    // OPTIONS
-    const {
-        data: dcRes,
-        isLoading: dcLoading,
-        mutate: mutateDC,
-    } = useSWR(['deviceCategories'], () => getDeviceCategories({ limit: 1000 }), {
-        revalidateOnFocus: false,
-        dedupingInterval: 60_000,
-    });
+    // Master Data (Chỉ fetch khi loadOptions = true để ưu tiên render bảng trước)
+    const { deviceCategories, dcLoading, mutateDeviceCategories } = useMasterDeviceCategories(loadOptions);
+    const { vehicleCategories, vcLoading, mutateVehicleCategories } = useMasterVehicleCategories(loadOptions);
+    const { userOptions, usersLoading, mutateUserOptions } = useMasterUserOptions(loadOptions);
 
-    const {
-        data: vcRes,
-        isLoading: vcLoading,
-        mutate: mutateVC,
-    } = useSWR(['vehicleCategories'], () => getVehicleCategories({ limit: 1000 }), {
-        revalidateOnFocus: false,
-        dedupingInterval: 60_000,
-    });
+    // Opening modals does NOT need network prefetch - options are already cached in RAM
+    const noop = () => Promise.resolve();
 
-
-    const usersFetcher = async () => getUserList({ limit: 2000 });
-
-    const {
-        data: usersRes,
-        isLoading: usersLoading,
-        mutate: mutateUsers,
-    } = useSWR(['users'], usersFetcher, {
-        revalidateOnFocus: false,
-        dedupingInterval: 60_000,
-    });
-
-
-    const deviceCategories = dcRes?.items || [];
-    const vehicleCategories = vcRes?.items || [];
-    const userOptions = usersRes?.items || [];
-
-    const prefetchOptions = () => {
-        try {
-            mutateDC?.();
-            mutateVC?.();
-            mutateUsers?.();
-        } catch (_) {}
+    const refreshOptions = async () => {
+        return Promise.allSettled([
+            mutateDeviceCategories?.(true),
+            mutateVehicleCategories?.(true),
+            mutateUserOptions?.(true),
+        ]);
     };
-
-    useEffect(() => {
-        if (modalMode) prefetchOptions();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [modalMode]);
 
     return {
         listParams,
@@ -107,6 +75,7 @@ export function useManageDevicesData({
         vcLoading,
         usersLoading,
 
-        prefetchOptions,
+        prefetchOptions: noop,
+        refreshOptions,
     };
 }

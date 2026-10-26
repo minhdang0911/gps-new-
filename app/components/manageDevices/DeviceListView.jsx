@@ -288,7 +288,7 @@ export default function DeviceListView({
                             dataSource={devices}
                             columns={columns}
                             rowKey="_id"
-                            loading={devicesLoading || devicesValidating}
+                            loading={devicesLoading && (!devices || devices.length === 0)}
                             pagination={{
                                 current: currentPage,
                                 pageSize,

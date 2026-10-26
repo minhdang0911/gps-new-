@@ -34,6 +34,7 @@ const { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip: ReTooltip, 
 
 // ✅ use shared reverse geocode (multi-provider)
 import { reverseGeocodeAddress } from '../lib/address/reverseGeocode';
+import { snapRouteToRoads } from '../lib/map/roadSnap';
 
 // ✅ IMPORT ALL UTILS (2 files only)
 import {
@@ -125,6 +126,10 @@ const CruisePage = () => {
 
     // ✅ NEW: follow mode
     const [followMode, setFollowMode] = useState(true);
+    const [snapToRoad, setSnapToRoad] = useState(true);
+    const [snappedPolyline, setSnappedPolyline] = useState([]);
+    const [isSnappingRoad, setIsSnappingRoad] = useState(false);
+    const [snapProgress, setSnapProgress] = useState(0);
 
     // ✅ NEW: fixed info panel address state
     const [currentAddr, setCurrentAddr] = useState('');
@@ -858,9 +863,11 @@ const CruisePage = () => {
         }
         if (!latlngs.length) return;
 
+        const initialCoords = snapToRoad && snappedPolyline.length >= 2 ? snappedPolyline : latlngs;
+
         // ✅ Grab/Be style: 2-layer casing polyline
         // Layer 1: outer white casing (border) — dày hơn, trắng/xám nhạt
-        polylineCasingRef.current = LMap.polyline(latlngs, {
+        polylineCasingRef.current = LMap.polyline(initialCoords, {
             color: '#ffffff',
             weight: 9,
             opacity: 0.9,
@@ -871,7 +878,7 @@ const CruisePage = () => {
         }).addTo(map);
 
         // Layer 2: inner dark line — đen đậm như Grab/Be
-        polylineRef.current = LMap.polyline(latlngs, {
+        polylineRef.current = LMap.polyline(initialCoords, {
             color: '#1a1a2e',
             weight: 5,
             opacity: 1,
@@ -941,6 +948,18 @@ const CruisePage = () => {
         scheduleDrawDots();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mapRouteData, LMap]);
+
+    // ✅ Sync polyline coords when snapToRoad or snappedPolyline changes
+    useEffect(() => {
+        if (!polylineRef.current || !polylineCasingRef.current || !mapRouteData.length) return;
+        const isValidPoint = (p) => p && typeof p.lat === 'number' && typeof p.lon === 'number';
+        const rawCoords = mapRouteData.filter(isValidPoint).map((p) => [p.lat, p.lon]);
+        const coords = snapToRoad && snappedPolyline.length >= 2 ? snappedPolyline : rawCoords;
+        if (coords.length >= 2) {
+            polylineRef.current.setLatLngs(coords);
+            polylineCasingRef.current.setLatLngs(coords);
+        }
+    }, [snapToRoad, snappedPolyline, mapRouteData]);
 
     // redraw dots when map move/zoom end
     useEffect(() => {
@@ -1133,6 +1152,9 @@ const CruisePage = () => {
 
             setRawRouteData([]);
             setMapRouteData([]);
+            setSnappedPolyline([]);
+            setIsSnappingRoad(false);
+            setSnapProgress(0);
             mapToRawIndexRef.current = [];
             setTotalKm(0);
             setActiveIndex(0);
@@ -1213,6 +1235,26 @@ const CruisePage = () => {
             const sample = buildMapSample(mapped, VISUAL_MAX_POINTS_ON_MAP, MAP_MIN_SAMPLE_DIST_M);
             mapToRawIndexRef.current = sample.indices;
             setMapRouteData(sample.points);
+
+            // Snap to road (OSRM / Mapbox) in background
+            if (sample.points && sample.points.length >= 2) {
+                setIsSnappingRoad(true);
+                setSnapProgress(5);
+                snapRouteToRoads(sample.points, {
+                    onProgress: (pct) => setSnapProgress(pct),
+                })
+                    .then((snapped) => {
+                        if (snapped && snapped.length >= 2) {
+                            setSnappedPolyline(snapped);
+                        }
+                    })
+                    .catch((err) => {
+                        console.error('Road snap error:', err);
+                    })
+                    .finally(() => {
+                        setIsSnappingRoad(false);
+                    });
+            }
 
             const firstValid = mapped.find((p) => typeof p.lat === 'number' && typeof p.lon === 'number');
             if (firstValid) ensureAddress(firstValid.lat, firstValid.lon);
@@ -1644,6 +1686,27 @@ const CruisePage = () => {
                                     <Switch size="small" checked={followMode} onChange={(v) => setFollowMode(v)} />
                                 </div>
 
+                                {/* ✅ Road snap toggle */}
+                                <div className="iky-cruise__follow">
+                                    <Tooltip
+                                        title={
+                                            isEn
+                                                ? 'Snap route to roads (OSRM/Mapbox matching)'
+                                                : 'Bám sát mặt đường (khắc phục đường chim bay)'
+                                        }
+                                    >
+                                        <span className="iky-cruise__follow-label" style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                            {isEn ? 'Road' : 'Đường'}
+                                            {isSnappingRoad && <span className="iky-cruise__spin">⏳</span>}
+                                        </span>
+                                    </Tooltip>
+                                    <Switch
+                                        size="small"
+                                        checked={snapToRoad}
+                                        onChange={(v) => setSnapToRoad(v)}
+                                    />
+                                </div>
+
                                 <select
                                     value={playbackRate}
                                     onChange={(e) => setPlaybackRate(Number(e.target.value))}
@@ -1706,6 +1769,23 @@ const CruisePage = () => {
             {/* MAP */}
             <div className="iky-cruise__map">
                 <div id="iky-cruise-map" className="iky-cruise__map-inner" />
+
+                {/* ✅ Map matching progress bar */}
+                {isSnappingRoad && (
+                    <div className="iky-cruise__match-progress">
+                        <span className="iky-cruise__spin">🔄</span>
+                        <span className="iky-cruise__match-progress-text">
+                            {isEn ? 'Snapping to road network...' : 'Đang khớp vào mặt đường...'}
+                        </span>
+                        <div className="iky-cruise__match-progress-bar">
+                            <div
+                                className="iky-cruise__match-progress-fill"
+                                style={{ width: `${Math.max(8, snapProgress)}%` }}
+                            />
+                        </div>
+                        <span className="iky-cruise__match-progress-pct">{snapProgress}%</span>
+                    </div>
+                )}
 
                 {/* ✅ Fixed current point info panel */}
                 {rawRouteData.length > 0 && currentInfo && (

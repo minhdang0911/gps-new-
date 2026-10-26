@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '../stores/authStore';
 import { resetDeviceCache } from './useDeviceCache';
+import { hasSecureSession, clearSecureSession } from '../lib/auth/secureSession';
 
 /**
  * useAuthLogout — Lắng nghe event 'auth:logout' từ axios interceptor
@@ -20,8 +21,15 @@ export function useAuthLogout() {
 
     useEffect(() => {
         const handleForceLogout = async () => {
+            // Guard chống văng: nếu còn Secure Session hợp lệ (chưa bấm Đăng xuất) -> KHÔNG đá về login
+            if (hasSecureSession()) {
+                console.warn('[useAuthLogout] Force logout prevented — active secure session exists');
+                return;
+            }
+
             // 1. Xoá toàn bộ auth state (Zustand persist tự xóa localStorage tokens)
             clearAll();
+            clearSecureSession();
 
             // 2. Xoá IndexedDB device cache
             await resetDeviceCache();

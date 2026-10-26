@@ -17,6 +17,7 @@ import { useEffect, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { proactiveRefresh } from '../lib/api/axios';
 import { useAuthStore } from '../stores/authStore';
+import { hasSecureSession } from '../lib/auth/secureSession';
 
 const REFRESH_BEFORE_EXPIRY_MS = 2 * 60 * 1000;  // 2 phút buffer
 const FALLBACK_INTERVAL_MS     = 13 * 60 * 1000; // fallback nếu không decode được JWT
@@ -61,13 +62,11 @@ export default function TokenRefresher() {
                 scheduleRef.current?.(); // schedule lần tiếp theo
             } catch (err) {
                 const status = err?.response?.status;
-                if (status === 401 || status === 403) {
-                    // proactiveRefresh đã gọi clearAll() + dispatch auth:logout
-                    // useAuthLogout sẽ handle redirect → không cần làm gì thêm
+                if ((status === 401 || status === 403) && !hasSecureSession()) {
                     return;
                 }
-                // Lỗi mạng / server tạm thời → KHÔNG logout, retry sau 30s
-                console.warn('[TokenRefresher] refresh failed (network?), retry in 30s');
+                // Lỗi mạng / server tạm thời / đang tự động khôi phục → KHÔNG logout, retry sau 30s
+                console.warn('[TokenRefresher] refresh pending, retry in 30s');
                 retryRef.current = setTimeout(doRefresh, RETRY_ON_NETWORK_MS);
             }
         };
@@ -80,6 +79,10 @@ export default function TokenRefresher() {
             const { accessToken, refreshToken } = useAuthStore.getState();
 
             if (!refreshToken) {
+                if (hasSecureSession()) {
+                    doRefresh();
+                    return;
+                }
                 routerRef.current.replace('/login');
                 return;
             }

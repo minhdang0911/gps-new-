@@ -31,6 +31,29 @@ const VietnamMapDrillDown = dynamic(() => import('./VietnamMapDrillDown'), {
 import { exportOverviewExcel, exportByRegion } from './useOverviewExcel';
 import './map.css';
 import './overview.css';
+import {
+    FleetTotalIcon,
+    FleetOnlineIcon,
+    FleetOfflineIcon,
+    FleetExpiringIcon,
+    FleetDistributorIcon,
+    IconRefreshCustom,
+    IconExcelCustom,
+    IconRegionCustom,
+    IconResetViewCustom,
+    IconSearchCustom,
+    IconChevronDownCustom,
+    IconLayersCustom,
+    IconMapTab,
+    IconTableTab,
+    IconSearchOptic,
+    IconFullscreenExpand,
+    IconFullscreenCollapse,
+    IconCloseMini,
+    IconGpsPin,
+    IconGpsSlash,
+    IconFleetCommandHub,
+} from './OverviewIcons';
 
 import { getDevices } from '../lib/api/devices';
 import api from '../lib/api/axios';
@@ -58,48 +81,16 @@ const isExpiringSoon = (device) => {
     return exp > now && exp - now < EXPIRING_THRESHOLD_MS;
 };
 
-// ── Inline SVG icons — no external deps needed ─────────────────
-const IcGrid = () => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/>
-        <rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>
-    </svg>
-);
-const IcWifiOn = () => (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/>
-        <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1" fill="currentColor"/>
-    </svg>
-);
-const IcWifiOff = () => (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
-        <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.56 9"/>
-        <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
-        <circle cx="12" cy="20" r="1" fill="currentColor"/>
-    </svg>
-);
-const IcClock = () => (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-    </svg>
-);
-const IcTotal = () => (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
-    </svg>
-);
-const IcMap = () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6z"/>
-        <line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="6" x2="15" y2="18"/>
-    </svg>
-);
-const IcRefresh = ({ spinning }) => (
-    <RotateCcw size={14} style={{ animation: spinning ? 'ov-spin .65s linear infinite' : 'none' }} />
-);
-const IcExcel = () => <FileSpreadsheet size={15} />;
-const IcChevron = () => <ChevronDown size={12} strokeWidth={2.5} />;
+// ── Handcrafted SVG Icon Wrappers ──────────────────────────────
+const IcGrid = (props) => <FleetTotalIcon size={20} color="#ffffff" {...props} />;
+const IcWifiOn = (props) => <FleetOnlineIcon size={22} color="#16a34a" {...props} />;
+const IcWifiOff = (props) => <FleetOfflineIcon size={22} color="#dc2626" {...props} />;
+const IcClock = (props) => <FleetExpiringIcon size={22} color="#d97706" {...props} />;
+const IcTotal = (props) => <FleetTotalIcon size={22} color="#1d4ed8" {...props} />;
+const IcMap = (props) => <IconLayersCustom size={16} color="currentColor" {...props} />;
+const IcRefresh = ({ spinning, ...props }) => <IconRefreshCustom size={14} spinning={spinning} {...props} />;
+const IcExcel = (props) => <IconExcelCustom size={15} {...props} />;
+const IcChevron = (props) => <IconChevronDownCustom size={12} {...props} />;
 
 // ── Region Filter Panel (TopCV-style) ─────────────────────────────
 const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled, isEn }) => {
@@ -703,20 +694,17 @@ const SearchBox = ({ devices, cruiseByImei, onSelect, isEn }) => {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 7,
-                background: focused ? '#fff' : '#f8fafc',
-                border: `1.5px solid ${focused ? '#1677ff' : '#e2e8f0'}`,
-                borderRadius: 9,
-                padding: '6px 10px',
+                background: focused ? '#ffffff' : '#f8fafc',
+                border: `1px solid ${focused ? '#1d4ed8' : '#cbd5e1'}`,
+                borderRadius: 6,
+                padding: '5px 10px',
+                height: 32,
+                boxSizing: 'border-box',
                 transition: 'border-color .15s, background .15s, box-shadow .15s',
-                boxShadow: focused ? '0 0 0 3px rgba(22,119,255,0.12)' : '0 1px 3px rgba(0,0,0,0.05)',
+                boxShadow: focused ? '0 0 0 1px #1d4ed8, 0 1px 2px rgba(15,23,42,0.06)' : '0 1px 2px rgba(15,23,42,0.04)',
             }}>
-                {/* Search icon */}
-                <SearchOutlined style={{
-                    fontSize: 13,
-                    color: focused ? '#1677ff' : '#94a3b8',
-                    flexShrink: 0,
-                    transition: 'color .15s',
-                }} />
+                {/* Custom Search icon */}
+                <IconSearchOptic size={14} color={focused ? '#1d4ed8' : '#64748b'} style={{ flexShrink: 0, transition: 'color .15s' }} />
                 <input
                     value={query}
                     onChange={e => { setQuery(e.target.value); setOpen(true); }}
@@ -725,7 +713,7 @@ const SearchBox = ({ devices, cruiseByImei, onSelect, isEn }) => {
                     placeholder={placeholder}
                     style={{
                         border: 'none', outline: 'none', background: 'transparent',
-                        fontSize: 12.5, color: '#1e293b', width: '100%', fontFamily: 'inherit',
+                        fontSize: 12, color: '#0f172a', width: '100%', fontFamily: 'inherit',
                     }}
                 />
                 {/* Clear button */}
@@ -735,7 +723,7 @@ const SearchBox = ({ devices, cruiseByImei, onSelect, isEn }) => {
                         padding: 0, display: 'flex', alignItems: 'center', flexShrink: 0,
                         color: '#94a3b8', lineHeight: 1,
                     }}>
-                        <CloseOutlined style={{ fontSize: 12 }} />
+                        <IconCloseMini size={12} color="#94a3b8" />
                     </button>
                 )}
             </div>
@@ -743,10 +731,10 @@ const SearchBox = ({ devices, cruiseByImei, onSelect, isEn }) => {
             {/* Dropdown results */}
             {open && hasResults && (
                 <div style={{
-                    position: 'absolute', top: 'calc(100% + 5px)', left: 0, right: 0,
-                    background: '#fff', borderRadius: 10, zIndex: 2000,
-                    boxShadow: '0 8px 32px rgba(0,0,0,0.14)',
-                    border: '1px solid #e2e8f0',
+                    position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
+                    background: '#ffffff', borderRadius: 6, zIndex: 2000,
+                    boxShadow: '0 8px 24px rgba(15,23,42,0.12)',
+                    border: '1px solid #cbd5e1',
                     overflow: 'hidden',
                     maxHeight: 320, overflowY: 'auto',
                 }}>
@@ -759,7 +747,7 @@ const SearchBox = ({ devices, cruiseByImei, onSelect, isEn }) => {
                                 key={d._id || d.imei}
                                 onMouseDown={() => handleSelect(d)}
                                 style={{
-                                    padding: '9px 14px',
+                                    padding: '8px 12px',
                                     borderBottom: i < results.length - 1 ? '1px solid #f1f5f9' : 'none',
                                     cursor: 'pointer',
                                     display: 'flex',
@@ -768,19 +756,19 @@ const SearchBox = ({ devices, cruiseByImei, onSelect, isEn }) => {
                                     transition: 'background .1s',
                                 }}
                                 onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
-                                onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+                                onMouseLeave={e => e.currentTarget.style.background = '#ffffff'}
                             >
                                 {/* Status dot */}
                                 <div style={{
                                     width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                                    background: online ? '#22c55e' : '#ef4444',
-                                    boxShadow: online ? '0 0 0 2px rgba(34,197,94,0.2)' : '0 0 0 2px rgba(239,68,68,0.2)',
+                                    background: online ? '#16a34a' : '#dc2626',
+                                    boxShadow: online ? '0 0 0 2px rgba(22,163,74,0.2)' : '0 0 0 2px rgba(220,38,38,0.2)',
                                 }} />
                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>
+                                    <div style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a' }}>
                                         {d.license_plate || d.imei}
                                     </div>
-                                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>
+                                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>
                                         {d.driver ? `${d.driver} · ` : ''}{d.imei}
                                     </div>
                                 </div>
@@ -788,22 +776,22 @@ const SearchBox = ({ devices, cruiseByImei, onSelect, isEn }) => {
                                 {hasGps ? (
                                     <div style={{
                                         fontSize: 10, fontWeight: 600, padding: '2px 7px',
-                                        borderRadius: 20, background: '#eff6ff',
-                                        color: '#3b82f6', border: '1px solid #bfdbfe',
+                                        borderRadius: 4, background: '#eff6ff',
+                                        color: '#1d4ed8', border: '1px solid #bfdbfe',
                                         flexShrink: 0, whiteSpace: 'nowrap',
                                         display: 'flex', alignItems: 'center', gap: 4,
                                     }}>
-                                        <EnvironmentOutlined style={{ fontSize: 10 }} /> GPS
+                                        <IconGpsPin size={10} color="#1d4ed8" /> GPS
                                     </div>
                                 ) : (
                                     <div style={{
                                         fontSize: 10, fontWeight: 600, padding: '2px 7px',
-                                        borderRadius: 20, background: '#f8fafc',
+                                        borderRadius: 4, background: '#f8fafc',
                                         color: '#94a3b8', border: '1px solid #e2e8f0',
                                         flexShrink: 0, whiteSpace: 'nowrap',
                                         display: 'flex', alignItems: 'center', gap: 4,
                                     }}>
-                                        <StopOutlined style={{ fontSize: 10 }} /> No GPS
+                                        <IconGpsSlash size={10} color="#94a3b8" /> No GPS
                                     </div>
                                 )}
                             </div>
@@ -829,51 +817,94 @@ const SearchBox = ({ devices, cruiseByImei, onSelect, isEn }) => {
     );
 };
 
-// ── Stat Card ────────────────────────────────────────────────
-const StatCard = ({ icon, label, value, sub, accentColor, loading: cardLoading, onClick, active, isEn }) => (
+// ── Stat Card (Rebuilt with Haravan UI/UX & Handcrafted Icons) ─
+const StatCard = ({
+    icon,
+    label,
+    value,
+    sub,
+    accentColor = '#1d4ed8',
+    loading: cardLoading,
+    onClick,
+    active,
+    badgeText,
+    pulseDot,
+    percentage,
+    progressColor,
+    isEn,
+}) => (
     <div
-        className="ov-stat-card"
+        className={`ov-stat-card ${active ? 'ov-stat-card--active' : ''}`}
         onClick={onClick}
         style={{
+            '--card-accent': accentColor,
             cursor: onClick ? 'pointer' : 'default',
-            outline: active ? `2px solid ${accentColor}` : '2px solid transparent',
-            outlineOffset: -2,
         }}
     >
-        <div className="ov-stat-accent" style={{ background: accentColor }} />
-        {active && (
-            <div style={{
-                position: 'absolute', inset: 0,
-                background: accentColor + '0D',
-                borderRadius: 14,
-                pointerEvents: 'none',
-            }} />
-        )}
-        <div className="ov-stat-body">
-            <div className="ov-stat-label">{label}</div>
-            {cardLoading ? (
-                <Skeleton active paragraph={false} title={{ width: 60 }} />
-            ) : (
-                <>
-                    <div className="ov-stat-value" style={{ color: accentColor }}>{value}</div>
-                    {sub && <div className="ov-stat-sub">{sub}</div>}
-                </>
+        <div className="ov-stat-card-top">
+            <div
+                className="ov-stat-icon-box"
+                style={{
+                    background: accentColor + '10',
+                    borderColor: accentColor + '22',
+                }}
+            >
+                {icon}
+            </div>
+            {badgeText && (
+                <span
+                    className="ov-stat-badge"
+                    style={{
+                        background: accentColor + '10',
+                        color: accentColor,
+                        border: `1px solid ${accentColor}26`,
+                    }}
+                >
+                    {pulseDot && <span className="ov-stat-pulse-dot" style={{ background: accentColor }} />}
+                    {badgeText}
+                </span>
             )}
         </div>
-        <div className="ov-stat-icon" style={{ color: accentColor, background: accentColor + '18' }}>
-            {icon}
-        </div>
-        {onClick && !cardLoading && (
-            <div style={{
-                position: 'absolute', bottom: 8, right: 12,
-                fontSize: 10, color: accentColor + 'bb', fontWeight: 500,
-            }}>
-                {active
-                    ? (isEn ? '✕ Clear filter' : '✕ Bỏ lọc')
-                    : (isEn ? 'View on map →' : 'Xem trên bản đồ →')
-                }
+
+        <div className="ov-stat-main">
+            <div className="ov-stat-value-row">
+                {cardLoading ? (
+                    <Skeleton active paragraph={false} title={{ width: 60 }} />
+                ) : (
+                    <span className="ov-stat-value">{value}</span>
+                )}
             </div>
-        )}
+            <div className="ov-stat-label">{label}</div>
+        </div>
+
+        <div className="ov-stat-footer">
+            <div style={{ flex: 1, minWidth: 0 }}>
+                {typeof percentage === 'number' && (
+                    <div className="ov-stat-bar-track">
+                        <div
+                            className="ov-stat-bar-fill"
+                            style={{
+                                width: `${Math.min(100, Math.max(0, percentage))}%`,
+                                background: progressColor || accentColor,
+                            }}
+                        />
+                    </div>
+                )}
+                {sub && (
+                    <div style={{ marginTop: typeof percentage === 'number' ? 4 : 0, fontSize: 11, color: '#64748b' }}>
+                        {sub}
+                    </div>
+                )}
+            </div>
+            {onClick && !cardLoading && (
+                <span className="ov-stat-action-hint" style={{ color: accentColor }}>
+                    {active
+                        ? (isEn ? '✕ Clear' : '✕ Bỏ lọc')
+                        : (isEn ? 'Map →' : 'Bản đồ →')
+                    }
+                </span>
+            )}
+        </div>
     </div>
 );
 
@@ -1204,6 +1235,185 @@ const DeviceTable = ({ devices, cruiseByImei, isEn, onlineMap }) => {
     );
 };
 
+// ── Custom Distributor Select (Replaces AntD Select) ─────────
+const DistributorSelect = ({ value, onChange, options = [], isEn }) => {
+    const [open, setOpen] = useState(false);
+    const [search, setSearch] = useState('');
+    const ref = useRef(null);
+    useClickOutside(ref, useCallback(() => setOpen(false), []), open);
+
+    const selectedOption = useMemo(() => options.find(o => o.value === value), [options, value]);
+    const filteredOptions = useMemo(() => {
+        if (!search.trim()) return options;
+        const q = search.toLowerCase();
+        return options.filter(o => o.label?.toLowerCase().includes(q));
+    }, [options, search]);
+
+    return (
+        <div ref={ref} style={{ position: 'relative' }}>
+            <button
+                type="button"
+                onClick={() => setOpen(prev => !prev)}
+                className="ov-refresh-btn"
+                style={{
+                    height: 34,
+                    padding: '0 12px',
+                    borderColor: value ? '#7dd3fc' : '#cbd5e1',
+                    background: value ? '#f0f9ff' : '#ffffff',
+                    color: value ? '#0369a1' : '#334155',
+                    fontWeight: value ? 600 : 500,
+                    gap: 8,
+                }}
+            >
+                <FleetDistributorIcon size={16} color={value ? '#0284c7' : '#64748b'} />
+                <span style={{ maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 12 }}>
+                    {selectedOption ? selectedOption.label : (isEn ? 'All Distributors' : 'Tất cả đại lý')}
+                </span>
+                {value ? (
+                    <span
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onChange(null);
+                        }}
+                        title={isEn ? 'Clear' : 'Bỏ chọn'}
+                        style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: 16,
+                            height: 16,
+                            borderRadius: 3,
+                            background: '#e0f2fe',
+                            color: '#0369a1',
+                            cursor: 'pointer',
+                        }}
+                    >
+                        <IconCloseMini size={10} color="#0369a1" />
+                    </span>
+                ) : (
+                    <IconChevronDownCustom size={11} color="#94a3b8" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }} />
+                )}
+            </button>
+
+            {open && (
+                <div style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 4px)',
+                    right: 0,
+                    width: 280,
+                    background: '#ffffff',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: 6,
+                    boxShadow: '0 10px 25px -5px rgba(15, 23, 42, 0.12), 0 8px 10px -6px rgba(15, 23, 42, 0.06)',
+                    zIndex: 9999,
+                    overflow: 'hidden',
+                }}>
+                    {/* Search bar inside dropdown */}
+                    <div style={{ padding: '8px 10px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 6, background: '#f8fafc' }}>
+                        <IconSearchOptic size={13} color="#94a3b8" />
+                        <input
+                            autoFocus
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            placeholder={isEn ? 'Filter distributors...' : 'Tìm đại lý...'}
+                            style={{
+                                width: '100%',
+                                border: 'none',
+                                outline: 'none',
+                                background: 'transparent',
+                                fontSize: 12,
+                                color: '#0f172a',
+                            }}
+                        />
+                        {search ? (
+                            <button onClick={() => setSearch('')} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}>
+                                <IconCloseMini size={11} color="#94a3b8" />
+                            </button>
+                        ) : (
+                            <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600, padding: '1px 5px', background: '#e2e8f0', borderRadius: 4 }}>
+                                {options.length}
+                            </span>
+                        )}
+                    </div>
+
+                    {/* All option */}
+                    <div style={{ maxHeight: 240, overflowY: 'auto', padding: '4px' }}>
+                        <div
+                            onClick={() => { onChange(null); setOpen(false); }}
+                            style={{
+                                padding: '7px 10px',
+                                margin: '1px 0',
+                                borderRadius: 4,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                fontSize: 12,
+                                cursor: 'pointer',
+                                background: !value ? '#f0f9ff' : 'transparent',
+                                color: !value ? '#0369a1' : '#334155',
+                                fontWeight: !value ? 600 : 500,
+                            }}
+                            onMouseEnter={(e) => { if (value) e.currentTarget.style.background = '#f8fafc'; }}
+                            onMouseLeave={(e) => { if (value) e.currentTarget.style.background = 'transparent'; }}
+                        >
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                                <FleetDistributorIcon size={14} color={!value ? '#0284c7' : '#94a3b8'} />
+                                <span>{isEn ? 'All Distributors' : 'Tất cả đại lý'}</span>
+                            </span>
+                            {!value && <span style={{ color: '#0284c7', fontWeight: 700, fontSize: 12 }}>✓</span>}
+                        </div>
+
+                        {filteredOptions.map((opt) => {
+                            const isSelected = value === opt.value;
+                            return (
+                                <div
+                                    key={opt.value}
+                                    onClick={() => { onChange(opt.value); setOpen(false); }}
+                                    style={{
+                                        padding: '7px 10px',
+                                        margin: '1px 0',
+                                        borderRadius: 4,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'space-between',
+                                        fontSize: 12,
+                                        cursor: 'pointer',
+                                        background: isSelected ? '#f0f9ff' : 'transparent',
+                                        color: isSelected ? '#0369a1' : '#334155',
+                                        fontWeight: isSelected ? 600 : 500,
+                                    }}
+                                    onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = '#f8fafc'; }}
+                                    onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
+                                >
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: 7, overflow: 'hidden' }}>
+                                        <span style={{
+                                            width: 6,
+                                            height: 6,
+                                            borderRadius: '50%',
+                                            background: isSelected ? '#0284c7' : '#cbd5e1',
+                                            flexShrink: 0,
+                                        }} />
+                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {opt.label}
+                                        </span>
+                                    </span>
+                                    {isSelected && <span style={{ color: '#0284c7', fontWeight: 700, fontSize: 12 }}>✓</span>}
+                                </div>
+                            );
+                        })}
+
+                        {filteredOptions.length === 0 && (
+                            <div style={{ padding: '16px', textAlign: 'center', fontSize: 12, color: '#94a3b8' }}>
+                                {isEn ? 'No distributors found' : 'Không tìm thấy đại lý'}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 // ── Main page ─────────────────────────────────────────────────
 const OverviewPage = () => {
     const [devices, setDevices]           = useState([]);
@@ -1322,9 +1532,27 @@ const OverviewPage = () => {
     // Fetch lần đầu khi mount
     useEffect(() => { fetchAll(); }, []);
 
-    // Fetch provinces (cached once — dùng chung cho RegionFilterPanel + map filter)
+    // Fetch provinces (cached once in localStorage — dùng chung cho RegionFilterPanel + map filter)
     useEffect(() => {
-        fetch(PROVINCE_API).then(r => r.json()).then(d => setProvinces(d.data || [])).catch(console.error);
+        if (typeof window !== 'undefined') {
+            const cached = localStorage.getItem('iky_provinces_cache');
+            if (cached) {
+                try {
+                    setProvinces(JSON.parse(cached));
+                    return;
+                } catch {}
+            }
+        }
+        fetch(PROVINCE_API)
+            .then(r => r.json())
+            .then(d => {
+                const list = d.data || [];
+                setProvinces(list);
+                if (list.length > 0 && typeof window !== 'undefined') {
+                    try { localStorage.setItem('iky_provinces_cache', JSON.stringify(list)); } catch {}
+                }
+            })
+            .catch(console.error);
     }, []);
 
     // Auto-refresh mỗi 5 phút (silent — không hiện loading toàn trang)
@@ -1478,352 +1706,12 @@ const OverviewPage = () => {
 
     return (
         <div className="ov-page">
-            <style>{`
-                @keyframes ov-spin { to { transform: rotate(360deg); } }
-
-                .ov-page {
-                    padding: 22px 26px 32px;
-                    background: #f4f6fb;
-                    min-height: calc(100vh - 100px);
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
-                }
-                @media (max-width: 768px) {
-                    .ov-page { padding: 14px 14px 24px; }
-                }
-
-                .ov-map-card:fullscreen {
-                    padding: 16px 20px;
-                    background: #fff;
-                    width: 100vw;
-                    height: 100vh;
-                    box-sizing: border-box;
-                    overflow: hidden;
-                    border-radius: 0;
-                    border: none;
-                    box-shadow: none;
-                    display: flex;
-                    flex-direction: column;
-                }
-                .ov-map-card:fullscreen .ov-map-card-header {
-                    margin-bottom: 12px;
-                }
-
-                /* ── Header ─────────────────── */
-                .ov-header {
-                    display: flex;
-                    align-items: flex-start;
-                    justify-content: space-between;
-                    margin-bottom: 20px;
-                    gap: 12px;
-                }
-                @media (max-width: 768px) {
-                    .ov-header {
-                        flex-direction: column;
-                        align-items: stretch;
-                        gap: 10px;
-                        margin-bottom: 14px;
-                    }
-                }
-                .ov-title-row {
-                    display: flex;
-                    align-items: center;
-                    gap: 10px;
-                }
-                .ov-title-icon {
-                    width: 36px; height: 36px;
-                    border-radius: 10px;
-                    background: linear-gradient(135deg,#1677ff,#4096ff);
-                    display: flex; align-items: center; justify-content: center;
-                    color: #fff;
-                    box-shadow: 0 4px 12px rgba(22,119,255,0.3);
-                    flex-shrink: 0;
-                }
-                .ov-title {
-                    font-size: 16px;
-                    font-weight: 700;
-                    color: #0f172a;
-                    letter-spacing: -.2px;
-                }
-                .ov-subtitle {
-                    font-size: 11.5px;
-                    color: #94a3b8;
-                    margin-top: 2px;
-                    font-weight: 400;
-                }
-
-                /* ── Refresh button ─────────── */
-                .ov-refresh-btn {
-                    display: flex; align-items: center; gap: 7px;
-                    background: #fff;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 9px;
-                    padding: 0 16px;
-                    height: 32px;
-                    font-size: 12.5px;
-                    color: #334155;
-                    cursor: pointer;
-                    font-weight: 500;
-                    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-                    transition: background .15s, box-shadow .15s, transform .1s;
-                    white-space: nowrap;
-                }
-                .ov-refresh-btn:hover:not(:disabled) {
-                    background: #f8fafc;
-                    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-                }
-                .ov-refresh-btn:active:not(:disabled) { transform: scale(0.97); }
-                .ov-refresh-btn:disabled { opacity: .6; cursor: not-allowed; }
-
-                /* ── Stats grid ─────────────── */
-                .ov-stats-row {
-                    display: grid;
-                    grid-template-columns: repeat(var(--stat-cols, 4), 1fr);
-                    gap: 14px;
-                    margin-bottom: 18px;
-                }
-                @media (max-width: 1200px) { .ov-stats-row { --stat-cols: 3 !important; gap: 12px; } }
-                @media (max-width: 900px)  { .ov-stats-row { --stat-cols: 2 !important; gap: 12px; } }
-                @media (max-width: 560px)  { .ov-stats-row { --stat-cols: 2 !important; gap: 8px; margin-bottom: 12px; } }
-                @media (max-width: 380px)  { .ov-stats-row { --stat-cols: 1 !important; gap: 8px; } }
-
-                /* ── Header actions ─────────── */
-                .ov-header-actions {
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    flex-wrap: wrap;
-                }
-                @media (max-width: 768px) {
-                    .ov-header-actions {
-                        justify-content: flex-start;
-                        gap: 6px;
-                        width: 100%;
-                    }
-                    .ov-header-actions > * {
-                        flex: 1 !important;
-                        min-width: 0 !important;
-                    }
-                    .ov-header-actions .ov-refresh-btn {
-                        width: 100% !important;
-                        justify-content: center;
-                        font-size: 12px;
-                        padding: 7px 10px;
-                    }
-                }
-
-                /* ── Search Box responsive ── */
-                .ov-search-box-wrap {
-                    width: 260px;
-                    flex-shrink: 0;
-                }
-                @media (max-width: 560px) {
-                    .ov-search-box-wrap {
-                        width: 100% !important;
-                        margin-top: 4px;
-                    }
-                }
-
-                /* ── Region Panel bottom sheet ── */
-                .ov-region-panel {
-                    position: absolute;
-                    top: calc(100% + 6px);
-                    right: 0;
-                    background: #fff;
-                    border: 1px solid #e2e8f0;
-                    border-radius: 12px;
-                    box-shadow: 0 10px 36px rgba(0,0,0,0.16);
-                    z-index: 9999;
-                    width: 500px;
-                    overflow: hidden;
-                    display: flex;
-                    flex-direction: column;
-                }
-                .ov-region-body {
-                    display: flex;
-                    height: 320px;
-                }
-                .ov-region-left {
-                    width: 220px;
-                    border-right: 1px solid #f1f5f9;
-                    display: flex;
-                    flex-direction: column;
-                }
-                .ov-region-footer {
-                    padding: 10px 15px;
-                    border-top: 1px solid #f1f5f9;
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    background: #f8fafc;
-                    flex-shrink: 0;
-                }
-                @media (max-width: 560px) {
-                    .ov-region-panel {
-                        position: fixed !important;
-                        top: auto !important;
-                        bottom: 0 !important;
-                        left: 0 !important;
-                        right: 0 !important;
-                        width: 100% !important;
-                        height: 70vh !important;
-                        max-height: 500px !important;
-                        border-radius: 16px 16px 0 0 !important;
-                        border: none !important;
-                        box-shadow: 0 -4px 24px rgba(0,0,0,0.15) !important;
-                        z-index: 99999 !important;
-                    }
-                    .ov-region-body {
-                        flex: 1 !important;
-                        height: auto !important;
-                        min-height: 0 !important;
-                    }
-                    .ov-region-left {
-                        width: 45% !important;
-                        min-width: 140px !important;
-                    }
-                    .ov-region-footer {
-                        padding: 12px 14px 20px !important;
-                        flex-wrap: wrap !important;
-                        justify-content: space-between !important;
-                        gap: 8px !important;
-                    }
-                    .ov-region-footer-label {
-                        width: 100% !important;
-                        margin-bottom: 2px !important;
-                        font-size: 11px !important;
-                    }
-                    .ov-region-footer-btn {
-                        flex: 1 !important;
-                        justify-content: center !important;
-                        min-width: 0 !important;
-                    }
-                }
-
-                .ov-stat-card {
-                    background: #fff;
-                    border-radius: 14px;
-                    padding: 18px 20px 28px;
-                    display: flex;
-                    align-items: center;
-                    gap: 16px;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
-                    border: 1px solid rgba(0,0,0,0.045);
-                    position: relative;
-                    overflow: hidden;
-                    transition: transform .18s, box-shadow .18s, outline .15s;
-                }
-                .ov-stat-card:hover {
-                    transform: translateY(-2px);
-                    box-shadow: 0 4px 16px rgba(0,0,0,0.10);
-                }
-                @media (max-width: 560px) {
-                    .ov-stat-card {
-                        padding: 14px 14px 22px;
-                        gap: 12px;
-                        border-radius: 12px;
-                    }
-                    .ov-stat-value { font-size: 24px !important; }
-                    .ov-stat-icon { width: 38px !important; height: 38px !important; border-radius: 10px !important; }
-                }
-                .ov-stat-accent {
-                    position: absolute;
-                    top: 0; left: 0; right: 0;
-                    height: 4px;
-                    border-radius: 14px 14px 0 0;
-                    /* gradient glow from solid color — will be overridden by inline style background */
-                    filter: brightness(1.05);
-                }
-                .ov-stat-body { flex: 1; min-width: 0; }
-                .ov-stat-label {
-                    font-size: 10.5px;
-                    color: #94a3b8;
-                    text-transform: uppercase;
-                    letter-spacing: .7px;
-                    font-weight: 600;
-                    margin-bottom: 6px;
-                    white-space: nowrap;
-                }
-                .ov-stat-value {
-                    font-size: 30px;
-                    font-weight: 800;
-                    line-height: 1;
-                    margin-bottom: 4px;
-                    letter-spacing: -.5px;
-                }
-                .ov-stat-sub {
-                    font-size: 11px;
-                    color: #b0bec5;
-                    white-space: nowrap;
-                }
-                .ov-stat-icon {
-                    width: 46px; height: 46px;
-                    border-radius: 12px;
-                    display: flex; align-items: center; justify-content: center;
-                    flex-shrink: 0;
-                }
-
-                /* ── Map card ───────────────── */
-                .ov-map-card {
-                    background: #fff;
-                    border-radius: 16px;
-                    padding: 18px 20px 20px;
-                    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 12px rgba(0,0,0,0.04);
-                    border: 1px solid rgba(0,0,0,0.045);
-                }
-                @media (max-width: 768px) {
-                    .ov-map-card { padding: 14px 12px 14px; border-radius: 12px; }
-                }
-                .ov-map-card-header {
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    margin-bottom: 14px;
-                    flex-wrap: wrap;
-                    row-gap: 8px;
-                }
-                @media (max-width: 768px) {
-                    .ov-map-card-header { margin-bottom: 10px; }
-                    .ov-map-hint { display: none; }
-                    .ov-toggle-label { display: none; }
-                }
-                .ov-map-search-wrap {
-                    flex: 1;
-                    min-width: 0;
-                    max-width: 260px;
-                }
-                .ov-map-title {
-                    font-size: 14px;
-                    font-weight: 700;
-                    color: #0f172a;
-                    white-space: nowrap;
-                }
-                .ov-map-hint {
-                    margin-left: auto;
-                    font-size: 11px;
-                    color: #94a3b8;
-                    font-weight: 400;
-                    background: #f1f5f9;
-                    padding: 3px 11px;
-                    border-radius: 20px;
-                    border: 1px solid #e2e8f0;
-                }
-                .ov-map-icon-wrap {
-                    width: 28px; height: 28px;
-                    border-radius: 8px;
-                    background: linear-gradient(135deg,#0f766e,#14b8a6);
-                    display: flex; align-items: center; justify-content: center;
-                    color: #fff;
-                    box-shadow: 0 2px 8px rgba(20,184,166,0.3);
-                    flex-shrink: 0;
-                }
-            `}</style>
-
             {/* Header */}
             <div className="ov-header">
                 <div>
                     <div className="ov-title-row">
                         <div className="ov-title-icon">
-                            <IcGrid />
+                            <FleetTotalIcon size={20} color="#ffffff" />
                         </div>
                         <div>
                             <div className="ov-title">{t('Tổng quan hệ thống', 'System Overview')}</div>
@@ -1835,10 +1723,10 @@ const OverviewPage = () => {
                             {/* Mini online ratio bar */}
                             {!loading && totalDevices > 0 && (
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 6 }}>
-                                    <div style={{ flex: 1, height: 4, borderRadius: 99, background: '#f1f5f9', overflow: 'hidden', maxWidth: 140 }}>
+                                    <div style={{ flex: 1, height: 4, borderRadius: 2, background: '#e2e8f0', overflow: 'hidden', maxWidth: 140 }}>
                                         <div style={{
-                                            height: '100%', borderRadius: 99,
-                                            background: 'linear-gradient(90deg, #16a34a, #4ade80)',
+                                            height: '100%', borderRadius: 2,
+                                            background: '#16a34a',
                                             width: `${Math.round((displayOnline / Math.max(displayTotal, 1)) * 100)}%`,
                                             transition: 'width .4s ease',
                                         }} />
@@ -1854,17 +1742,11 @@ const OverviewPage = () => {
                 <div className="ov-header-actions">
                     {/* Distributor dropdown — chỉ admin mới thấy */}
                     {isAdmin && distributorOptions.length > 0 && (
-                        <Select
-                            allowClear
-                            showSearch
-                            placeholder={t('Đại lý', 'Distributor')}
+                        <DistributorSelect
                             value={distributorFilter}
                             onChange={setDistributorFilter}
                             options={distributorOptions}
-                            optionFilterProp="label"
-                            style={{ minWidth: 160, maxWidth: 220, fontSize: 12.5 }}
-                            size="small"
-                            styles={{ selector: { height: 32 } }}
+                            isEn={isEn}
                         />
                     )}
                     <RegionFilterPanel
@@ -1902,45 +1784,55 @@ const OverviewPage = () => {
                 }
             >
                 <StatCard
-                    icon={<IcTotal />}
+                    icon={<FleetTotalIcon size={24} color="#1d4ed8" />}
                     label={t('Tổng thiết bị', 'Total Devices')}
                     value={loading ? '—' : displayTotal.toLocaleString()}
-                    sub={displayTotal !== totalDevices ? t(`/ ${totalDevices} tổng`, `/ ${totalDevices} total`) : undefined}
-                    accentColor="#1677ff"
+                    sub={displayTotal !== totalDevices ? t(`/ ${totalDevices} tổng hệ thống`, `/ ${totalDevices} total fleet`) : t('Thiết bị đang giám sát', 'Active fleet tracking')}
+                    accentColor="#1d4ed8"
+                    badgeText={t('ĐỘI XE', 'FLEET')}
                     loading={loading}
                     onClick={() => setMapFilter('all')}
                     active={mapFilter === 'all'}
                     isEn={isEn}
                 />
                 <StatCard
-                    icon={<IcWifiOn />}
+                    icon={<FleetOnlineIcon size={24} color="#16a34a" />}
                     label={t('Thiết bị Online', 'Devices Online')}
                     value={loading ? '—' : displayOnline.toLocaleString()}
-                    sub={t('Cập nhật trong 24h', 'Updated < 24h')}
+                    percentage={displayTotal > 0 ? Math.round((displayOnline / displayTotal) * 100) : 0}
+                    progressColor="#16a34a"
+                    sub={`${displayTotal > 0 ? Math.round((displayOnline / displayTotal) * 100) : 0}% ${t('hạm đội hoạt động', 'of fleet active')}`}
                     accentColor="#16a34a"
+                    badgeText={t('TRỰC TUYẾN', 'ONLINE')}
+                    pulseDot
                     loading={loading}
                     onClick={() => setMapFilter((c) => c === 'online' ? 'all' : 'online')}
                     active={mapFilter === 'online'}
                     isEn={isEn}
                 />
                 <StatCard
-                    icon={<IcWifiOff />}
+                    icon={<FleetOfflineIcon size={24} color="#dc2626" />}
                     label={t('Thiết bị Offline', 'Devices Offline')}
                     value={loading ? '—' : displayOffline.toLocaleString()}
-                    sub={t('Không cập nhật 24h', 'No update > 24h')}
+                    percentage={displayTotal > 0 ? Math.round((displayOffline / displayTotal) * 100) : 0}
+                    progressColor="#dc2626"
+                    sub={`${displayTotal > 0 ? Math.round((displayOffline / displayTotal) * 100) : 0}% ${t('mất tín hiệu > 24h', 'lost signal > 24h')}`}
                     accentColor="#dc2626"
+                    badgeText={t('MẤT TÍN HIỆU', 'OFFLINE')}
                     loading={loading}
                     onClick={() => setMapFilter((c) => c === 'offline' ? 'all' : 'offline')}
                     active={mapFilter === 'offline'}
                     isEn={isEn}
                 />
                 <StatCard
-                    icon={<IcClock />}
+                    icon={<FleetExpiringIcon size={24} color={(displayExpiring > 0) ? '#d97706' : '#64748b'} />}
                     label={t('Sắp hết hạn', 'Expiring Soon')}
                     value={loading ? '—' : displayExpiring.toLocaleString()}
-                    sub={t('Trong vòng 7 ngày', 'Within 7 days')}
-                    accentColor={displayExpiring > 0 ? '#ea580c' : '#94a3b8'}
+                    sub={(displayExpiring > 0) ? t('Cần gia hạn trong 7 ngày', 'Renew within 7 days') : t('Không có thiết bị hết hạn', 'All active')}
+                    accentColor={(displayExpiring > 0) ? '#d97706' : '#64748b'}
+                    badgeText={(displayExpiring > 0) ? t('CẦN XỬ LÝ', 'ATTENTION') : t('BÌNH THƯỜNG', 'STABLE')}
                     loading={loading}
+                    isEn={isEn}
                 />
 
                 {/* Distributor card — admin only */}
@@ -2006,7 +1898,7 @@ const OverviewPage = () => {
                                                     gap: '0 8px',
                                                     padding: '6px 14px',
                                                     cursor: 'pointer',
-                                                    background: isActive ? '#faf5ff' : 'transparent',
+                                                    background: isActive ? '#f0f9ff' : 'transparent',
                                                     transition: 'background .12s',
                                                 }}
                                                 onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = '#f8fafc'; }}
@@ -2014,10 +1906,10 @@ const OverviewPage = () => {
                                             >
                                                 <span style={{
                                                     fontSize: 12.5, fontWeight: isActive ? 700 : 400,
-                                                    color: isActive ? '#6d28d9' : '#334155',
+                                                    color: isActive ? '#0369a1' : '#334155',
                                                     overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                                                 }}>
-                                                    {isActive && <span style={{ color: '#7c3aed', marginRight: 4 }}>●</span>}
+                                                    {isActive && <span style={{ color: '#0284c7', marginRight: 4 }}>●</span>}
                                                     {dist.label}
                                                 </span>
                                                 <span style={{ fontSize: 12, fontWeight: 700, color: '#1677ff', textAlign: 'right' }}>{dist.total}</span>
@@ -2047,47 +1939,54 @@ const OverviewPage = () => {
                     >
                         {/* Trigger card — styled like StatCard */}
                         <div
-                            className="ov-stat-card"
+                            className={`ov-stat-card ${distributorFilter ? 'ov-stat-card--active' : ''}`}
                             style={{
+                                '--card-accent': '#0284c7',
                                 cursor: 'pointer',
-                                outline: distributorFilter ? '2px solid #7c3aed' : '2px solid transparent',
-                                outlineOffset: -2,
                             }}
                         >
-                            {distributorFilter && (
-                                <div style={{
-                                    position: 'absolute', inset: 0,
-                                    background: '#7c3aed0D',
-                                    borderRadius: 14, pointerEvents: 'none',
-                                }} />
-                            )}
-                            <div className="ov-stat-accent" style={{ background: '#7c3aed' }} />
-                            <div className="ov-stat-body">
-                                <div className="ov-stat-label">{t('Đại lý', 'Distributors')}</div>
-                                <div className="ov-stat-value" style={{ color: '#7c3aed' }}>
+                            <div className="ov-stat-card-top">
+                                <div
+                                    className="ov-stat-icon-box"
+                                    style={{
+                                        background: '#0284c712',
+                                        borderColor: '#0284c728',
+                                    }}
+                                >
+                                    <FleetDistributorIcon size={24} color="#0284c7" />
+                                </div>
+                                <span
+                                    className="ov-stat-badge"
+                                    style={{
+                                        background: '#0284c712',
+                                        color: '#0284c7',
+                                        border: '1px solid #0284c728',
+                                    }}
+                                >
+                                    {t('ĐẠI LÝ', 'DEALERS')}
+                                </span>
+                            </div>
+                            <div className="ov-stat-main">
+                                <div className="ov-stat-value-row">
+                                    <span className="ov-stat-value">
+                                        {distributorFilter
+                                            ? distributorStats.find(d => d.id === distributorFilter)?.label?.split('_')[0] || '1'
+                                            : distributorStats.length
+                                        }
+                                    </span>
+                                </div>
+                                <div className="ov-stat-label">{t('Đại lý phân phối', 'Distributors')}</div>
+                            </div>
+                            <div className="ov-stat-footer">
+                                <div style={{ flex: 1, minWidth: 0, fontSize: 11, color: '#64748b' }}>
                                     {distributorFilter
-                                        ? distributorStats.find(d => d.id === distributorFilter)?.label?.split('_')[0] || '1'
-                                        : distributorStats.length
+                                        ? t('Đang lọc · Click xem tất cả', 'Filtering · Click for all')
+                                        : t('Phân bổ thiết bị', 'Device distribution')
                                     }
                                 </div>
-                                <div className="ov-stat-sub">
-                                    {distributorFilter
-                                        ? t('Đang lọc · click xem tất cả', 'Filtering · click to see all')
-                                        : t('Click để xem phân bổ', 'Click to see breakdown')
-                                    }
-                                </div>
-                            </div>
-                            <div className="ov-stat-icon" style={{ color: '#7c3aed', background: '#7c3aed18' }}>
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
-                                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                                </svg>
-                            </div>
-                            <div style={{
-                                position: 'absolute', bottom: 8, right: 12,
-                                fontSize: 10, color: '#7c3aedbb', fontWeight: 500,
-                            }}>
-                                {distributorFilter ? t('✕ Bỏ lọc', '✕ Clear') : t('Xem chi tiết →', 'Details →')}
+                                <span className="ov-stat-action-hint" style={{ color: '#0284c7' }}>
+                                    {distributorFilter ? t('✕ Bỏ lọc', '✕ Clear') : t('Chi tiết →', 'Details →')}
+                                </span>
                             </div>
                         </div>
                     </Popover>
@@ -2097,8 +1996,8 @@ const OverviewPage = () => {
             {/* Map card */}
             <div className="ov-map-card" ref={mapCardRef}>
                 <div className="ov-map-card-header">
-                    <div className="ov-map-icon-wrap" style={{ background: viewMode === 'table' ? 'linear-gradient(135deg,#7c3aed,#a78bfa)' : undefined }}>
-                        {viewMode === 'table' ? <LayoutList size={16} /> : <IcMap />}
+                    <div className="ov-map-icon-wrap" style={{ background: '#0284c7', borderRadius: 6 }}>
+                        <IconFleetCommandHub size={18} color="#ffffff" />
                     </div>
                     <span className="ov-map-title">
                         {viewMode === 'table' ? t('Danh sách thiết bị', 'Device List') : t('Bản đồ thiết bị', 'Device Map')}
@@ -2107,39 +2006,40 @@ const OverviewPage = () => {
                     {/* Map/Table toggle */}
                     <div style={{
                         display: 'flex', alignItems: 'center',
-                        background: '#f1f5f9', borderRadius: 9,
-                        padding: 3, gap: 2, flexShrink: 0,
+                        background: '#f1f5f9', borderRadius: 6,
+                        border: '1px solid #e2e8f0',
+                        padding: 2, gap: 2, flexShrink: 0,
                     }}>
                         <button
                             onClick={() => setViewMode('map')}
                             title={t('Xem bản đồ', 'Map view')}
                             style={{
-                                display: 'flex', alignItems: 'center', gap: 5,
-                                padding: '5px 10px', borderRadius: 7, border: 'none',
-                                background: viewMode === 'map' ? '#fff' : 'transparent',
-                                boxShadow: viewMode === 'map' ? '0 1px 4px rgba(0,0,0,0.1)' : 'none',
-                                color: viewMode === 'map' ? '#0f172a' : '#94a3b8',
+                                display: 'flex', alignItems: 'center', gap: 6,
+                                padding: '4px 10px', borderRadius: 4, border: 'none',
+                                background: viewMode === 'map' ? '#ffffff' : 'transparent',
+                                boxShadow: viewMode === 'map' ? '0 1px 3px rgba(15,23,42,0.08)' : 'none',
+                                color: viewMode === 'map' ? '#0284c7' : '#64748b',
                                 cursor: 'pointer', fontSize: 12, fontWeight: viewMode === 'map' ? 700 : 500,
                                 transition: 'all .15s',
                             }}
                         >
-                            <MapIcon size={13} />
+                            <IconMapTab size={14} color={viewMode === 'map' ? '#0284c7' : '#64748b'} />
                             <span className="ov-toggle-label">{t('Bản đồ', 'Map')}</span>
                         </button>
                         <button
                             onClick={() => setViewMode('table')}
                             title={t('Xem danh sách', 'Table view')}
                             style={{
-                                display: 'flex', alignItems: 'center', gap: 5,
-                                padding: '5px 10px', borderRadius: 7, border: 'none',
-                                background: viewMode === 'table' ? '#fff' : 'transparent',
-                                boxShadow: viewMode === 'table' ? '0 1px 4px rgba(0,0,0,0.1)' : 'none',
-                                color: viewMode === 'table' ? '#7c3aed' : '#94a3b8',
+                                display: 'flex', alignItems: 'center', gap: 6,
+                                padding: '4px 10px', borderRadius: 4, border: 'none',
+                                background: viewMode === 'table' ? '#ffffff' : 'transparent',
+                                boxShadow: viewMode === 'table' ? '0 1px 3px rgba(15,23,42,0.08)' : 'none',
+                                color: viewMode === 'table' ? '#0284c7' : '#64748b',
                                 cursor: 'pointer', fontSize: 12, fontWeight: viewMode === 'table' ? 700 : 500,
                                 transition: 'all .15s',
                             }}
                         >
-                            <LayoutList size={13} />
+                            <IconTableTab size={14} color={viewMode === 'table' ? '#0284c7' : '#64748b'} />
                             <span className="ov-toggle-label">{t('Danh sách', 'List')}</span>
                         </button>
                     </div>
@@ -2163,9 +2063,9 @@ const OverviewPage = () => {
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: 6,
-                            padding: '3px 10px',
-                            borderRadius: 20,
-                            fontSize: 12,
+                            padding: '3px 9px',
+                            borderRadius: 4,
+                            fontSize: 11.5,
                             fontWeight: 600,
                             background: mapFilter === 'online' ? '#dcfce7' : '#fee2e2',
                             color: mapFilter === 'online' ? '#166534' : '#991b1b',
@@ -2175,12 +2075,12 @@ const OverviewPage = () => {
                                 width: 6, height: 6, borderRadius: '50%',
                                 background: mapFilter === 'online' ? '#16a34a' : '#dc2626',
                             }} />
-                            Đang lọc: {mapFilter === 'online'
+                            {isEn ? 'Filter:' : 'Đang lọc:'} {mapFilter === 'online'
                                 ? `${onlineDevices} Online`
                                 : `${offlineDevices} Offline`}
                             <button
                                 onClick={() => setMapFilter('all')}
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 0 4px', fontSize: 13, color: 'inherit', fontWeight: 700, lineHeight: 1 }}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 0 4px', fontSize: 12, color: 'inherit', fontWeight: 700, lineHeight: 1 }}
                             >✕</button>
                         </span>
                     )}
@@ -2191,18 +2091,19 @@ const OverviewPage = () => {
                         className="ov-refresh-btn"
                         style={{
                             marginLeft: (mapFilter !== 'all' || (mapFilter === 'all' && !loading)) ? '0' : 'auto',
-                            padding: '5px 12px',
+                            padding: '0 12px',
                             height: 32,
-                            fontSize: 12.5,
+                            fontSize: 12,
                             display: 'flex',
                             alignItems: 'center',
                             gap: 6,
-                            borderColor: '#e2e8f0',
+                            borderColor: '#cbd5e1',
+                            borderRadius: 6,
                             cursor: 'pointer',
                         }}
                         title={isFullscreen ? t('Thoát toàn màn hình', 'Exit Fullscreen') : t('Toàn màn hình', 'Fullscreen')}
                     >
-                        {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                        {isFullscreen ? <IconFullscreenCollapse size={13} color="#475569" /> : <IconFullscreenExpand size={13} color="#475569" />}
                         <span>{isFullscreen ? t('Thu nhỏ', 'Minimize') : t('Toàn màn hình', 'Fullscreen')}</span>
                     </button>
 
@@ -2210,8 +2111,8 @@ const OverviewPage = () => {
                     {drillDevices !== null && !loading && (
                         <span style={{
                             display: 'inline-flex', alignItems: 'center', gap: 6,
-                            padding: '3px 10px', borderRadius: 20,
-                            fontSize: 12, fontWeight: 600,
+                            padding: '3px 9px', borderRadius: 4,
+                            fontSize: 11.5, fontWeight: 600,
                             background: '#eff6ff', color: '#1d4ed8',
                             border: '1px solid #bfdbfe',
                         }}>

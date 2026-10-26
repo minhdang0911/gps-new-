@@ -42,8 +42,10 @@ const { Text, Title } = Typography;
 export default function DeviceCustomerPage() {
     const pathname = usePathname() || '/';
 
-    const token = useLocalStorageValue('accessToken', '');
-    const role = useLocalStorageValue('role', '');
+    const localToken = typeof window !== 'undefined' ? localStorage.getItem('accessToken') || '' : '';
+    const token = useLocalStorageValue('accessToken', localToken) || localToken;
+    const localRole = typeof window !== 'undefined' ? localStorage.getItem('role') || '' : '';
+    const role = useLocalStorageValue('role', localRole) || localRole;
     const isEn = useIsEn();
     const t = isEn ? locales.en.deviceCustomer : locales.vi.deviceCustomer;
 
@@ -139,15 +141,6 @@ export default function DeviceCustomerPage() {
     );
 
     const allDevices = allDevicesRes || [];
-
-    useEffect(() => {
-        if (!isAddModalOpen) return;
-        try {
-            mutateAllDevices?.();
-            mutateCustomers?.();
-        } catch (_) {}
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isAddModalOpen]);
 
     // ===== actions
     const handleAddDevice = async () => {
@@ -364,7 +357,11 @@ export default function DeviceCustomerPage() {
 
                         <Button
                             icon={<ReloadOutlined />}
-                            onClick={() => mutateDevices()}
+                            onClick={async () => {
+                                message.loading({ content: isEn ? 'Refreshing...' : 'Đang làm mới...', key: 'dcust_refresh', duration: 1 });
+                                await mutateDevices();
+                                message.success({ content: isEn ? 'Refreshed' : 'Đã làm mới dữ liệu', key: 'dcust_refresh', duration: 1.5 });
+                            }}
                             disabled={!currentCustomerId}
                             data-tour="refreshBtn"
                         >
@@ -383,12 +380,7 @@ export default function DeviceCustomerPage() {
                         <Button
                             type="primary"
                             icon={<PlusOutlined />}
-                            onClick={() => {
-                                try {
-                                    mutateAllDevices?.();
-                                } catch (_) {}
-                                setIsAddModalOpen(true);
-                            }}
+                            onClick={() => setIsAddModalOpen(true)}
                             disabled={!currentCustomerId || !canEdit}
                             data-tour="addBtn"
                         >

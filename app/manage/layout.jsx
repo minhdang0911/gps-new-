@@ -13,18 +13,13 @@ export default function ManageLayout({ children }) {
     const router = useRouter();
     const pathname = usePathname() || '';
 
-    // ==== quyền: dùng useEffect để tránh SSR null stuck ====
-    const [allowed, setAllowed] = useState(null); // null = đang kiểm tra
-
+    // Kiểm tra quyền: nếu không có quyền thì redirect về /, không chặn render children
     useEffect(() => {
         if (typeof window === 'undefined') return;
         const role = localStorage.getItem('role');
-        // Không có role hoặc không đủ quyền → redirect về /
         if (!role || role === 'reporter') {
             router.replace('/');
-            return;
         }
-        setAllowed(true);
     }, [router]);
 
     // ==== detect lang ====
@@ -144,17 +139,7 @@ export default function ManageLayout({ children }) {
                 </div>
 
                 <Content style={{ padding: 20, minWidth: 0 }}>
-                {allowed === null ? (
-                    // Đang kiểm tra quyền — hiện loading ngắn
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 60, gap: 12 }}>
-                        <Spin size="large" />
-                        <span style={{ color: '#888', fontSize: 13 }}>
-                            {lang === 'en' ? 'Checking permissions...' : 'Đang kiểm tra quyền...'}
-                        </span>
-                    </div>
-                ) : (
-                    children
-                )}
+                    {children}
                 </Content>
             </Layout>
 

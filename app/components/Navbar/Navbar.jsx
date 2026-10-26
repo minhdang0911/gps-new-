@@ -23,6 +23,7 @@ import flagEn from '../../assets/flag-en.webp';
 
 import { useAuthStore } from '../../stores/authStore';
 import { logoutApi } from '../../lib/api/auth';
+import { clearSecureSession } from '../../lib/auth/secureSession';
 import { resetDeviceCache } from '../../hooks/useDeviceCache';
 import { useLang } from '../../hooks/useLang';
 import { useDarkMode } from '../../hooks/useDarkMode';
@@ -159,6 +160,7 @@ const Navbar = () => {
         } catch (err) {
             console.error('Logout error:', err);
         } finally {
+            clearSecureSession();
             clearAll();
             await resetDeviceCache();
             if (typeof window !== 'undefined') {

@@ -19,9 +19,14 @@ import {
     createVehicleCategory,
     updateVehicleCategory,
     deleteVehicleCategory,
-    getManufacturerOptions,
 } from '../../lib/api/vehicleCategory';
-import { getMadeInFromOptions, getDeviceCategories } from '../../lib/api/deviceCategory';
+import {
+    useMasterMadeInFromOptions,
+    useMasterManufacturerOptions,
+    useMasterDeviceCategories,
+    MASTER_KEYS,
+} from '../../hooks/useMasterData';
+import { mutate } from 'swr';
 
 import './VehicleCategoryPage.css';
 
@@ -53,8 +58,10 @@ const { Option } = Select;
 const VehicleCategoryPage = () => {
     const pathname = usePathname() || '/';
 
-    const token = useLocalStorageValue('accessToken', '');
-    const role = useLocalStorageValue('role', '');
+    const localToken = typeof window !== 'undefined' ? localStorage.getItem('accessToken') || '' : '';
+    const token = useLocalStorageValue('accessToken', localToken) || localToken;
+    const localRole = typeof window !== 'undefined' ? localStorage.getItem('role') || '' : '';
+    const role = useLocalStorageValue('role', localRole) || localRole;
     const isEn = useIsEn();
     const t = isEn ? locales.en.vehicleCategory : locales.vi.vehicleCategory;
 
@@ -75,41 +82,14 @@ const VehicleCategoryPage = () => {
 
     const popupInParent = (triggerNode) => triggerNode?.parentElement || document.body;
 
-    // ===== SWR OPTIONS
-    const mifKey = token ? ['madeInFromOptions', token] : null;
-    const manuKey = token ? ['manufacturerOptions', token] : null;
-    const deviceTypeKey = token ? ['deviceTypeOptions', token] : null;
-
-    const {
-        data: mifRes,
-        isLoading: mifLoading,
-        isValidating: mifValidating,
-        mutate: mutateMIF,
-    } = useSWR(mifKey, ([, tk]) => getMadeInFromOptions(tk), { revalidateOnFocus: false, dedupingInterval: 60_000 });
-
-    const {
-        data: manuRes,
-        isLoading: manuLoading,
-        isValidating: manuValidating,
-        mutate: mutateManu,
-    } = useSWR(manuKey, ([, tk]) => getManufacturerOptions(tk), {
-        revalidateOnFocus: false,
-        dedupingInterval: 60_000,
-    });
-
-    const {
-        data: dcRes,
-        isLoading: dcLoading,
-        isValidating: dcValidating,
-        mutate: mutateDC,
-    } = useSWR(deviceTypeKey, ([, tk]) => getDeviceCategories(tk, { page: 1, limit: 100 }), {
-        revalidateOnFocus: false,
-        dedupingInterval: 60_000,
-    });
+    // ===== SWR OPTIONS (Shared Master Data - 0 duplicate calls across pages/modals)
+    const { madeInFromRes: mifRes, mifLoading, mifValidating } = useMasterMadeInFromOptions();
+    const { manufacturerRes: manuRes, manuLoading, manuValidating } = useMasterManufacturerOptions();
+    const { deviceCategories, dcLoading, dcValidating } = useMasterDeviceCategories();
 
     const mifOptions = useMemo(() => buildMapOptions(mifRes || {}), [mifRes]);
     const manufacturerOptions = useMemo(() => buildMapOptions(manuRes || {}), [manuRes]);
-    const deviceTypeOptions = useMemo(() => buildDeviceTypeOptions(dcRes?.items || []), [dcRes]);
+    const deviceTypeOptions = useMemo(() => buildDeviceTypeOptions(deviceCategories || []), [deviceCategories]);
 
     const getMifLabel = (value) => _getMifLabel({ value, mifOptions, isEn });
     const getManufacturerLabel = (value) => _getManufacturerLabel({ value, manufacturerOptions });
@@ -118,19 +98,6 @@ const VehicleCategoryPage = () => {
     const mifBusy = mifLoading || mifValidating;
     const manuBusy = manuLoading || manuValidating;
     const dcBusy = dcLoading || dcValidating;
-
-    const prefetchOptions = () => {
-        try {
-            mutateMIF?.();
-            mutateManu?.();
-            mutateDC?.();
-        } catch (_) {}
-    };
-
-    useEffect(() => {
-        if (isModalOpen) prefetchOptions();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isModalOpen]);
 
     // ===== SWR LIST
     const listParams = useMemo(
@@ -176,7 +143,6 @@ const VehicleCategoryPage = () => {
     // ===== MODAL handlers
     const openCreateModal = () => {
         if (!isAdmin) return message.warning(t.noPermissionCreate);
-        prefetchOptions();
         setEditingItem(null);
         form.resetFields();
         setIsModalOpen(true);
@@ -185,7 +151,6 @@ const VehicleCategoryPage = () => {
     const openEditModal = (record) => {
         if (!canEdit) return message.warning(t.noPermissionEdit);
 
-        prefetchOptions();
         setEditingItem(record);
         form.setFieldsValue({
             name: record.name,
@@ -206,6 +171,7 @@ const VehicleCategoryPage = () => {
             await deleteVehicleCategory(token, record._id);
             message.success(t.deleteSuccess);
             mutateList();
+            mutate(MASTER_KEYS.VEHICLE_CATEGORIES);
         } catch (err) {
             console.error('Delete vehicle category error:', err);
             message.error(t.deleteFailed);
@@ -240,6 +206,7 @@ const VehicleCategoryPage = () => {
             setIsModalOpen(false);
             form.resetFields();
             mutateList();
+            mutate(MASTER_KEYS.VEHICLE_CATEGORIES);
         } catch (err) {
             if (err?.errorFields) return;
 
@@ -410,7 +377,14 @@ const VehicleCategoryPage = () => {
                             <Button shape="circle" icon={<QuestionCircleOutlined />} onClick={tour.start} />
                         </Tooltip>
 
-                        <Button icon={<ReloadOutlined />} onClick={() => mutateList()}>
+                        <Button
+                            icon={<ReloadOutlined />}
+                            onClick={async () => {
+                                message.loading({ content: isEn ? 'Refreshing...' : 'Đang làm mới...', key: 'vc_refresh', duration: 1 });
+                                await mutateList();
+                                message.success({ content: isEn ? 'Refreshed' : 'Đã làm mới dữ liệu', key: 'vc_refresh', duration: 1.5 });
+                            }}
+                        >
                             {t.refresh}
                         </Button>
                         <Button icon={<DownloadOutlined />} onClick={onExportExcel} disabled={!data.length}>
@@ -501,7 +475,7 @@ const VehicleCategoryPage = () => {
                 <div data-tour="tableWrap">
                     <Table
                         rowKey="_id"
-                        loading={listLoading || listValidating}
+                        loading={listLoading && (!data || data.length === 0)}
                         columns={columns}
                         dataSource={data}
                         pagination={{
