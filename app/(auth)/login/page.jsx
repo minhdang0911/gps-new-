@@ -119,8 +119,8 @@ const LoginPage = () => {
 
     return (
         <div className="iky-login">
-            <div className="iky-login__card">
-                {/* Language */}
+            {/* Top Bar Language Selector */}
+            <div className="iky-login__top-bar">
                 <div className="iky-login__lang-dropdown" ref={dropdownRef}>
                     <button type="button" className="iky-login__lang-trigger" onClick={() => setLangOpen((p) => !p)}>
                         <span className="iky-login__lang-badge">{isEn ? 'EN' : 'VI'}</span>
@@ -135,10 +135,12 @@ const LoginPage = () => {
                         </div>
                     )}
                 </div>
+            </div>
 
+            <div className="iky-login__card">
                 {/* Logo */}
                 <div className="iky-login__logo">
-                    <Image src={logo} alt="IKY GPS Logo" width={120} height={120} priority />
+                    <Image src={logo} alt="IKY GPS Logo" width={96} height={96} priority />
                 </div>
 
                 {/* Header */}
@@ -189,7 +191,7 @@ const LoginPage = () => {
                         />
                     </Form.Item>
 
-                    <Button type="primary" htmlType="submit" size="large" block loading={loading}>
+                    <Button type="primary" htmlType="submit" size="large" block loading={loading} className="iky-login__submit-btn">
                         {isEn ? 'Login' : 'Đăng nhập'}
                     </Button>
                 </Form>
