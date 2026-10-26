@@ -22,6 +22,7 @@ import flagVi from '../../assets/flag-vi.webp';
 import flagEn from '../../assets/flag-en.webp';
 
 import { useAuthStore } from '../../stores/authStore';
+import { startProgress } from '../RouteProgressBar';
 import { logoutApi } from '../../lib/api/auth';
 import { clearSecureSession } from '../../lib/auth/secureSession';
 import { resetDeviceCache } from '../../hooks/useDeviceCache';
@@ -142,6 +143,9 @@ const Navbar = () => {
         const basePath = item.href ?? item.path;
         let targetPath = basePath;
         if (isEn) targetPath = basePath === '/' ? '/en' : `${basePath}/en`;
+        if (targetPath !== pathname) {
+            startProgress();
+        }
         router.push(targetPath);
     };
 

@@ -1152,11 +1152,11 @@ const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false,
                     animate: false,
                 });
 
-                // Toggle permanent labels theo zoom — hien khi zoom > 6
+                // Toggle permanent labels theo zoom — ở mức toàn quốc (zoom >= 4) luôn hiện đầy đủ tên tỉnh thành
                 const toggleLabels = () => {
-                    const z = leafletMapRef.current?.getZoom() ?? 6;
+                    const z = leafletMapRef.current?.getZoom() ?? 5.5;
                     document.querySelectorAll('.vn-prov-label').forEach((el) => {
-                        el.style.display = z > 6 ? '' : 'none';
+                        el.style.display = z >= 4 ? '' : 'none';
                     });
                 };
                 leafletMapRef.current.on('zoomend', toggleLabels);
