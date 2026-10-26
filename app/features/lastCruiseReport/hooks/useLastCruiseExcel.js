@@ -24,7 +24,7 @@ export function useLastCruiseExcel({ processedData, isEn, t }) {
         return locked ? 'Khóa xe tắt' : 'Khóa xe mở';
     };
 
-    const exportExcel = () => {
+    const exportExcel = async () => {
         if (!processedData || processedData.length === 0) {
             message.warning(isEn ? 'No data to export' : 'Không có dữ liệu để xuất');
             return;
