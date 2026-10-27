@@ -27,6 +27,7 @@ import { useIsEn } from '@/app/hooks/useLang';
 import { MAX_DEVICE_LIMIT } from '@/app/lib/constants';
 import DeviceCustomerAddModal from './DeviceCustomerAddModal';
 import { exportCustomerDevicesExcel } from './deviceCustomer.exportExcel';
+import { filterVietnameseOption } from '@/app/util/search';
 
 // ✅ Intro.js styles
 import 'intro.js/introjs.css';
@@ -336,24 +337,18 @@ export default function DeviceCustomerPage() {
                             value={currentCustomerId || undefined}
                             onChange={(val) => setSelectedCustomer(val)}
                             showSearch
-                            optionFilterProp="children"
-                            filterOption={(input, option) =>
-                                String(option?.children || '')
-                                    .toLowerCase()
-                                    .includes(input.toLowerCase())
-                            }
+                            optionFilterProp="label"
+                            filterOption={filterVietnameseOption}
                             loading={customersBusy}
                             disabled={customersBusy}
-                            notFoundContent={customersBusy ? <Spin size="small" /> : null}
+                            notFoundContent={customersBusy ? <Spin size="small" /> : undefined}
                             getPopupContainer={popupInParent}
                             data-tour="customerSelect"
-                        >
-                            {customers.map((c) => (
-                                <Option key={c._id} value={c._id}>
-                                    {c.username || c.phone || c.email || c._id}
-                                </Option>
-                            ))}
-                        </Select>
+                            options={customers.map((c) => ({
+                                value: c._id,
+                                label: c.username || c.phone || c.email || c._id,
+                            }))}
+                        />
 
                         <Button
                             icon={<ReloadOutlined />}

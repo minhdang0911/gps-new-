@@ -1,9 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Modal, Form, Input, Select, Spin } from 'antd';
-
-const { Option } = Select;
+import { filterVietnameseOption } from '../../../util/search';
 
 export default function DeviceCategoryModal({
     open,
@@ -17,6 +16,11 @@ export default function DeviceCategoryModal({
     showMifLoading,
     popupInParent,
 }) {
+    const formattedMifOptions = useMemo(
+        () => (mifOptions || []).map((opt) => ({ value: opt.value, label: getMadeInFromLabel(opt.value) })),
+        [mifOptions, getMadeInFromLabel],
+    );
+
     return (
         <Modal
             open={open}
@@ -71,16 +75,12 @@ export default function DeviceCategoryModal({
                         getPopupContainer={popupInParent}
                         loading={showMifLoading}
                         disabled={showMifLoading}
-                        notFoundContent={showMifLoading ? <Spin size="small" /> : null}
+                        notFoundContent={showMifLoading ? <Spin size="small" /> : undefined}
                         showSearch
-                        optionFilterProp="children"
-                    >
-                        {mifOptions.map((opt) => (
-                            <Option key={opt.value} value={opt.value}>
-                                {getMadeInFromLabel(opt.value)}
-                            </Option>
-                        ))}
-                    </Select>
+                        optionFilterProp="label"
+                        filterOption={filterVietnameseOption}
+                        options={formattedMifOptions}
+                    />
                 </Form.Item>
 
                 <Form.Item label={t.form.descLabel} name="description">

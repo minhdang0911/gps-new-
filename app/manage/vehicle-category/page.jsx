@@ -24,6 +24,7 @@ import {
     useMasterMadeInFromOptions,
     useMasterManufacturerOptions,
     useMasterDeviceCategories,
+    invalidateMasterCache,
     MASTER_KEYS,
 } from '../../hooks/useMasterData';
 import { mutate } from 'swr';
@@ -171,7 +172,7 @@ const VehicleCategoryPage = () => {
             await deleteVehicleCategory(token, record._id);
             message.success(t.deleteSuccess);
             mutateList();
-            mutate(MASTER_KEYS.VEHICLE_CATEGORIES);
+            invalidateMasterCache('vehicleCategories');
         } catch (err) {
             console.error('Delete vehicle category error:', err);
             message.error(t.deleteFailed);
@@ -206,7 +207,7 @@ const VehicleCategoryPage = () => {
             setIsModalOpen(false);
             form.resetFields();
             mutateList();
-            mutate(MASTER_KEYS.VEHICLE_CATEGORIES);
+            invalidateMasterCache('vehicleCategories');
         } catch (err) {
             if (err?.errorFields) return;
 

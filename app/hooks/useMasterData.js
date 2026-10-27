@@ -5,9 +5,9 @@ import { getDeviceCategories, getMadeInFromOptions } from '../lib/api/deviceCate
 import { getVehicleCategories, getManufacturerOptions } from '../lib/api/vehicleCategory';
 import { getUserList } from '../lib/api/user';
 
-// Bộ nhớ đệm RAM toàn cục (global window cache) với TTL 15 phút
-// Đảm bảo không bị reset khi Hot-Reload hoặc render lại component
-const CACHE_TTL_MS = 15 * 60 * 1000;
+// Bộ nhớ đệm RAM toàn cục (global window cache) với TTL 3 phút
+// Đảm bảo không bị reset khi render lại component nhưng vẫn cập nhật dữ liệu mới kịp thời
+const CACHE_TTL_MS = 3 * 60 * 1000;
 
 const getGlobalCache = () => {
     if (typeof window !== 'undefined') {
@@ -37,7 +37,7 @@ const getCachedOrFetch = async (key, fetcher, force = false) => {
     const now = Date.now();
 
     // 1. Trả về RAM cache nếu còn hạn
-    if (!force && entry.data && (now - entry.timestamp < CACHE_TTL_MS)) {
+    if (!force && entry.data && entry.timestamp > 0 && (now - entry.timestamp < CACHE_TTL_MS)) {
         return entry.data;
     }
     // 2. Chống dồn request: nếu đang có 1 request đang chạy thì dùng chung Promise
@@ -88,7 +88,10 @@ export function useMasterDeviceCategories(enabled = true) {
         mutateDeviceCategories: (force = false) => {
             if (force) {
                 const cache = getGlobalCache();
-                if (cache.deviceCategories) cache.deviceCategories.timestamp = 0;
+                if (cache.deviceCategories) {
+                    cache.deviceCategories.timestamp = 0;
+                    cache.deviceCategories.data = null;
+                }
             }
             return mutateDC();
         },
@@ -109,7 +112,10 @@ export function useMasterVehicleCategories(enabled = true) {
         mutateVehicleCategories: (force = false) => {
             if (force) {
                 const cache = getGlobalCache();
-                if (cache.vehicleCategories) cache.vehicleCategories.timestamp = 0;
+                if (cache.vehicleCategories) {
+                    cache.vehicleCategories.timestamp = 0;
+                    cache.vehicleCategories.data = null;
+                }
             }
             return mutateVC();
         },
@@ -130,7 +136,10 @@ export function useMasterUserOptions(enabled = true) {
         mutateUserOptions: (force = false) => {
             if (force) {
                 const cache = getGlobalCache();
-                if (cache.userOptions) cache.userOptions.timestamp = 0;
+                if (cache.userOptions) {
+                    cache.userOptions.timestamp = 0;
+                    cache.userOptions.data = null;
+                }
             }
             return mutateUsers();
         },
@@ -151,7 +160,10 @@ export function useMasterManufacturerOptions(enabled = true) {
         mutateManufacturers: (force = false) => {
             if (force) {
                 const cache = getGlobalCache();
-                if (cache.manufacturers) cache.manufacturers.timestamp = 0;
+                if (cache.manufacturers) {
+                    cache.manufacturers.timestamp = 0;
+                    cache.manufacturers.data = null;
+                }
             }
             return mutateManu();
         },
@@ -172,26 +184,75 @@ export function useMasterMadeInFromOptions(enabled = true) {
         mutateMadeInFrom: (force = false) => {
             if (force) {
                 const cache = getGlobalCache();
-                if (cache.madeInFrom) cache.madeInFrom.timestamp = 0;
+                if (cache.madeInFrom) {
+                    cache.madeInFrom.timestamp = 0;
+                    cache.madeInFrom.data = null;
+                }
             }
             return mutateMIF();
         },
     };
 }
 
-// Invalidate specific cache (khi tạo mới / sửa / xóa)
+// Invalidate specific cache (khi tạo mới / sửa / xóa) và revalidate ngay lập tức
 export const invalidateMasterCache = (type) => {
     const cache = getGlobalCache();
     if (type && cache[type]) {
         cache[type].timestamp = 0;
+        cache[type].data = null;
+    }
+    const masterKeyMap = {
+        deviceCategories: MASTER_KEYS.DEVICE_CATEGORIES,
+        vehicleCategories: MASTER_KEYS.VEHICLE_CATEGORIES,
+        userOptions: MASTER_KEYS.USER_OPTIONS,
+        manufacturers: MASTER_KEYS.MANUFACTURERS,
+        madeInFrom: MASTER_KEYS.MADE_IN_FROM,
+    };
+    if (type && masterKeyMap[type]) {
+        // Đồng bộ các tab khác qua localStorage event
+        if (typeof window !== 'undefined' && window.localStorage) {
+            try {
+                localStorage.setItem('master_cache_invalidated', JSON.stringify({ type, t: Date.now() }));
+            } catch (_) {}
+        }
+        return mutate(masterKeyMap[type]);
     }
 };
+
+// Lắng nghe tín hiệu đồng bộ giữa các tab trình duyệt
+if (typeof window !== 'undefined') {
+    window.addEventListener('storage', (e) => {
+        if (e.key === 'master_cache_invalidated' && e.newValue) {
+            try {
+                const { type } = JSON.parse(e.newValue);
+                const cache = getGlobalCache();
+                if (type && cache[type]) {
+                    cache[type].timestamp = 0;
+                    cache[type].data = null;
+                }
+                const masterKeyMap = {
+                    deviceCategories: MASTER_KEYS.DEVICE_CATEGORIES,
+                    vehicleCategories: MASTER_KEYS.VEHICLE_CATEGORIES,
+                    userOptions: MASTER_KEYS.USER_OPTIONS,
+                    manufacturers: MASTER_KEYS.MANUFACTURERS,
+                    madeInFrom: MASTER_KEYS.MADE_IN_FROM,
+                };
+                if (type && masterKeyMap[type]) {
+                    mutate(masterKeyMap[type]);
+                }
+            } catch (_) {}
+        }
+    });
+}
 
 // Làm mới toàn bộ cache
 export const refreshAllMasterData = async () => {
     const cache = getGlobalCache();
     Object.keys(cache).forEach((k) => {
-        if (cache[k]) cache[k].timestamp = 0;
+        if (cache[k]) {
+            cache[k].timestamp = 0;
+            cache[k].data = null;
+        }
     });
     return Promise.allSettled(Object.values(MASTER_KEYS).map((k) => mutate(k)));
 };

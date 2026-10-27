@@ -27,7 +27,7 @@ import en from '../../locales/en.json';
 
 import { useLocalStorageValue } from '../../hooks/useLocalStorageValue';
 import { useIsEn } from '../../hooks/useLang';
-import { useMasterMadeInFromOptions, MASTER_KEYS } from '../../hooks/useMasterData';
+import { useMasterMadeInFromOptions, invalidateMasterCache, MASTER_KEYS } from '../../hooks/useMasterData';
 import { mutate } from 'swr';
 import DeviceCategoryFilters from './components/DeviceCategoryFilters';
 import DeviceCategoryModal from './components/DeviceCategoryModal';
@@ -146,7 +146,7 @@ export default function DeviceCategoryPage() {
             await deleteDeviceCategory(record._id);
             message.success(t.deleteSuccess);
             mutateList();
-            mutate(MASTER_KEYS.DEVICE_CATEGORIES);
+            invalidateMasterCache('deviceCategories');
         } catch (err) {
             console.error('Delete device category error:', err);
             message.error(t.deleteFailed);
@@ -178,7 +178,7 @@ export default function DeviceCategoryPage() {
             setIsModalOpen(false);
             form.resetFields();
             mutateList();
-            mutate(MASTER_KEYS.DEVICE_CATEGORIES);
+            invalidateMasterCache('deviceCategories');
         } catch (err) {
             if (err?.errorFields) return;
 

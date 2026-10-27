@@ -37,6 +37,7 @@ import { exportDevicesExcel } from '../../util/manageDevices/exportDevicesExcel'
 import { buildPendingFormValues, validatePhone, extractErrorMsg } from '../../util/manageDevices/deviceFormHandlers';
 
 import { useUndoDeleteToast } from '../../hooks/common/useUndoDeleteToast';
+import { refreshAllMasterData } from '../../hooks/useMasterData';
 
 import dynamic from 'next/dynamic';
 
@@ -155,6 +156,7 @@ export default function ManageDevicesPage() {
         dcLoading,
         vcLoading,
         usersLoading,
+        refreshOptions,
     } = useManageDevicesData({
         currentPage,
         pageSize,
@@ -165,7 +167,7 @@ export default function ManageDevicesPage() {
 
     const handleRefresh = async () => {
         message.loading({ content: isEn ? 'Refreshing...' : 'Đang làm mới...', key: 'refresh_devices', duration: 1 });
-        await mutateDevices();
+        await Promise.allSettled([mutateDevices(), refreshAllMasterData()]);
         message.success({ content: isEn ? 'Refreshed' : 'Đã làm mới dữ liệu', key: 'refresh_devices', duration: 1.5 });
     };
 
@@ -205,6 +207,7 @@ export default function ManageDevicesPage() {
         if (!canAddDevice) return message.warning(t.noPermissionAdd);
         setSelectedDevice(null);
         setPendingFormValues(null);
+        refreshOptions?.();
         setModalMode('add');
     };
 
@@ -212,6 +215,7 @@ export default function ManageDevicesPage() {
         if (!canEditDevice) return message.warning(t.noPermissionEdit);
         setSelectedDevice(item);
         setPendingFormValues(buildPendingFormValues(item));
+        refreshOptions?.();
         setModalMode('edit');
     };
 

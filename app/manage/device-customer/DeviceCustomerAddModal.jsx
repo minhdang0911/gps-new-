@@ -1,9 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Modal, Form, Select, Spin } from 'antd';
-
-const { Option } = Select;
+import { filterVietnameseOption } from '../../util/search';
 
 export default function DeviceCustomerAddModal({
     open,
@@ -15,6 +14,15 @@ export default function DeviceCustomerAddModal({
     allDevicesBusy,
     popupInParent,
 }) {
+    const deviceOptions = useMemo(
+        () =>
+            (allDevices || []).map((d) => ({
+                value: d.imei,
+                label: `${d.imei}${d.license_plate ? ` - ${d.license_plate}` : ''}`,
+            })),
+        [allDevices],
+    );
+
     return (
         <Modal
             open={open}
@@ -36,21 +44,12 @@ export default function DeviceCustomerAddModal({
                         placeholder={t.modal.imeiPlaceholder}
                         loading={allDevicesBusy}
                         disabled={allDevicesBusy}
-                        notFoundContent={allDevicesBusy ? <Spin size="small" /> : null}
-                        optionFilterProp="children"
-                        filterOption={(input, option) =>
-                            String(option?.children || '')
-                                .toLowerCase()
-                                .includes(input.toLowerCase())
-                        }
+                        notFoundContent={allDevicesBusy ? <Spin size="small" /> : undefined}
+                        optionFilterProp="label"
+                        filterOption={filterVietnameseOption}
+                        options={deviceOptions}
                         getPopupContainer={popupInParent}
-                    >
-                        {allDevices.map((d) => (
-                            <Option key={d._id} value={d.imei}>
-                                {d.imei} {d.license_plate ? ` - ${d.license_plate}` : ''}
-                            </Option>
-                        ))}
-                    </Select>
+                    />
                 </Form.Item>
             </Form>
         </Modal>

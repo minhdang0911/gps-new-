@@ -1,9 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Modal, Form, Input, Select, Spin } from 'antd';
-
-const { Option } = Select;
+import { filterVietnameseOption } from '../../util/search';
 
 export default function VehicleCategoryModal({
     open,
@@ -21,6 +20,11 @@ export default function VehicleCategoryModal({
     deviceTypeOptions,
     getMifLabel,
 }) {
+    const formattedMifOptions = useMemo(
+        () => (mifOptions || []).map((opt) => ({ value: opt.value, label: getMifLabel(opt.value) })),
+        [mifOptions, getMifLabel],
+    );
+
     return (
         <Modal
             open={open}
@@ -51,16 +55,12 @@ export default function VehicleCategoryModal({
                         getPopupContainer={popupInParent}
                         loading={manuBusy}
                         disabled={manuBusy}
-                        notFoundContent={manuBusy ? <Spin size="small" /> : null}
+                        notFoundContent={manuBusy ? <Spin size="small" /> : undefined}
                         showSearch
-                        optionFilterProp="children"
-                    >
-                        {manufacturerOptions.map((opt) => (
-                            <Option key={opt.value} value={opt.value}>
-                                {opt.label}
-                            </Option>
-                        ))}
-                    </Select>
+                        optionFilterProp="label"
+                        filterOption={filterVietnameseOption}
+                        options={manufacturerOptions}
+                    />
                 </Form.Item>
 
                 <Form.Item
@@ -89,16 +89,12 @@ export default function VehicleCategoryModal({
                         getPopupContainer={popupInParent}
                         loading={mifBusy}
                         disabled={mifBusy}
-                        notFoundContent={mifBusy ? <Spin size="small" /> : null}
+                        notFoundContent={mifBusy ? <Spin size="small" /> : undefined}
                         showSearch
-                        optionFilterProp="children"
-                    >
-                        {mifOptions.map((opt) => (
-                            <Option key={opt.value} value={opt.value}>
-                                {getMifLabel(opt.value)}
-                            </Option>
-                        ))}
-                    </Select>
+                        optionFilterProp="label"
+                        filterOption={filterVietnameseOption}
+                        options={formattedMifOptions}
+                    />
                 </Form.Item>
 
                 <Form.Item label={t.form.deviceTypeLabel} name="deviceTypeId">
@@ -108,16 +104,12 @@ export default function VehicleCategoryModal({
                         getPopupContainer={popupInParent}
                         loading={dcBusy}
                         disabled={dcBusy}
-                        notFoundContent={dcBusy ? <Spin size="small" /> : null}
+                        notFoundContent={dcBusy ? <Spin size="small" /> : undefined}
                         showSearch
-                        optionFilterProp="children"
-                    >
-                        {deviceTypeOptions.map((opt) => (
-                            <Option key={opt.value} value={opt.value}>
-                                {opt.label}
-                            </Option>
-                        ))}
-                    </Select>
+                        optionFilterProp="label"
+                        filterOption={filterVietnameseOption}
+                        options={deviceTypeOptions}
+                    />
                 </Form.Item>
             </Form>
         </Modal>

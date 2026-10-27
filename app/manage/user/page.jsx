@@ -2,7 +2,7 @@
 
 import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import useSWR, { mutate } from 'swr';
-import { MASTER_KEYS } from '../../hooks/useMasterData';
+import { MASTER_KEYS, invalidateMasterCache } from '../../hooks/useMasterData';
 import {
     Card,
     Input,
@@ -380,7 +380,7 @@ export default function ManageUserPage() {
 
             closeUserModal();
             mutateUsers();
-            mutate(MASTER_KEYS.USER_OPTIONS);
+            invalidateMasterCache('userOptions');
         } catch (err) {
             console.log('SAVE USER ERROR', err);
 
@@ -412,7 +412,7 @@ export default function ManageUserPage() {
                     await deleteUser(record._id);
                     message.success(t.messages.deleteSuccess);
                     mutateUsers();
-                    mutate(MASTER_KEYS.USER_OPTIONS);
+                    invalidateMasterCache('userOptions');
                 } catch (err) {
                     console.log('DELETE USER ERROR', err);
                     message.error(t.messages.deleteFailed);

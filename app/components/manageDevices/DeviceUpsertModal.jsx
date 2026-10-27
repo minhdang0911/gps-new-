@@ -1,10 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Modal, Form, Input, Select, Spin, Typography } from 'antd';
+import { filterVietnameseOption } from '../../util/search';
 
 const { Text } = Typography;
-const { Option } = Select;
 
 export default function DeviceUpsertModal({
     open,
@@ -26,6 +26,32 @@ export default function DeviceUpsertModal({
     currentRole, // ✅ thêm prop này
 }) {
     const isDistributorRole = currentRole === 'distributor';
+
+    const deviceCategoryOptions = useMemo(
+        () => (deviceCategories || []).map((d) => ({ value: d._id, label: d.name })),
+        [deviceCategories],
+    );
+
+    const vehicleCategoryOptions = useMemo(
+        () => (vehicleCategories || []).map((v) => ({ value: v._id, label: v.name })),
+        [vehicleCategories],
+    );
+
+    const customerOptions = useMemo(
+        () =>
+            (userOptions || [])
+                .filter((u) => u.position === 'customer')
+                .map((u) => ({ value: u._id, label: `${u.email} (${u.username})` })),
+        [userOptions],
+    );
+
+    const distributorOptions = useMemo(
+        () =>
+            (userOptions || [])
+                .filter((u) => u.position === 'distributor')
+                .map((u) => ({ value: u._id, label: `${u.email} (${u.username})` })),
+        [userOptions],
+    );
 
     return (
         <Modal
@@ -62,16 +88,12 @@ export default function DeviceUpsertModal({
                         getPopupContainer={popupInParent}
                         loading={dcLoading}
                         disabled={dcLoading}
-                        notFoundContent={dcLoading ? <Spin size="small" /> : null}
+                        notFoundContent={dcLoading ? <Spin size="small" /> : undefined}
                         showSearch
-                        optionFilterProp="children"
-                    >
-                        {deviceCategories.map((d) => (
-                            <Option key={d._id} value={d._id}>
-                                {d.name}
-                            </Option>
-                        ))}
-                    </Select>
+                        optionFilterProp="label"
+                        filterOption={filterVietnameseOption}
+                        options={deviceCategoryOptions}
+                    />
                 </Form.Item>
 
                 <Form.Item name="vehicle_category_id" label={t.modal.selectVehicleType}>
@@ -80,17 +102,13 @@ export default function DeviceUpsertModal({
                         getPopupContainer={popupInParent}
                         loading={vcLoading}
                         disabled={vcLoading}
-                        notFoundContent={vcLoading ? <Spin size="small" /> : null}
+                        notFoundContent={vcLoading ? <Spin size="small" /> : undefined}
                         allowClear
                         showSearch
-                        optionFilterProp="children"
-                    >
-                        {vehicleCategories.map((v) => (
-                            <Option key={v._id} value={v._id}>
-                                {v.name}
-                            </Option>
-                        ))}
-                    </Select>
+                        optionFilterProp="label"
+                        filterOption={filterVietnameseOption}
+                        options={vehicleCategoryOptions}
+                    />
                 </Form.Item>
 
                 <Form.Item name="user_id" label={t.customer}>
@@ -100,18 +118,12 @@ export default function DeviceUpsertModal({
                         getPopupContainer={popupInParent}
                         loading={usersLoading}
                         disabled={usersLoading}
-                        notFoundContent={usersLoading ? <Spin size="small" /> : null}
+                        notFoundContent={usersLoading ? <Spin size="small" /> : undefined}
                         showSearch
-                        optionFilterProp="children"
-                    >
-                        {userOptions
-                            .filter((u) => u.position === 'customer')
-                            .map((u) => (
-                                <Option key={u._id} value={u._id}>
-                                    {u.email} ({u.username})
-                                </Option>
-                            ))}
-                    </Select>
+                        optionFilterProp="label"
+                        filterOption={filterVietnameseOption}
+                        options={customerOptions}
+                    />
                 </Form.Item>
 
                 {/* ✅ CHỈ HIỂN THỊ ĐẠI LÝ KHI KHÔNG PHẢI ROLE DISTRIBUTOR */}
@@ -123,18 +135,12 @@ export default function DeviceUpsertModal({
                             getPopupContainer={popupInParent}
                             loading={usersLoading}
                             disabled={usersLoading}
-                            notFoundContent={usersLoading ? <Spin size="small" /> : null}
+                            notFoundContent={usersLoading ? <Spin size="small" /> : undefined}
                             showSearch
-                            optionFilterProp="children"
-                        >
-                            {userOptions
-                                .filter((u) => u.position === 'distributor')
-                                .map((u) => (
-                                    <Option key={u._id} value={u._id}>
-                                        {u.email} ({u.username})
-                                    </Option>
-                                ))}
-                        </Select>
+                            optionFilterProp="label"
+                            filterOption={filterVietnameseOption}
+                            options={distributorOptions}
+                        />
                     </Form.Item>
                 )}
 
