@@ -6,6 +6,7 @@ import { Layout, Spin, Button, Drawer } from 'antd';
 import { MenuOutlined, CloseOutlined, LeftOutlined, RightOutlined } from '@ant-design/icons';
 import SidebarMenu from './Sidebar';
 import { useLang } from '../hooks/useLang';
+import { useAuthStore } from '../stores/authStore';
 
 const { Content } = Layout;
 
@@ -13,14 +14,22 @@ export default function ManageLayout({ children }) {
     const router = useRouter();
     const pathname = usePathname() || '';
 
+    const user = useAuthStore((s) => s.user);
+    const hydrated = useAuthStore((s) => s.hydrated);
+
     // Kiểm tra quyền: nếu không có quyền thì redirect về /, không chặn render children
     useEffect(() => {
         if (typeof window === 'undefined') return;
-        const role = localStorage.getItem('role');
-        if (!role || role === 'reporter') {
+        // Chờ Zustand hydrate xong để tránh false-redirect khi mới load / F5
+        if (!hydrated) return;
+
+        const role = user?.position || user?.role || localStorage.getItem('role') || '';
+        const allowedRoles = ['administrator', 'distributor'];
+
+        if (!role || !allowedRoles.includes(role)) {
             router.replace('/');
         }
-    }, [router]);
+    }, [user, hydrated, router]);
 
     // ==== detect lang ====
     const lang = useLang();

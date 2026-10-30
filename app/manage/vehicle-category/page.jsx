@@ -36,6 +36,7 @@ import en from '../../locales/en.json';
 
 import { useLocalStorageValue } from '../../hooks/useLocalStorageValue';
 import { useIsEn } from '../../hooks/useLang';
+import { useAuthStore } from '../../stores/authStore';
 import {
     buildMapOptions,
     buildDeviceTypeOptions,
@@ -59,10 +60,14 @@ const { Option } = Select;
 const VehicleCategoryPage = () => {
     const pathname = usePathname() || '/';
 
+    const user = useAuthStore((s) => s.user);
+    const authStoreToken = useAuthStore((s) => s.accessToken);
+
     const localToken = typeof window !== 'undefined' ? localStorage.getItem('accessToken') || '' : '';
-    const token = useLocalStorageValue('accessToken', localToken) || localToken;
+    const token = authStoreToken || useLocalStorageValue('accessToken', localToken) || localToken;
     const localRole = typeof window !== 'undefined' ? localStorage.getItem('role') || '' : '';
-    const role = useLocalStorageValue('role', localRole) || localRole;
+    const storedRole = useLocalStorageValue('role', localRole) || localRole;
+    const role = user?.position || user?.role || storedRole;
     const isEn = useIsEn();
     const t = isEn ? locales.en.vehicleCategory : locales.vi.vehicleCategory;
 

@@ -50,6 +50,7 @@ import { useGuidedTour } from '../../hooks/common/useGuidedTour';
 // ✅ Centralized hooks (tránh duplicate)
 import { useLocalStorageValue } from '../../hooks/useLocalStorageValue';
 import { useIsEn } from '../../hooks/useLang';
+import { useAuthStore } from '../../stores/authStore';
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -81,12 +82,17 @@ function useDebouncedValue(value, delay = 400) {
 }
 
 export default function ManageUserPage() {
-    // ✅ token/role/lang đọc trực tiếp (khỏi setState trong effect)
-    // ✅ token/role/lang đọc trực tiếp (khỏi setState trong effect)
+    // ✅ token/role/lang đọc trực tiếp từ authStore, fallback localStorage
+    const user = useAuthStore((s) => s.user);
+    const authStoreToken = useAuthStore((s) => s.accessToken);
+
     const localRole = typeof window !== 'undefined' ? localStorage.getItem('role') || '' : '';
-    const currentRole = useLocalStorageValue('role', localRole) || localRole;
+    const storedRole = useLocalStorageValue('role', localRole) || localRole;
+    const currentRole = user?.position || user?.role || storedRole;
+
     const localToken = typeof window !== 'undefined' ? localStorage.getItem('accessToken') || '' : '';
-    const token = useLocalStorageValue('accessToken', localToken) || localToken;
+    const storedToken = useLocalStorageValue('accessToken', localToken) || localToken;
+    const token = authStoreToken || storedToken;
 
     // ✅ Fix dropdown trong Modal / layout bị “click không ra”
     const popupInParent = (triggerNode) => triggerNode?.parentElement || document.body;

@@ -11,6 +11,7 @@ import { getBatteryStatusByImei } from './lib/api/batteryStatus';
 import { getLastCruise } from './lib/api/cruise';
 import { MAX_DEVICE_LIMIT } from './lib/constants';
 import { useIsEn } from './hooks/useLang';
+import { useAuthStore } from './stores/authStore';
 
 import markerIconStop from './assets/marker-red.webp';
 import markerRun from './assets/marker-run.webp';
@@ -215,10 +216,19 @@ const MonitorPage = () => {
         return localStorage.getItem('accessToken') || '';
     }, []);
 
-    // ----- LANG -----
+    // ----- LANG & USER ROLE -----
     const isEn = useIsEn();
     const [deprecatedAddress, setDeprecatedAddress] = useState('');
-    const [role, setRole] = useState('');
+    const user = useAuthStore((s) => s.user);
+    const [localRole, setLocalRole] = useState('');
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        const r = localStorage.getItem('role') || '';
+        setLocalRole(r);
+    }, []);
+
+    const role = user?.position || user?.role || localRole;
 
     const lastMqttAtRef = useRef(0);
     const mqttSilenceTimerRef = useRef(null);

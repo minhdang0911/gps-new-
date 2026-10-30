@@ -36,13 +36,17 @@ const buildStorage = () => {
 
         setItem: (name, value) => {
             localStorage.setItem(name, value);
-            // Mirror tokens ra legacy keys để backward compat
+            // Mirror tokens & role ra legacy keys để backward compat
             try {
                 const { state } = JSON.parse(value);
                 if (state.accessToken) localStorage.setItem('accessToken', state.accessToken);
                 else localStorage.removeItem('accessToken');
                 if (state.refreshToken) localStorage.setItem('refreshToken', state.refreshToken);
                 else localStorage.removeItem('refreshToken');
+
+                const role = state?.user?.position || state?.user?.role || '';
+                if (role) localStorage.setItem('role', role);
+                if (state?.user?._id) localStorage.setItem('userid', String(state.user._id));
             } catch {}
         },
 
@@ -50,6 +54,8 @@ const buildStorage = () => {
             localStorage.removeItem(name);
             localStorage.removeItem('accessToken');
             localStorage.removeItem('refreshToken');
+            localStorage.removeItem('role');
+            localStorage.removeItem('userid');
         },
     };
 };
@@ -64,8 +70,21 @@ export const useAuthStore = create(
             refreshToken: null,
             hydrated:     false,
 
-            setUser: (user) => set({ user }),
-            clearUser: () => set({ user: null }), // compat
+            setUser: (user) => {
+                if (typeof window !== 'undefined' && user) {
+                    const role = user.position || user.role || '';
+                    if (role) localStorage.setItem('role', role);
+                    if (user._id) localStorage.setItem('userid', String(user._id));
+                }
+                set({ user });
+            },
+            clearUser: () => {
+                if (typeof window !== 'undefined') {
+                    localStorage.removeItem('role');
+                    localStorage.removeItem('userid');
+                }
+                set({ user: null });
+            }, // compat
 
             /** Lưu token mới — chỉ ghi field nào được cung cấp (non-null) */
             setTokens: (access, refresh) =>
@@ -77,7 +96,13 @@ export const useAuthStore = create(
             clearTokens: () => set({ accessToken: null, refreshToken: null }),
 
             /** Xóa toàn bộ auth state (logout) */
-            clearAll: () => set({ user: null, accessToken: null, refreshToken: null }),
+            clearAll: () => {
+                if (typeof window !== 'undefined') {
+                    localStorage.removeItem('role');
+                    localStorage.removeItem('userid');
+                }
+                set({ user: null, accessToken: null, refreshToken: null });
+            },
 
             setHydrated: (v) => set({ hydrated: v }),
         }),
@@ -98,6 +123,17 @@ export const useAuthStore = create(
                     const at = localStorage.getItem('accessToken');
                     const rt = localStorage.getItem('refreshToken');
                     if (at || rt) state.setTokens(at, rt);
+                }
+
+                // Luôn bảo đảm role và userid được đồng bộ ra localStorage ngay khi hydrate
+                if (state?.user && typeof window !== 'undefined') {
+                    const r = state.user.position || state.user.role || '';
+                    if (r && !localStorage.getItem('role')) {
+                        localStorage.setItem('role', r);
+                    }
+                    if (state.user._id && !localStorage.getItem('userid')) {
+                        localStorage.setItem('userid', String(state.user._id));
+                    }
                 }
 
                 state?.setHydrated(true);

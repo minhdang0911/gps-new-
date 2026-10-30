@@ -1437,11 +1437,8 @@ const OverviewPage = () => {
     // ─ Role detection (administrator only sees distributor filter)
     const user = useAuthStore((s) => s.user);
     const isAdmin = useMemo(() => {
-        if (user?.position === 'administrator') return true;
-        if (typeof window !== 'undefined') {
-            return localStorage.getItem('role') === 'administrator';
-        }
-        return false;
+        const role = user?.position || user?.role || (typeof window !== 'undefined' ? localStorage.getItem('role') : '');
+        return role === 'administrator';
     }, [user]);
 
     useEffect(() => {

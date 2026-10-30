@@ -146,6 +146,11 @@ api.interceptors.response.use(
 
                                 if (loginRes.user) {
                                     useAuthStore.getState().setUser(loginRes.user);
+                                    if (typeof window !== 'undefined') {
+                                        const r = loginRes.user.position || loginRes.user.role || '';
+                                        if (r) localStorage.setItem('role', r);
+                                        if (loginRes.user._id) localStorage.setItem('userid', String(loginRes.user._id));
+                                    }
                                 }
                                 saveSecureSession({
                                     ...session,
@@ -260,7 +265,14 @@ export const proactiveRefresh = async () => {
 
                     if (loginRes?.accessToken) {
                         saveTokens(loginRes.accessToken, loginRes.refreshToken);
-                        if (loginRes.user) useAuthStore.getState().setUser(loginRes.user);
+                        if (loginRes.user) {
+                            useAuthStore.getState().setUser(loginRes.user);
+                            if (typeof window !== 'undefined') {
+                                const r = loginRes.user.position || loginRes.user.role || '';
+                                if (r) localStorage.setItem('role', r);
+                                if (loginRes.user._id) localStorage.setItem('userid', String(loginRes.user._id));
+                            }
+                        }
                         saveSecureSession({
                             ...session,
                             accessToken: loginRes.accessToken,
