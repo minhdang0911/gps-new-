@@ -219,8 +219,41 @@ const CruisePage = () => {
                 const devices = res.devices || [];
                 setDeviceList(devices);
                 if (devices.length > 0) {
-                    setSelectedDeviceId(devices[0]._id);
-                    setSelectedImei(devices[0].imei || '');
+                    let preselectImei = null;
+                    let preselectId = null;
+
+                    if (typeof window !== 'undefined') {
+                        try {
+                            const params = new URLSearchParams(window.location.search);
+                            preselectImei = params.get('imei') || params.get('dev');
+                            preselectId = params.get('deviceId') || params.get('id');
+
+                            if (!preselectImei && !preselectId) {
+                                preselectImei = localStorage.getItem('iky_preselect_imei');
+                                preselectId = localStorage.getItem('iky_preselect_device_id');
+                            }
+
+                            localStorage.removeItem('iky_preselect_imei');
+                            localStorage.removeItem('iky_preselect_device_id');
+                        } catch (_) {}
+                    }
+
+                    let target = null;
+                    if (preselectImei) {
+                        target = devices.find((d) => d.imei === preselectImei);
+                    }
+                    if (!target && preselectId) {
+                        target = devices.find((d) => d._id === preselectId);
+                    }
+                    if (!target) {
+                        target = devices[0];
+                    }
+
+                    setSelectedDeviceId(target._id);
+                    setSelectedImei(target.imei || '');
+
+                    // Mặc định khoảng thời gian 24 giờ qua để tiện tra cứu
+                    handlePresetRange(24);
                 }
             } catch (err) {
                 console.error('Load devices error:', err);

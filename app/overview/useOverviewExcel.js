@@ -1,51 +1,8 @@
 import * as XLSX from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
-import * as turf from '@turf/turf';
 import { message } from 'antd';
-
-// ── Geo helpers ──────────────────────────────────────────────────────────────
-const haversine = (lat1, lon1, lat2, lon2) => {
-    const R = 6371;
-    const dLat = ((lat2 - lat1) * Math.PI) / 180;
-    const dLon = ((lon2 - lon1) * Math.PI) / 180;
-    const a =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-};
-
-const findNearest = (lat, lon, list) => {
-    let best = null, bestDist = Infinity;
-    for (const item of list) {
-        const d = haversine(lat, lon, parseFloat(item.latitude), parseFloat(item.longitude));
-        if (d < bestDist) { bestDist = d; best = item; }
-    }
-    return best;
-};
-
-let _geoJsonCache = null;
-const getGeoJson = async () => {
-    if (_geoJsonCache) return _geoJsonCache;
-    const res = await fetch('/geojson/VietNam63.geojson');
-    const geo = await res.json();
-    geo.features.forEach(f => { f._center = turf.centroid(f); });
-    _geoJsonCache = geo;
-    return geo;
-};
-
-const findDistrictByPoint = (lat, lon, geojson) => {
-    if (!geojson?.features?.length) return null;
-    const point = turf.point([lon, lat]);
-    for (const feature of geojson.features) {
-        if (!feature?.geometry) continue;
-        try {
-            const { type, coordinates } = feature.geometry;
-            const poly = type === 'Polygon' ? turf.polygon(coordinates) : turf.multiPolygon(coordinates);
-            if (turf.booleanPointInPolygon(point, poly)) return feature;
-        } catch (_) { /* skip */ }
-    }
-    return null;
-};
+import { findNearest } from '../util/geo';
+import { loadDistrictGeoJson, findDistrictForPoint } from '../util/geoDistrict';
 
 const isOnline = (cruiseItem) => {
     if (!cruiseItem) return false;
@@ -124,17 +81,7 @@ const applySheetStyle = (ws, rows, HDR_CLR, EVEN_BG) => {
     };
 };
 
-/**
- * Xuất Excel toàn bộ/online/offline từ trang Overview.
- * Tên file và tiêu đề phản ánh các filter đang active.
- *
- * @param {Array}       devices          - danh sách thiết bị đã lọc
- * @param {object}      cruiseByImei     - { [imei]: cruise }
- * @param {string}      mode             - 'all' | 'online' | 'offline'
- * @param {string|null} regionLabel      - label tỉnh/quận filter (nếu có)
- * @param {Array}       provinces        - danh sách tỉnh esgoo (để resolve Tỉnh/TP)
- * @param {string|null} distributorName  - tên đại lý đang filter (nếu có)
- */
+ 
 export async function exportOverviewExcel({
     devices,
     cruiseByImei,
@@ -162,16 +109,16 @@ export async function exportOverviewExcel({
     };
 
     // Resolve district (turf PIP — async, GeoJSON loaded once)
-    let geoJson = null;
     if (filtered.some(x => x.cruise?.lat && x.cruise?.lon)) {
-        try { geoJson = await getGeoJson(); } catch (_) {}
+        await loadDistrictGeoJson();
     }
     const resolveDistrict = (cruise) => {
-        if (!cruise?.lat || !cruise?.lon || !geoJson) return '';
-        const feat = findDistrictByPoint(cruise.lat, cruise.lon, geoJson);
-        if (!feat) return '';
-        const loai = feat.properties?.loai || '';
-        const ten  = feat.properties?.ten_huyen || feat.properties?.Ten_Huyen || '';
+        if (!cruise?.lat || !cruise?.lon) return '';
+        const provName = resolveProvince(cruise);
+        const res = findDistrictForPoint(cruise.lat, cruise.lon, { provinceName: provName });
+        if (!res?.feature) return '';
+        const loai = res.feature.properties?.loai || '';
+        const ten  = res.feature.properties?.ten_huyen || res.feature.properties?.Ten_Huyen || '';
         return `${loai} ${ten}`.trim();
     };
 
@@ -244,14 +191,12 @@ export async function exportByRegion({ devices, cruiseByImei, province, district
     });
 
     if (district) {
-        let geo;
-        try { geo = await getGeoJson(); }
-        catch (e) { message.error('Không tải được dữ liệu ranh giới hành chính!'); return; }
+        await loadDistrictGeoJson();
         filtered = filtered.filter((d) => {
             const cruise = cruiseByImei[d.imei];
             if (!cruise?.lat || !cruise?.lon) return false;
-            const feat = findDistrictByPoint(cruise.lat, cruise.lon, geo);
-            return feat?.properties?.ma_huyen === district.properties?.ma_huyen;
+            const res = findDistrictForPoint(cruise.lat, cruise.lon, { provinceName: province.full_name });
+            return res?.feature?.properties?.ma_huyen === district.properties?.ma_huyen;
         });
     }
 

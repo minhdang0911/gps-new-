@@ -578,11 +578,46 @@ const MonitorPage = () => {
     const deviceList = devicesQuery.data?.devices || [];
     const loadingDevices = devicesQuery.isLoading;
 
-    // auto select first device
+    // auto select device: ưu tiên từ URL param (?imei=... hoặc ?deviceId=...) hoặc localStorage, fallback xe đầu tiên
     useEffect(() => {
-        if (deviceList.length > 0 && !selectedDevice) {
-            setSelectedDevice(deviceList[0]);
+        if (!deviceList.length) return;
+
+        let preselectImei = null;
+        let preselectId = null;
+
+        if (typeof window !== 'undefined') {
+            try {
+                const params = new URLSearchParams(window.location.search);
+                preselectImei = params.get('imei') || params.get('dev');
+                preselectId = params.get('deviceId') || params.get('id');
+
+                if (!preselectImei && !preselectId) {
+                    preselectImei = localStorage.getItem('iky_preselect_imei');
+                    preselectId = localStorage.getItem('iky_preselect_device_id');
+                }
+
+                localStorage.removeItem('iky_preselect_imei');
+                localStorage.removeItem('iky_preselect_device_id');
+            } catch (_) {}
+        }
+
+        let target = null;
+        if (preselectImei) {
+            target = deviceList.find((d) => d.imei === preselectImei);
+        }
+        if (!target && preselectId) {
+            target = deviceList.find((d) => d._id === preselectId);
+        }
+        if (!target && !selectedDevice) {
+            target = deviceList[0];
+        }
+
+        if (target) {
+            setSelectedDevice(target);
             setShowPopup(true);
+            if (preselectImei || preselectId) {
+                setSearchText(target.license_plate || target.imei || '');
+            }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [deviceList]);

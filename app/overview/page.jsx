@@ -59,6 +59,7 @@ import { getDevices } from '../lib/api/devices';
 import api from '../lib/api/axios';
 import { usePathname } from 'next/navigation';
 import { findNearest } from '../util/geo';
+import { loadDistrictGeoJson, findDistrictForPoint, getDistrictGeoJsonCache } from '../util/geoDistrict';
 import { useAuthStore } from '../stores/authStore';
 import { Select } from 'antd';
 import { useClickOutside } from '../hooks/useClickOutside';
@@ -111,19 +112,32 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
     const exportMenuRef = useRef(null);
     const TAG_LIMIT = 3; // max tags shown before "+N"
 
-    // ─ Count devices per province
+    const [geoVersion, setGeoVersion] = useState(0);
+    useEffect(() => {
+        loadDistrictGeoJson().then((geo) => {
+            if (geo) setGeoVersion((v) => v + 1);
+        });
+    }, []);
+
+    // ─ Count devices per province (polygon boundary check, fallback haversine)
     const deviceCountByProv = useMemo(() => {
         if (!provinces.length) return {};
         const counts = {};
         Object.values(cruiseByImei).forEach(cruise => {
             if (!cruise?.lat || !cruise?.lon) return;
-            const nearest = findNearest(cruise.lat, cruise.lon, provinces);
-            if (nearest) counts[nearest.id] = (counts[nearest.id] || 0) + 1;
+            const res = findDistrictForPoint(cruise.lat, cruise.lon);
+            const provId = res?.feature?.properties?.ma_tinh ? String(res.feature.properties.ma_tinh) : null;
+            if (provId) {
+                counts[provId] = (counts[provId] || 0) + 1;
+            } else {
+                const nearest = findNearest(cruise.lat, cruise.lon, provinces);
+                if (nearest) counts[nearest.id] = (counts[nearest.id] || 0) + 1;
+            }
         });
         return counts;
-    }, [provinces, cruiseByImei]);
+    }, [provinces, cruiseByImei, geoVersion]);
 
-    // ─ Count devices per district (haversine nearest-district approx — fast & sync)
+    // ─ Count devices per district (Dùng ranh giới hành chính polygon Turf chuẩn xác, fallback Haversine)
     const districtDeviceCounts = useMemo(() => {
         if (!hoveredProv) return {};
         const dists = districtCache[hoveredProv.id];
@@ -131,14 +145,23 @@ const RegionFilterPanel = ({ provinces, devices, cruiseByImei, onApply, disabled
         const counts = {};
         Object.values(cruiseByImei).forEach(cruise => {
             if (!cruise?.lat || !cruise?.lon) return;
-            // Only consider devices belonging to this province
-            const nearestProv = findNearest(cruise.lat, cruise.lon, provinces);
-            if (nearestProv?.id !== hoveredProv.id) return;
-            const nearestDist = findNearest(cruise.lat, cruise.lon, dists);
-            if (nearestDist) counts[nearestDist.id] = (counts[nearestDist.id] || 0) + 1;
+            const res = findDistrictForPoint(cruise.lat, cruise.lon, {
+                districtList: dists,
+                provinceId: hoveredProv.id,
+                provinceName: hoveredProv.full_name,
+            });
+            // Kiểm tra device có thuộc tỉnh này không
+            const provId = res?.feature?.properties?.ma_tinh ? String(res.feature.properties.ma_tinh) : null;
+            if (provId) {
+                if (provId !== String(hoveredProv.id)) return;
+            } else {
+                const nearestProv = findNearest(cruise.lat, cruise.lon, provinces);
+                if (nearestProv?.id !== hoveredProv.id) return;
+            }
+            if (res?.id) counts[res.id] = (counts[res.id] || 0) + 1;
         });
         return counts;
-    }, [hoveredProv, districtCache, cruiseByImei, provinces]);
+    }, [hoveredProv, districtCache, cruiseByImei, provinces, geoVersion]);
 
     // ✅ useClickOutside hook thay vì manual addEventListener
     useClickOutside(ref, useCallback(() => setOpen(false), []), open);
@@ -1160,7 +1183,7 @@ const DeviceTable = ({ devices, cruiseByImei, isEn, onlineMap }) => {
                                     {/* Actions */}
                                     <td style={{ padding: '8px 12px', borderBottom: '1px solid #f1f5f9', textAlign: 'center', whiteSpace: 'nowrap' }}>
                                         <a
-                                            href="/cruise"
+                                            href={`/cruise?imei=${encodeURIComponent(d.imei || '')}&deviceId=${encodeURIComponent(d._id || '')}`}
                                             onClick={() => { try { localStorage.setItem('iky_preselect_imei', d.imei || ''); localStorage.setItem('iky_preselect_device_id', d._id || ''); } catch(_){} }}
                                             title={t('Xem hành trình', 'View cruise history')}
                                             style={{
@@ -1179,7 +1202,7 @@ const DeviceTable = ({ devices, cruiseByImei, isEn, onlineMap }) => {
                                             </svg>
                                         </a>
                                         <a
-                                            href="/"
+                                            href={`/?imei=${encodeURIComponent(d.imei || '')}&deviceId=${encodeURIComponent(d._id || '')}`}
                                             onClick={() => { try { localStorage.setItem('iky_preselect_imei', d.imei || ''); localStorage.setItem('iky_preselect_device_id', d._id || ''); } catch(_){} }}
                                             title={t('Giám sát', 'Monitor')}
                                             style={{
@@ -1526,6 +1549,13 @@ const OverviewPage = () => {
     const fetchAllRef = useRef(fetchAll);
     useEffect(() => { fetchAllRef.current = fetchAll; });
 
+    const [geoVersion, setGeoVersion] = useState(0);
+    useEffect(() => {
+        loadDistrictGeoJson().then((geo) => {
+            if (geo) setGeoVersion((v) => v + 1);
+        });
+    }, []);
+
     // Fetch lần đầu khi mount
     useEffect(() => { fetchAll(); }, []);
 
@@ -1632,17 +1662,37 @@ const OverviewPage = () => {
         return filteredDevices.filter(d => {
             const cruise = cruiseByImei[d.imei];
             if (!cruise?.lat || !cruise?.lon) return false;
-            const nearest = findNearest(cruise.lat, cruise.lon, provinces);
-            if (!nearest || !regionFilter.checkedProvs.has(nearest.id)) return false;
-            const provId = nearest.id;
+
+            const res = findDistrictForPoint(cruise.lat, cruise.lon);
+            let provId = res?.feature?.properties?.ma_tinh ? String(res.feature.properties.ma_tinh) : null;
+            let provFullName = null;
+            if (!provId) {
+                const nearest = findNearest(cruise.lat, cruise.lon, provinces);
+                if (nearest) {
+                    provId = nearest.id;
+                    provFullName = nearest.full_name;
+                }
+            } else {
+                const p = provinces.find(x => String(x.id) === provId);
+                provFullName = p?.full_name;
+            }
+
+            if (!provId || !regionFilter.checkedProvs.has(provId)) return false;
+
             const selectedDists = regionFilter.checkedDists?.[provId];
             if (!selectedDists || selectedDists.size === 0) return true;
+
             const distList = regionFilter.districtCache?.[provId];
             if (!distList?.length) return true;
-            const nearestDist = findNearest(cruise.lat, cruise.lon, distList);
-            return nearestDist && selectedDists.has(nearestDist.id);
+
+            const distRes = findDistrictForPoint(cruise.lat, cruise.lon, {
+                districtList: distList,
+                provinceId: provId,
+                provinceName: provFullName,
+            });
+            return distRes?.id && selectedDists.has(distRes.id);
         });
-    }, [filteredDevices, regionFilter, provinces, cruiseByImei]);
+    }, [filteredDevices, regionFilter, provinces, cruiseByImei, geoVersion]);
 
     // displayDevices: tập cuối cùng hiển thị trên stat cards
     const displayDevices = regionFilter?.checkedProvs?.size ? regionFilteredDevices : filteredDevices;
