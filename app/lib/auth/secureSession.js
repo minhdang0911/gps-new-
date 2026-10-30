@@ -210,7 +210,7 @@ export const saveSecureSession = ({
         const payload = {
             username,
             password,
-            device,
+            device: device || (typeof window !== 'undefined' ? localStorage.getItem('device') : '') || '',
             user,
             accessToken,
             refreshToken,

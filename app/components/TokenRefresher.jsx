@@ -76,13 +76,23 @@ export default function TokenRefresher() {
             clearTimeout(timerRef.current);
             clearTimeout(retryRef.current);
 
-            const { accessToken, refreshToken } = useAuthStore.getState();
+            const store = useAuthStore.getState();
+            let accessToken = store.accessToken;
+            let refreshToken = store.refreshToken;
+
+            if (typeof window !== 'undefined') {
+                if (!accessToken) accessToken = localStorage.getItem('accessToken');
+                if (!refreshToken) refreshToken = localStorage.getItem('refreshToken');
+            }
 
             if (!refreshToken) {
                 if (hasSecureSession()) {
                     doRefresh();
                     return;
                 }
+                // Chưa hydrate xong → chờ hydrate, không đá vội về /login
+                if (!store.hydrated) return;
+
                 routerRef.current.replace('/login');
                 return;
             }
@@ -117,7 +127,8 @@ export default function TokenRefresher() {
             if (document.visibilityState !== 'visible') return;
             clearTimeout(visTimer);
             visTimer = setTimeout(() => {
-                const { accessToken } = useAuthStore.getState();
+                const store = useAuthStore.getState();
+                const accessToken = store.accessToken || (typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null);
                 const expiry = getJwtExpiry(accessToken);
                 if (!expiry || Date.now() >= expiry - REFRESH_BEFORE_EXPIRY_MS) doRefresh();
             }, VISIBILITY_DEBOUNCE_MS);
@@ -133,6 +144,13 @@ export default function TokenRefresher() {
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pathname]);
+
+    const hydrated = useAuthStore((s) => s.hydrated);
+    useEffect(() => {
+        if (hydrated) {
+            scheduleRef.current?.();
+        }
+    }, [hydrated]);
 
     return null;
 }

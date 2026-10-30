@@ -91,8 +91,9 @@ const LoginPage = () => {
             const res = await login(values.username, values.password, device);
 
             setUser(res.user);
-            localStorage.setItem('role', res?.user?.position || '');
-            localStorage.setItem('userid', res?.user?._id || '');
+            const userRole = res?.user?.position || res?.user?.role || '';
+            if (userRole) localStorage.setItem('role', userRole);
+            if (res?.user?._id) localStorage.setItem('userid', String(res.user._id));
 
             message.success({
                 content: isEn ? 'Login successful!' : 'Đăng nhập thành công!',

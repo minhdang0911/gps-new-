@@ -270,11 +270,6 @@ const MonitorPage = () => {
         return lastCruise?.onl ?? lastCruise?.ste ?? lastCruise?.state ?? lastCruise?.sta;
     };
 
-    useEffect(() => {
-        if (typeof window === 'undefined') return;
-        const r = localStorage.getItem('role') || '';
-        setRole(r);
-    }, []);
 
     const t = isEn ? locales.en.monitor : locales.vi.monitor;
     const NA_TEXT = isEn ? 'N/A' : 'Chưa rõ';

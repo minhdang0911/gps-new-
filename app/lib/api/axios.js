@@ -137,7 +137,7 @@ api.interceptors.response.use(
                     const session = getSecureSession();
                     if (session?.username && session?.password) {
                         try {
-                            const deviceId = session.device || (typeof window !== 'undefined' ? localStorage.getItem('device') : '') || '';
+                            const deviceId = session.device || (typeof window !== 'undefined' ? localStorage.getItem('device') : '') || ('dev_' + Math.random().toString(36).substring(2, 12));
                             const loginRes = await silentLoginApi(session.username, session.password, deviceId);
 
                             if (loginRes?.accessToken) {
@@ -154,6 +154,7 @@ api.interceptors.response.use(
                                 }
                                 saveSecureSession({
                                     ...session,
+                                    device: deviceId,
                                     accessToken: newAccessToken,
                                     refreshToken: newRefreshToken,
                                     user: loginRes.user || session.user,
@@ -260,7 +261,7 @@ export const proactiveRefresh = async () => {
             const session = getSecureSession();
             if (session?.username && session?.password) {
                 try {
-                    const deviceId = session.device || (typeof window !== 'undefined' ? localStorage.getItem('device') : '') || '';
+                    const deviceId = session.device || (typeof window !== 'undefined' ? localStorage.getItem('device') : '') || ('dev_' + Math.random().toString(36).substring(2, 12));
                     const loginRes = await silentLoginApi(session.username, session.password, deviceId);
 
                     if (loginRes?.accessToken) {
@@ -275,6 +276,7 @@ export const proactiveRefresh = async () => {
                         }
                         saveSecureSession({
                             ...session,
+                            device: deviceId,
                             accessToken: loginRes.accessToken,
                             refreshToken: loginRes.refreshToken,
                             user: loginRes.user || session.user,

@@ -128,7 +128,7 @@ const Navbar = () => {
     if (!mounted) return null;
     if (pathname === '/login' || pathname === '/login/en') return null;
 
-    const role = user?.position || user?.role || '';
+    const role = user?.position || user?.role || (typeof window !== 'undefined' ? localStorage.getItem('role') || '' : '');
 
     // Lọc nav items theo role — ẩn luôn những trang không có quyền
     const visibleNavItems = navItems.filter((item) => {
