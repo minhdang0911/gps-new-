@@ -987,7 +987,37 @@ const MonitorPage = () => {
         });
     };
 
-    const isConnected = selectedDevice?.status === 10;
+    // Cập nhật currentTime định kỳ mỗi 10 giây để tính trạng thái kết nối theo thời gian thực
+    const [currentTime, setCurrentTime] = useState(() => Date.now());
+
+    useEffect(() => {
+        const timer = setInterval(() => {
+            setCurrentTime(Date.now());
+        }, 10_000);
+        return () => clearInterval(timer);
+    }, []);
+
+    // Trạng thái kết nối dựa trên "Tại thời điểm" (tim)
+    // Nếu không có dữ liệu thời điểm hoặc mốc thời gian cách hiện tại > 2 phút (thời điểm < hiện tại - 2 phút) => Mất kết nối
+    const isConnected = useMemo(() => {
+        if (!selectedDevice) return false;
+        const ctx = { liveTelemetry, lastCruise, batteryStatus };
+        const timVal = pickField('tim', ctx, lastMqttAtRef) ?? lastCruise?.tim ?? batteryStatus?.tim;
+        if (!timVal) return false;
+
+        let atDate = parseTimToDate(timVal);
+        if (!atDate) {
+            const fallback = new Date(timVal);
+            if (!isNaN(fallback.getTime())) {
+                atDate = fallback;
+            }
+        }
+        if (!atDate) return false;
+
+        const diffMs = currentTime - atDate.getTime();
+        // Kết nối khi chênh lệch thời gian trong vòng 2 phút (120,000 ms)
+        return diffMs <= 2 * 60 * 1000 && diffMs >= -2 * 60 * 1000;
+    }, [selectedDevice, liveTelemetry, lastCruise, batteryStatus, currentTime]);
 
     useEffect(() => {
         if (!selectedDevice?.imei) return;
@@ -1618,7 +1648,7 @@ const MonitorPage = () => {
 
                                         {detailTab === 'control' && (
                                             <div className="iky-monitor__popup-col">
-                                                {/* <div className="iky-monitor__control-row">
+                                                <div className="iky-monitor__control-row">
                                                     <span>{t.control.connectionStatus}</span>
                                                     <div
                                                         className={
@@ -1628,14 +1658,16 @@ const MonitorPage = () => {
                                                                 : 'iky-monitor__connection--off')
                                                         }
                                                     >
-                                                        <span className="iky-monitor__connection-icon">✓</span>
+                                                        <span className="iky-monitor__connection-icon">
+                                                            {isConnected ? '✓' : '✕'}
+                                                        </span>
                                                         <span className="iky-monitor__connection-text">
                                                             {isConnected
                                                                 ? t.control.connectionOn
                                                                 : t.control.connectionOff}
                                                         </span>
                                                     </div>
-                                                </div> */}
+                                                </div>
 
                                                 <div className="iky-monitor__control-row">
                                                     <span>{t.control.emergencyStop}</span>
