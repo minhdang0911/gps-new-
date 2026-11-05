@@ -1,7 +1,7 @@
 // lib/api/devices.js
 import api from './axios';
 import qs from 'qs';
-import { setCachedDevices, addOrUpdateDeviceInCache, removeDeviceFromCache } from '../util/deviceCache';
+import { setCachedDevices, addOrUpdateDeviceInCache, removeDeviceFromCache } from '../../util/deviceCache';
 
 // ===========================
 // GET DEVICE LIST
