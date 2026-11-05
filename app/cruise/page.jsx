@@ -7,6 +7,7 @@ import dynamic from 'next/dynamic';
 import markerIconImg from '../assets/xe2.webp';
 import { getCruiseHistory } from '../lib/api/cruise';
 import { getDevices } from '../lib/api/devices';
+import { getCachedDevices, setCachedDevices } from '../util/deviceCache';
 import cruiseCacheManager from '../lib/cache/CruiseCacheManager';
 
 import { useIsEn } from '../hooks/useLang';
@@ -98,7 +99,7 @@ const CruisePage = () => {
 
     const [playbackRate, setPlaybackRate] = useState(1);
 
-    const [deviceList, setDeviceList] = useState([]);
+    const [deviceList, setDeviceList] = useState(() => getCachedDevices());
     const [selectedDeviceId, setSelectedDeviceId] = useState('');
     const [selectedImei, setSelectedImei] = useState('');
     const [deviceSearchText, setDeviceSearchText] = useState('');
@@ -214,7 +215,8 @@ const CruisePage = () => {
 
         const fetchDevices = async () => {
             try {
-                setLoadingDevices(true);
+                const cached = getCachedDevices();
+                if (!cached.length) setLoadingDevices(true);
                 const res = await getDevices();
                 const devices = res.devices || [];
                 setDeviceList(devices);

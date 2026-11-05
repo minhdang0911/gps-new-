@@ -9,8 +9,8 @@ function makeQueryClient() {
     return new QueryClient({
         defaultOptions: {
             queries: {
-                staleTime: 10_000, // 10s
-                gcTime: 5 * 60_000,
+                staleTime: 5 * 60_000, // 5 phút
+                gcTime: 24 * 60 * 60_000, // 24h
 
                 refetchOnWindowFocus: false,
                 refetchOnReconnect: false,
@@ -43,13 +43,13 @@ export default function ReactQueryProvider({ children }) {
             client={queryClient}
             persistOptions={{
                 persister,
-                maxAge: 10_000, // trong 10s: F5 không call lại
-                buster: 'monitor-v5',
+                maxAge: 24 * 60 * 60 * 1000, // 24h
+                buster: 'monitor-v7',
             }}
             onSuccess={() => setRestored(true)}
         >
             {/* ✅ Chặn render đến khi restore xong để tránh query gọi API */}
-            {restored ? children : null}
+            {children}
         </PersistQueryClientProvider>
     );
 }

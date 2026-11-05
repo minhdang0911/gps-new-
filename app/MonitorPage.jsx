@@ -7,6 +7,7 @@ import dynamic from 'next/dynamic';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { getDevices, getDeviceInfo } from './lib/api/devices';
+import { getCachedDevices, setCachedDevices } from './util/deviceCache';
 import { getBatteryStatusByImei } from './lib/api/batteryStatus';
 import { getLastCruise } from './lib/api/cruise';
 import { MAX_DEVICE_LIMIT } from './lib/constants';
@@ -563,20 +564,33 @@ const MonitorPage = () => {
     const devicesQuery = useQuery({
         queryKey: ['monitor', 'devices', token],
         enabled: !!token,
-        queryFn: () => getDevices({ page: 1, limit: MAX_DEVICE_LIMIT }),
+        queryFn: async () => {
+            const data = await getDevices({ page: 1, limit: MAX_DEVICE_LIMIT });
+            if (data?.devices?.length) {
+                setCachedDevices(data.devices);
+            }
+            return data;
+        },
+        initialData: () => {
+            const cached = getCachedDevices();
+            if (cached && cached.length > 0) {
+                return { devices: cached };
+            }
+            return undefined;
+        },
 
         // ✅ Cache 1 phút — tránh refetch liên tục gây flash UI
         staleTime: 60_000,
         gcTime: 5 * 60_000,
 
         // ✅ refetch khi mount + reconnect, KHÔNG refetch khi focus window (gây lag khi alt+tab)
-        refetchOnMount: true,
+        refetchOnMount: 'always',
         refetchOnWindowFocus: false,
         refetchOnReconnect: true,
     });
 
     const deviceList = devicesQuery.data?.devices || [];
-    const loadingDevices = devicesQuery.isLoading;
+    const loadingDevices = devicesQuery.isLoading && deviceList.length === 0;
 
     // auto select device: ưu tiên từ URL param (?imei=... hoặc ?deviceId=...) hoặc localStorage, fallback xe đầu tiên
     useEffect(() => {

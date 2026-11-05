@@ -56,6 +56,7 @@ import {
 } from './OverviewIcons';
 
 import { getDevices } from '../lib/api/devices';
+import { getCachedDevices, setCachedDevices } from '../util/deviceCache';
 import api from '../lib/api/axios';
 import { usePathname } from 'next/navigation';
 import { findNearest } from '../util/geo';
@@ -1439,9 +1440,9 @@ const DistributorSelect = ({ value, onChange, options = [], isEn }) => {
 
 // ── Main page ─────────────────────────────────────────────────
 const OverviewPage = () => {
-    const [devices, setDevices]           = useState([]);
+    const [devices, setDevices]           = useState(() => getCachedDevices());
     const [cruiseByImei, setCruiseByImei] = useState({});
-    const [loading, setLoading]           = useState(true);
+    const [loading, setLoading]           = useState(() => getCachedDevices().length === 0);
     const [isEn, setIsEn]                 = useState(false);
     const [lastUpdated, setLastUpdated]   = useState(null);
     const [refreshing, setRefreshing]     = useState(false);
@@ -1516,7 +1517,8 @@ const OverviewPage = () => {
     };
 
     const fetchAll = async (silent = false) => {
-        if (!silent) setLoading(true);
+        const hasCache = getCachedDevices().length > 0;
+        if (!silent && !hasCache) setLoading(true);
         else setRefreshing(true);
         try {
             // ✅ Fetch song song thay vì tuần tự — giảm ~50% thời gian chờ
@@ -1528,6 +1530,7 @@ const OverviewPage = () => {
 
             const devList    = devRes?.devices || [];
             const cruiseList = cruiseRes?.data?.data || [];
+            if (devList.length) setCachedDevices(devList);
 
 
             const byImei = {};

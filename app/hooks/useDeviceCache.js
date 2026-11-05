@@ -16,6 +16,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { get, set } from 'idb-keyval';
 import { getDevices } from '../lib/api/devices';
+import { getCachedDevices, setCachedDevices, clearDeviceCache } from '../util/deviceCache';
+
+export { getCachedDevices, setCachedDevices, clearDeviceCache };
 
 const CACHE_KEY    = 'iky_devices_v1';
 const CACHE_TS_KEY = 'iky_devices_ts_v1';
@@ -30,6 +33,7 @@ let _fetchPromise = null;
  */
 export async function resetDeviceCache() {
     _fetchPromise = null;
+    clearDeviceCache();
     try {
         await Promise.all([
             set(CACHE_KEY, null),
@@ -41,8 +45,8 @@ export async function resetDeviceCache() {
 }
 
 export function useDeviceCache({ limit = 200000 } = {}) {
-    const [devices,  setDevices]  = useState([]);
-    const [loading,  setLoading]  = useState(true);
+    const [devices,  setDevices]  = useState(() => getCachedDevices());
+    const [loading,  setLoading]  = useState(() => getCachedDevices().length === 0);
     const [cachedAt, setCachedAt] = useState(null);
 
     const fetchAndCache = useCallback(async (silent = false) => {
@@ -66,7 +70,8 @@ export function useDeviceCache({ limit = 200000 } = {}) {
             const list = await _fetchPromise;
             const now  = Date.now();
 
-            // Ghi IndexedDB
+            // Ghi IndexedDB + localStorage
+            setCachedDevices(list);
             await Promise.all([
                 set(CACHE_KEY, list),
                 set(CACHE_TS_KEY, now),
