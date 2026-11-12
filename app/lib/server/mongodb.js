@@ -19,8 +19,8 @@ async function getMongoClient() {
         const uri = process.env.MONGODB_URI.trim();
         const client = new MongoClient(uri, {
             maxPoolSize: 10,
-            serverSelectionTimeoutMS: 5000,
-            connectTimeoutMS: 5000,
+            serverSelectionTimeoutMS: 2500,
+            connectTimeoutMS: 2500,
         });
 
         globalForMongo._ikyMongoClientPromise = client.connect().catch((err) => {

@@ -19,11 +19,36 @@ export {
     callGoongWithRotation,
 };
 
-const BATCH_CHUNK_SIZE = 25;
+const WRITE_BATCH_CHUNK_SIZE = 8;
+const READ_BATCH_CHUNK_SIZE = 30;
+const SERVER_API_TIMEOUT_MS = 6500;
 let serverApiSkipUntil = 0;
 
 export function __resetServerApiBackoffForTests() {
     serverApiSkipUntil = 0;
+}
+
+async function fetchServerApi(url, payload) {
+    if (typeof AbortController === 'undefined') {
+        return fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), SERVER_API_TIMEOUT_MS);
+    try {
+        return await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            signal: controller.signal,
+        });
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 async function callServerGeocodeReverse(latNum, lonNum, lang) {
@@ -31,11 +56,7 @@ async function callServerGeocodeReverse(latNum, lonNum, lang) {
     if (Date.now() < serverApiSkipUntil) return { handled: false, data: null };
 
     try {
-        const res = await fetch('/api/geocode/reverse', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lat: latNum, lon: lonNum, lang }),
-        });
+        const res = await fetchServerApi('/api/geocode/reverse', { lat: latNum, lon: lonNum, lang });
 
         if (res.status === 503) {
             serverApiSkipUntil = Date.now() + 60_000;
@@ -63,16 +84,12 @@ async function callServerGeocodeReverse(latNum, lonNum, lang) {
     }
 }
 
-async function callServerGeocodeBatch(chunk) {
+async function callServerGeocodeBatch(chunk, resolveMissing = true) {
     if (typeof window === 'undefined') return { handled: false, results: {} };
     if (Date.now() < serverApiSkipUntil) return { handled: false, results: {} };
 
     try {
-        const res = await fetch('/api/geocode/batch', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ items: chunk }),
-        });
+        const res = await fetchServerApi('/api/geocode/batch', { items: chunk, resolveMissing });
 
         if (res.status === 503) {
             serverApiSkipUntil = Date.now() + 60_000;
@@ -126,6 +143,7 @@ export async function reverseGeocodeBatch(items = [], opts = {}) {
     const defaultLang = normalizeGeocodeLang(opts);
     const defaultIsEn = Boolean(opts.isEn || defaultLang === 'en');
     const skipServerApi = Boolean(opts.skipServerApi);
+    const resolveMissing = opts.resolveMissing !== false;
 
     await ensureAddressCacheHydrated();
 
@@ -156,16 +174,20 @@ export async function reverseGeocodeBatch(items = [], opts = {}) {
     if (missingEntries.length === 0) return resultByKey;
 
     const remainingForClient = [];
+    const chunkSize = resolveMissing ? WRITE_BATCH_CHUNK_SIZE : READ_BATCH_CHUNK_SIZE;
 
     if (!skipServerApi && typeof window !== 'undefined') {
-        for (let i = 0; i < missingEntries.length; i += BATCH_CHUNK_SIZE) {
-            const chunk = missingEntries.slice(i, i + BATCH_CHUNK_SIZE);
+        for (let i = 0; i < missingEntries.length; i += chunkSize) {
+            const chunk = missingEntries.slice(i, i + chunkSize);
             const batchRes = await callServerGeocodeBatch(
                 chunk.map(({ lat, lon, lang }) => ({ lat, lon, lang })),
+                resolveMissing,
             );
 
             if (!batchRes.handled) {
-                remainingForClient.push(...chunk);
+                if (resolveMissing) {
+                    remainingForClient.push(...chunk);
+                }
                 continue;
             }
 
@@ -177,11 +199,11 @@ export async function reverseGeocodeBatch(items = [], opts = {}) {
                 }
             }
         }
-    } else {
+    } else if (resolveMissing) {
         remainingForClient.push(...missingEntries);
     }
 
-    if (remainingForClient.length > 0) {
+    if (resolveMissing && remainingForClient.length > 0) {
         await Promise.all(
             remainingForClient.map(async (entry) => {
                 const res = await reverseGeocodeAddress(entry.lat, entry.lon, {

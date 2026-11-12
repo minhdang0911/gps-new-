@@ -61,12 +61,30 @@ export function useLastCruiseExcel({ processedData, isEn, t }) {
                 0,
             );
             try {
-                const batchMap = await reverseGeocodeBatch(
-                    Array.from(uncachedCoords.values()).map((c) => ({ ...c, lang })),
-                    { lang, isEn },
+                const uncachedEntries = Array.from(uncachedCoords.entries());
+                const dbMap = await reverseGeocodeBatch(
+                    uncachedEntries.map(([, c]) => ({ ...c, lang })),
+                    { lang, isEn, resolveMissing: false },
                 );
-                for (const key of uncachedCoords.keys()) {
-                    resolvedByKey.set(key, batchMap?.[key]?.address || '');
+
+                const stillMissing = [];
+                for (const [key, c] of uncachedEntries) {
+                    const hitAddr = dbMap?.[key]?.address;
+                    if (hitAddr) {
+                        resolvedByKey.set(key, hitAddr);
+                    } else {
+                        stillMissing.push([key, c]);
+                    }
+                }
+
+                if (stillMissing.length > 0) {
+                    const freshMap = await reverseGeocodeBatch(
+                        stillMissing.map(([, c]) => ({ ...c, lang })),
+                        { lang, isEn, resolveMissing: true },
+                    );
+                    for (const [key] of stillMissing) {
+                        resolvedByKey.set(key, freshMap?.[key]?.address || '');
+                    }
                 }
             } finally {
                 hideLoading?.();

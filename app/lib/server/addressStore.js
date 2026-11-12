@@ -180,9 +180,10 @@ export async function resolveOrFetchServerAddress(lat, lon, opts = {}) {
 }
 
 /**
- * Giải mã batch nhiều tọa độ (dùng cho bảng report): $in MongoDB 1 roundtrip trước, miss mới lookup/provider.
+ * Giải mã batch nhiều tọa độ (dùng cho bảng report): $in MongoDB 1 roundtrip trước.
+ * Khi resolveMissing=false chỉ đọc MongoDB (trả về cực nhanh <100ms), không gọi Goong làm treo batch.
  */
-export async function resolveBatchServerAddresses(items = []) {
+export async function resolveBatchServerAddresses(items = [], { resolveMissing = true } = {}) {
     if (!isMongoConfigured()) {
         return { configured: false, results: {} };
     }
@@ -226,12 +227,20 @@ export async function resolveBatchServerAddresses(items = []) {
         }
     }
 
-    // 2. Các điểm còn thiếu -> qua resolveOrFetchServerAddress (tận dụng $nearSphere + inflight + concurrency)
+    // 2. Các điểm còn thiếu exact -> check $nearSphere 25m trong MongoDB, và chỉ gọi provider nếu resolveMissing=true
     const missing = Array.from(uniqueByKey.values()).filter((entry) => !results[entry.key]);
 
     await Promise.all(
         missing.map(async (entry) => {
             try {
+                if (!resolveMissing) {
+                    const dbHit = await findAddressInMongo(collection, entry.latNum, entry.lonNum, entry.lang);
+                    if (dbHit?.address) {
+                        results[entry.key] = dbHit;
+                    }
+                    return;
+                }
+
                 const res = await resolveOrFetchServerAddress(entry.latNum, entry.lonNum, { lang: entry.lang });
                 if (res?.data?.address) {
                     results[entry.key] = res.data;

@@ -133,5 +133,34 @@ describe('server addressStore (MongoDB layer)', () => {
         expect(res.results[keyMiss].address).toBe('Địa chỉ mới lấy từ Goong');
         expect(fetchAddressFromProviders).toHaveBeenCalledTimes(1);
     });
+
+    test('resolveBatchServerAddresses skips provider calls when resolveMissing is false', async () => {
+        const keyHit = getCoordCacheKey(10.71, 106.61, 'vi');
+        const keyMiss = getCoordCacheKey(10.72, 106.62, 'vi');
+
+        const mockCol = {
+            find: jest.fn(() => ({
+                toArray: jest.fn().mockResolvedValue([
+                    { key: keyHit, address: 'Chỉ lấy từ Mongo', deprecatedAddress: '' },
+                ]),
+            })),
+            findOne: jest.fn().mockResolvedValue(null),
+            updateOne: jest.fn(),
+        };
+        getAddressCollection.mockResolvedValue(mockCol);
+
+        const res = await resolveBatchServerAddresses(
+            [
+                { lat: 10.71, lon: 106.61, lang: 'vi' },
+                { lat: 10.72, lon: 106.62, lang: 'vi' },
+            ],
+            { resolveMissing: false },
+        );
+
+        expect(res.configured).toBe(true);
+        expect(res.results[keyHit].address).toBe('Chỉ lấy từ Mongo');
+        expect(res.results[keyMiss]).toBeUndefined();
+        expect(fetchAddressFromProviders).not.toHaveBeenCalled();
+    });
 });
 

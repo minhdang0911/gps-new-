@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
+    reverseGeocodeAddress,
     reverseGeocodeBatch,
     getCachedAddressSync,
     getCoordCacheKey,
@@ -7,8 +8,10 @@ import {
 } from '../../../lib/address/reverseGeocode';
 
 /**
- * Lazy-resolve địa chỉ cho các dòng đang hiển thị trên trang bảng Last Cruise.
- * Kết hợp L1/IndexedDB (0ms) -> 1 batch request /api/geocode/batch (MongoDB + Goong).
+ * Lazy-resolve địa chỉ cho các dòng đang hiển thị trên trang bảng Last Cruise:
+ * 1) Đọc L1/IndexedDB ngay (0ms)
+ * 2) Hỏi nhanh batch MongoDB (resolveMissing: false) để hiện ngay toàn bộ điểm đã lưu
+ * 3) Các điểm thật sự chưa có trong DB thì resolve dần từng dòng (có tới đâu hiện tới đó, không kẹt chung)
  */
 export function useLastCruiseAddresses({ rows = [], isEn = false, enabled = true }) {
     const lang = isEn ? 'en' : 'vi';
@@ -64,50 +67,70 @@ export function useLastCruiseAddresses({ rows = [], isEn = false, enabled = true
         }
         setLoadingByKey((prev) => ({ ...prev, ...newLoadingKeys }));
 
-        const keysToResolve = Array.from(missingTasks.keys());
-        const itemsToResolve = Array.from(missingTasks.values());
+        const entries = Array.from(missingTasks.entries()); // [key, coord]
+
+        const clearLoadingKey = (key) => {
+            inflightKeysRef.current.delete(key);
+            if (!mountedRef.current) return;
+            setLoadingByKey((prev) => {
+                if (!prev[key]) return prev;
+                const next = { ...prev };
+                delete next[key];
+                return next;
+            });
+        };
 
         (async () => {
+            // Bước 1: Kiểm tra nhanh MongoDB read-only (~50-150ms) cho cả trang
+            let dbHits = {};
             try {
-                const batchMap = await reverseGeocodeBatch(itemsToResolve, { lang, isEn });
-                const resolvedUpdates = {};
-
-                for (const key of keysToResolve) {
-                    const addr = batchMap?.[key]?.address || '';
-                    addressByKeyRef.current[key] = addr;
-                    resolvedUpdates[key] = addr;
-                }
-
-                if (mountedRef.current) {
-                    setAddressByKey((prev) => ({ ...prev, ...resolvedUpdates }));
-                }
+                dbHits = await reverseGeocodeBatch(
+                    entries.map(([, coord]) => coord),
+                    { lang, isEn, resolveMissing: false },
+                );
             } catch {
-                const emptyUpdates = {};
-                for (const key of keysToResolve) {
-                    addressByKeyRef.current[key] = '';
-                    emptyUpdates[key] = '';
-                }
-                if (mountedRef.current) {
-                    setAddressByKey((prev) => ({ ...prev, ...emptyUpdates }));
-                }
-            } finally {
-                for (const key of keysToResolve) {
-                    inflightKeysRef.current.delete(key);
-                }
-                if (mountedRef.current) {
-                    setLoadingByKey((prev) => {
-                        let changed = false;
-                        const next = { ...prev };
-                        for (const key of keysToResolve) {
-                            if (next[key]) {
-                                delete next[key];
-                                changed = true;
-                            }
-                        }
-                        return changed ? next : prev;
-                    });
+                dbHits = {};
+            }
+
+            const dbResolvedUpdates = {};
+            const remaining = [];
+
+            for (const [key, coord] of entries) {
+                const hitAddr = dbHits?.[key]?.address;
+                if (hitAddr) {
+                    addressByKeyRef.current[key] = hitAddr;
+                    dbResolvedUpdates[key] = hitAddr;
+                    clearLoadingKey(key);
+                } else {
+                    remaining.push([key, coord]);
                 }
             }
+
+            if (mountedRef.current && Object.keys(dbResolvedUpdates).length > 0) {
+                setAddressByKey((prev) => ({ ...prev, ...dbResolvedUpdates }));
+            }
+
+            if (remaining.length === 0) return;
+
+            // Bước 2: Resolve từng tọa độ chưa có trong DB (xong dòng nào cập nhật UI ngay dòng đó)
+            remaining.forEach(async ([key, coord]) => {
+                try {
+                    const res = await reverseGeocodeAddress(coord.lat, coord.lon, { lang, isEn });
+                    const addr = res?.address || '';
+                    addressByKeyRef.current[key] = addr;
+
+                    if (mountedRef.current) {
+                        setAddressByKey((prev) => ({ ...prev, [key]: addr }));
+                    }
+                } catch {
+                    addressByKeyRef.current[key] = '';
+                    if (mountedRef.current) {
+                        setAddressByKey((prev) => ({ ...prev, [key]: '' }));
+                    }
+                } finally {
+                    clearLoadingKey(key);
+                }
+            });
         })();
     }, [rows, lang, isEn, enabled]);
 

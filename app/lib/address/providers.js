@@ -12,6 +12,22 @@ import {
     moveToNextGoongKey,
 } from './keys';
 
+const PROVIDER_TIMEOUT_MS = 3500;
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = PROVIDER_TIMEOUT_MS) {
+    if (typeof AbortController === 'undefined') {
+        return fetch(url, options);
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 // ===============================
 // 🧠 PICK ĐỊA CHỈ ĐẸP TỪ GOONG
 // ===============================
@@ -68,7 +84,7 @@ export const callGoongWithRotation = async (lat, lon, lang = 'vi') => {
                 `https://rsapi.goong.io/v2/geocode?latlng=${lat},${lon}` +
                 `&api_key=${key}&limit=2&has_deprecated_administrative_unit=true&language=${lang}`;
 
-            const res = await fetch(url);
+            const res = await fetchWithTimeout(url);
 
             if (!res.ok) {
                 if (shouldRotateGoongStatus(res.status)) {
@@ -98,12 +114,14 @@ export const callGoongWithRotation = async (lat, lon, lang = 'vi') => {
 };
 
 // ===============================
-// 🌐 Fallback Providers
+// 🌐 Fallback Providers (đều có timeout tránh treo batch/serverless)
 // ===============================
 const providerVietMap = async (lat, lon) => {
     for (let i = 0; i < VIETMAP_KEYS.length; i++) {
         try {
-            const res = await fetch(`https://api.vnmap.com.vn/geocoding?latlng=${lat},${lon}&key=${VIETMAP_KEYS[i]}`);
+            const res = await fetchWithTimeout(
+                `https://api.vnmap.com.vn/geocoding?latlng=${lat},${lon}&key=${VIETMAP_KEYS[i]}`,
+            );
             if (!res.ok) continue;
 
             const data = await res.json();
@@ -117,7 +135,7 @@ const providerVietMap = async (lat, lon) => {
 const providerTrackAsia = async (lat, lon) => {
     if (!TRACKASIA_KEY) return '';
     try {
-        const res = await fetch(
+        const res = await fetchWithTimeout(
             `https://maps.track-asia.com/api/v2/geocode/json?latlng=${lat},${lon}&key=${TRACKASIA_KEY}`,
         );
         if (!res.ok) return '';
@@ -132,7 +150,7 @@ const providerTrackAsia = async (lat, lon) => {
 const providerOpenCage = async (lat, lon, lang) => {
     if (!OPENCAGE_KEY) return '';
     try {
-        const res = await fetch(
+        const res = await fetchWithTimeout(
             `https://api.opencagedata.com/geocode/v1/json?q=${lat}+${lon}&key=${OPENCAGE_KEY}&language=${lang}`,
         );
         if (!res.ok) return '';
@@ -147,7 +165,9 @@ const providerOpenCage = async (lat, lon, lang) => {
 const providerMap4D = async (lat, lon) => {
     if (!MAP4D_KEY) return '';
     try {
-        const res = await fetch(`https://api.map4d.vn/map/geocode?location=${lat},${lon}&key=${MAP4D_KEY}`);
+        const res = await fetchWithTimeout(
+            `https://api.map4d.vn/map/geocode?location=${lat},${lon}&key=${MAP4D_KEY}`,
+        );
         if (!res.ok) return '';
 
         const data = await res.json();
@@ -160,7 +180,7 @@ const providerMap4D = async (lat, lon) => {
 const providerTomTom = async (lat, lon, isEn) => {
     if (!TOMTOM_TOKEN) return '';
     try {
-        const res = await fetch(
+        const res = await fetchWithTimeout(
             `https://api.tomtom.com/search/2/reverseGeocode/${lat},${lon}.json?key=${TOMTOM_TOKEN}&language=${
                 isEn ? 'en-US' : 'vi-VN'
             }`,
@@ -177,7 +197,7 @@ const providerTomTom = async (lat, lon, isEn) => {
 const providerMapbox = async (lat, lon, isEn) => {
     if (!MAPBOX_TOKEN) return '';
     try {
-        const res = await fetch(
+        const res = await fetchWithTimeout(
             `https://api.mapbox.com/geocoding/v5/mapbox.places/${lon},${lat}.json?access_token=${MAPBOX_TOKEN}&language=${
                 isEn ? 'en' : 'vi'
             }&limit=1`,
@@ -194,7 +214,7 @@ const providerMapbox = async (lat, lon, isEn) => {
 const providerNominatim = async (lat, lon, lang) => {
     try {
         const isServer = typeof window === 'undefined';
-        const res = await fetch(
+        const res = await fetchWithTimeout(
             `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1&accept-language=${lang}`,
             isServer ? { headers: { 'User-Agent': 'IKY-GPS-Portal/1.0' } } : undefined,
         );
@@ -251,4 +271,3 @@ export async function fetchAddressFromProviders(latNum, lonNum, lang = 'vi') {
 
     return null;
 }
-

@@ -26,12 +26,13 @@ export async function POST(req) {
     }
 
     const rawItems = Array.isArray(body?.items) ? body.items.slice(0, MAX_BATCH_ITEMS) : [];
+    const resolveMissing = body?.resolveMissing !== false;
     if (rawItems.length === 0) {
         return NextResponse.json({ configured: true, results: {} });
     }
 
     try {
-        const result = await resolveBatchServerAddresses(rawItems);
+        const result = await resolveBatchServerAddresses(rawItems, { resolveMissing });
         if (!result.configured) {
             return NextResponse.json(
                 { configured: false, code: 'DB_UNCONFIGURED', results: {} },
