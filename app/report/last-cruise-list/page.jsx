@@ -26,6 +26,7 @@ import { buildAllColsMeta } from '../../features/lastCruiseReport/columns/buildA
 import { useLastCruiseDeviceMap } from '../../features/lastCruiseReport/hooks/useLastCruiseDeviceMap';
 import { useLastCruiseData } from '../../features/lastCruiseReport/hooks/useLastCruiseData';
 import { useLastCruiseExcel } from '../../features/lastCruiseReport/hooks/useLastCruiseExcel';
+import { useLastCruiseAddresses } from '../../features/lastCruiseReport/hooks/useLastCruiseAddresses';
 
 import { getLastCruiseList } from '../../lib/api/report';
 import { buildImeiToLicensePlateMap } from '../../util/deviceMap';
@@ -113,6 +114,18 @@ const LastCruiseReportPage = () => {
         t,
     });
 
+    // Lazy-resolve địa chỉ chỉ cho các dòng đang hiển thị ở bảng (tránh gọi hàng trăm request 1 lúc)
+    const { enrichedRows: tableDataWithAddress, enrichRows: enrichRowsWithAddresses } = useLastCruiseAddresses({
+        rows: tableData,
+        isEn,
+        enabled: viewMode === 'table',
+    });
+
+    const selectedRowsWithAddress = useMemo(
+        () => enrichRowsWithAddresses(selectedRows),
+        [enrichRowsWithAddresses, selectedRows],
+    );
+
     // columns meta
     const allColsMeta = useMemo(() => {
         return buildAllColsMeta({ t, isEn, isMobile });
@@ -134,6 +147,7 @@ const LastCruiseReportPage = () => {
 
     const rowSelection = useMemo(
         () => ({
+            fixed: !isMobile,
             selectedRowKeys,
             onChange: (keys, rows) => {
                 if (keys.length > 3) {
@@ -145,8 +159,31 @@ const LastCruiseReportPage = () => {
                 setSelectedRows(rows);
             },
         }),
-        [selectedRowKeys],
+        [selectedRowKeys, isMobile],
     );
+
+    // Chỉ giữ fixed:'left' cho cụm cột ghim đứng liền kề sát mép trái (tránh vỡ sticky nếu user kéo cột khác chen vào trước)
+    const tableColumns = useMemo(() => {
+        if (isMobile) return columns;
+
+        const pinnableLeftFields = new Set(['__rowNo', 'lat', 'lon', 'address']);
+        let canPinContiguous = true;
+
+        return (columns || []).map((col) => {
+            const di = col?.dataIndex;
+            if (canPinContiguous && pinnableLeftFields.has(di)) {
+                return { ...col, fixed: 'left' };
+            }
+            canPinContiguous = false;
+
+            if (col?.fixed === 'left') {
+                const rest = { ...col };
+                delete rest.fixed;
+                return rest;
+            }
+            return col;
+        });
+    }, [columns, isMobile]);
 
     const reportConfig = useMemo(() => {
         return buildLastCruiseReportConfig({
@@ -306,9 +343,9 @@ const LastCruiseReportPage = () => {
                                 rowKey={(record) =>
                                     record._id || `${record.dev}-${record.createdAt || record.tim || ''}`
                                 }
-                                columns={columns}
+                                columns={tableColumns}
                                 locale={customLocale}
-                                dataSource={tableData}
+                                dataSource={tableDataWithAddress}
                                 loading={loading}
                                 rowSelection={rowSelection}
                                 pagination={{
@@ -324,7 +361,7 @@ const LastCruiseReportPage = () => {
                                     handleTableChange(...args);
                                     clearSelection();
                                 }}
-                                scroll={{ x: 2350, y: 600 }}
+                                scroll={{ x: 2470, y: 600 }}
                             />
                         ) : (
                             <ReportPanel
@@ -340,7 +377,7 @@ const LastCruiseReportPage = () => {
             <ReportCompareModal
                 open={compareOpen}
                 onClose={() => setCompareOpen(false)}
-                rows={selectedRows}
+                rows={selectedRowsWithAddress}
                 uiColumns={columns}
                 colLabelMap={colLabelMap}
                 ctx={{ isEn, t }}

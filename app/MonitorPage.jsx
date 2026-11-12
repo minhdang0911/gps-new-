@@ -22,7 +22,7 @@ import markerRun80 from './assets/marker-run80.webp';
 import { useRouter, usePathname } from 'next/navigation';
 import { message, Modal, Skeleton } from 'antd';
 import { CheckCircleFilled, LockFilled } from '@ant-design/icons';
-import { reverseGeocodeAddress } from './lib/address/reverseGeocode';
+import { reverseGeocodeAddress, getCachedAddressSync, isValidGeocodeCoord } from './lib/address/reverseGeocode';
 import { parseTimToDate, toLocalDateTimeInput, formatFixedDateTime } from './util/time';
 import { getDistanceMeters } from './util/geo';
 import { toNumberOrNull } from './util/number';
@@ -411,6 +411,14 @@ const MonitorPage = () => {
 
     // lưu tọa độ cuối cùng đã dùng để gọi API địa chỉ
     const lastCoordsRef = useRef({ lat: null, lon: null });
+    const lastResolvedAddrRef = useRef({
+        lat: null,
+        lon: null,
+        lang: null,
+        address: '',
+        deprecatedAddress: '',
+    });
+    const addressReqSeqRef = useRef(0);
 
     useEffect(() => {
         return () => {
@@ -673,8 +681,14 @@ const MonitorPage = () => {
         if (!selectedDevice?.imei) return;
 
         if (!cruise || cruise?.error) {
+            addressReqSeqRef.current += 1;
+            lastResolvedAddrRef.current = { lat: null, lon: null, lang: null, address: '', deprecatedAddress: '' };
             setLastCruise(null);
             setCruiseError(t.error.noTripData);
+            setLoadingAddress(false);
+            setAddress('');
+            setDeprecatedAddress('');
+            setAddressError(null);
             return;
         }
 
@@ -723,43 +737,93 @@ const MonitorPage = () => {
         }
     }, [deviceList, historyDeviceId, historyStart, historyEnd]);
 
-    // FETCH ADDRESS
+    // FETCH ADDRESS (chặn <20m gọi trùng, đọc sync cache trước, chống race condition)
     const fetchAddress = async (latVal, lonVal) => {
-        if (latVal == null || lonVal == null) return;
+        if (!isValidGeocodeCoord(latVal, lonVal)) {
+            addressReqSeqRef.current += 1;
+            setLoadingAddress(false);
+            setAddress('');
+            setDeprecatedAddress('');
+            setAddressError(null);
+            return;
+        }
 
+        const latNum = Number(latVal);
+        const lonNum = Number(lonVal);
+        const lang = isEn ? 'en' : 'vi';
+
+        const prevResolved = lastResolvedAddrRef.current;
+        if (
+            prevResolved.lang === lang &&
+            prevResolved.address &&
+            prevResolved.lat != null &&
+            prevResolved.lon != null
+        ) {
+            const movedDist = getDistanceMeters(prevResolved.lat, prevResolved.lon, latNum, lonNum);
+            if (movedDist != null && movedDist < 20) {
+                setLoadingAddress(false);
+                setAddressError(null);
+                setAddress(prevResolved.address);
+                setDeprecatedAddress(prevResolved.deprecatedAddress || '');
+                return;
+            }
+        }
+
+        const syncCached = getCachedAddressSync(latNum, lonNum, { lang, isEn });
+        if (syncCached?.address) {
+            addressReqSeqRef.current += 1;
+            setLoadingAddress(false);
+            setAddressError(null);
+            setAddress(syncCached.address);
+            setDeprecatedAddress(syncCached.deprecatedAddress || '');
+            lastResolvedAddrRef.current = {
+                lat: latNum,
+                lon: lonNum,
+                lang,
+                address: syncCached.address,
+                deprecatedAddress: syncCached.deprecatedAddress || '',
+            };
+            return;
+        }
+
+        const reqSeq = ++addressReqSeqRef.current;
         setLoadingAddress(true);
         setAddressError(null);
         setDeprecatedAddress('');
 
-        const latNum = Number(latVal);
-        const lonNum = Number(lonVal);
-
-        if (Number.isNaN(latNum) || Number.isNaN(lonNum)) {
-            setLoadingAddress(false);
-            setAddress('');
-            setAddressError(t.error.address);
-            return;
-        }
-
         try {
             const result = await reverseGeocodeAddress(latNum, lonNum, {
-                lang: isEn ? 'en' : 'vi',
+                lang,
                 isEn,
             });
 
+            if (addressReqSeqRef.current !== reqSeq) return;
+
             if (result && result.address) {
                 setAddress(result.address);
-                if (result.deprecatedAddress) setDeprecatedAddress(result.deprecatedAddress);
+                setDeprecatedAddress(result.deprecatedAddress || '');
+                lastResolvedAddrRef.current = {
+                    lat: latNum,
+                    lon: lonNum,
+                    lang,
+                    address: result.address,
+                    deprecatedAddress: result.deprecatedAddress || '',
+                };
             } else {
                 setAddress('');
+                setDeprecatedAddress('');
                 setAddressError(t.error.address);
             }
         } catch (err) {
+            if (addressReqSeqRef.current !== reqSeq) return;
             console.error('Fetch address error:', err);
             setAddress('');
+            setDeprecatedAddress('');
             setAddressError(t.error.address);
         } finally {
-            setLoadingAddress(false);
+            if (addressReqSeqRef.current === reqSeq) {
+                setLoadingAddress(false);
+            }
         }
     };
 
@@ -948,7 +1012,11 @@ const MonitorPage = () => {
         setDeviceInfo(null);
         setLastCruise(null);
         setCruiseError(null);
+        addressReqSeqRef.current += 1;
+        lastResolvedAddrRef.current = { lat: null, lon: null, lang: null, address: '', deprecatedAddress: '' };
+        setLoadingAddress(false);
         setAddress('');
+        setDeprecatedAddress('');
         setAddressError(null);
         lastCoordsRef.current = { lat: null, lon: null };
     }, [token, queryClient]);

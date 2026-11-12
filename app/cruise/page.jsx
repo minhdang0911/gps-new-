@@ -34,7 +34,12 @@ const { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip: ReTooltip, 
 };
 
 // ✅ use shared reverse geocode (multi-provider)
-import { reverseGeocodeAddress } from '../lib/address/reverseGeocode';
+import {
+    reverseGeocodeAddress,
+    getCachedAddressSync,
+    getCoordCacheKey,
+    isValidGeocodeCoord,
+} from '../lib/address/reverseGeocode';
 import { snapRouteToRoads } from '../lib/map/roadSnap';
 
 // ✅ IMPORT ALL UTILS (2 files only)
@@ -535,15 +540,21 @@ const CruisePage = () => {
         }
     };
 
-    // ✅ fetch address lazily + cache
+    // ✅ fetch address lazily + cache (tận dụng L1 + IndexedDB 25m spatial cache)
     const ensureAddress = async (lat, lon) => {
-        if (lat == null || lon == null) return '';
+        if (!isValidGeocodeCoord(lat, lon)) return '';
 
         const lang = isEn ? 'en' : 'vi';
-        const key = `${lang}:${lat.toFixed(6)},${lon.toFixed(6)}`;
+        const key = getCoordCacheKey(lat, lon, lang);
 
         const cached = addressCacheRef.current.get(key);
         if (cached) return cached;
+
+        const syncHit = getCachedAddressSync(lat, lon, { lang, isEn });
+        if (syncHit?.address) {
+            addressCacheRef.current.set(key, syncHit.address);
+            return syncHit.address;
+        }
 
         if (inflightRef.current.has(key)) return inflightRef.current.get(key);
 
@@ -559,26 +570,48 @@ const CruisePage = () => {
         return p;
     };
 
-    // ✅ NEW: update fixed info address when activeIndex changes
+    // ✅ NEW: update fixed info address when activeIndex changes (debounce khi đang play để tránh spam API)
     useEffect(() => {
         const p = rawRouteData?.[activeIndex];
-        if (!p || p.lat == null || p.lon == null) {
+        if (!p || !isValidGeocodeCoord(p.lat, p.lon)) {
             setCurrentAddr('');
             currentAddrKeyRef.current = '';
             return;
         }
 
         const lang = isEn ? 'en' : 'vi';
-        const key = `${lang}:${Number(p.lat).toFixed(6)},${Number(p.lon).toFixed(6)}`;
+        const key = getCoordCacheKey(p.lat, p.lon, lang);
         if (currentAddrKeyRef.current === key) return;
 
         currentAddrKeyRef.current = key;
+
+        const instant =
+            addressCacheRef.current.get(key) ||
+            getCachedAddressSync(p.lat, p.lon, { lang, isEn })?.address ||
+            '';
+
+        if (instant) {
+            addressCacheRef.current.set(key, instant);
+            setCurrentAddr(instant);
+            return;
+        }
+
         setCurrentAddr('');
 
-        (async () => {
+        let cancelled = false;
+        const delayMs = isPlayingRef.current ? 250 : 0;
+
+        const timerId = setTimeout(async () => {
             const addr = await ensureAddress(p.lat, p.lon);
-            if (currentAddrKeyRef.current === key) setCurrentAddr(addr || '');
-        })();
+            if (!cancelled && currentAddrKeyRef.current === key) {
+                setCurrentAddr(addr || '');
+            }
+        }, delayMs);
+
+        return () => {
+            cancelled = true;
+            clearTimeout(timerId);
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeIndex, isEn, rawRouteData]);
 

@@ -93,6 +93,59 @@ export function buildAllColsMeta({ t, isEn, isMobile }) {
             },
         },
         {
+            key: 'lat',
+            label: t.table.lat,
+            column: {
+                title: <ColTitle label={t.table.lat} tip={colHelp.lat} />,
+                dataIndex: 'lat',
+                width: 105,
+                fixed: !isMobile ? 'left' : undefined,
+            },
+        },
+        {
+            key: 'lon',
+            label: t.table.lon,
+            column: {
+                title: <ColTitle label={t.table.lon} tip={colHelp.lon} />,
+                dataIndex: 'lon',
+                width: 110,
+                fixed: !isMobile ? 'left' : undefined,
+            },
+        },
+        {
+            key: 'sat',
+            label: t.table.sat,
+            column: {
+                title: <ColTitle label={t.table.sat} tip={colHelp.sat} />,
+                dataIndex: 'address',
+                width: isMobile ? 220 : 260,
+                fixed: !isMobile ? 'left' : undefined,
+                render: (addr, record) => {
+                    if (addr) {
+                        return (
+                            <div
+                                style={{
+                                    whiteSpace: 'normal',
+                                    wordBreak: 'break-word',
+                                    lineHeight: 1.4,
+                                }}
+                            >
+                                {addr}
+                            </div>
+                        );
+                    }
+                    if (record?.__addressLoading) {
+                        return (
+                            <span style={{ color: '#999', fontStyle: 'italic' }}>
+                                {isEn ? 'Resolving...' : 'Đang tải...'}
+                            </span>
+                        );
+                    }
+                    return '--';
+                },
+            },
+        },
+        {
             key: 'dev',
             label: t.table.dev,
             column: {
@@ -133,33 +186,6 @@ export function buildAllColsMeta({ t, isEn, isMobile }) {
                     const d = parseTimToDate(v);
                     return d ? formatDateTime(d) : v || '--';
                 },
-            },
-        },
-        {
-            key: 'lat',
-            label: t.table.lat,
-            column: {
-                title: <ColTitle label={t.table.lat} tip={colHelp.lat} />,
-                dataIndex: 'lat',
-                width: 130,
-            },
-        },
-        {
-            key: 'lon',
-            label: t.table.lon,
-            column: {
-                title: <ColTitle label={t.table.lon} tip={colHelp.lon} />,
-                dataIndex: 'lon',
-                width: 130,
-            },
-        },
-        {
-            key: 'sat',
-            label: t.table.sat,
-            column: {
-                title: <ColTitle label={t.table.sat} tip={colHelp.sat} />,
-                dataIndex: 'sat',
-                width: 100,
             },
         },
         {
