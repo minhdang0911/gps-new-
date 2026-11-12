@@ -266,7 +266,7 @@
             "tim": "Device time",
             "lat": "Latitude",
             "lon": "Longitude",
-            "sat": "Satellites",
+            "sat": "Address",
             "gps": "GPS status",
             "sos": "SOS",
             "acc": "ACC",

@@ -30,7 +30,7 @@ export function buildAllColsMeta({ t, isEn, isMobile }) {
         tim: { vi: 'Thời gian thiết bị (YYMMDDhhmmss).', en: 'Device time (YYMMDDhhmmss).' },
         lat: { vi: 'Vĩ độ vị trí gần nhất.', en: 'Latest latitude.' },
         lon: { vi: 'Kinh độ vị trí gần nhất.', en: 'Latest longitude.' },
-        sat: { vi: 'Số vệ tinh GPS bắt được.', en: 'GPS satellites count.' },
+        sat: { vi: 'Địa chỉ vị trí gần nhất.', en: 'Latest address.' },
         gps: { vi: 'Trạng thái GPS.', en: 'GPS status.' },
         sos: { vi: 'Trạng thái SOS.', en: 'SOS status.' },
         acc: { vi: 'Trạng thái khóa/nguồn xe.', en: 'Vehicle lock/ignition status.' },

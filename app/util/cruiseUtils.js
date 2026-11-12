@@ -282,6 +282,193 @@ export const nearestRenderIndex = (renderToRaw, rawIdx) => {
     return Math.abs(renderToRaw[a] - rawIdx) < Math.abs(renderToRaw[b] - rawIdx) ? a : b;
 };
 
+const isFiniteCoord = (v) => typeof v === 'number' && Number.isFinite(v);
+
+const parseCoordPoint = (item) => {
+    if (Array.isArray(item)) {
+        const lat = Number(item[0]);
+        const lon = Number(item[1]);
+        return isFiniteCoord(lat) && isFiniteCoord(lon) ? { lat, lon } : null;
+    }
+    if (item && typeof item === 'object') {
+        const lat = Number(item.lat);
+        const lon = Number(item.lon);
+        return isFiniteCoord(lat) && isFiniteCoord(lon) ? { lat, lon } : null;
+    }
+    return null;
+};
+
+const buildCumulativeMeters = (pts) => {
+    const cum = new Array(pts.length).fill(0);
+    for (let i = 1; i < pts.length; i++) {
+        const d = distanceMeters(pts[i - 1], pts[i]);
+        cum[i] = cum[i - 1] + (d > 0 && d < 5000 ? d : 0);
+    }
+    return cum;
+};
+
+/**
+ * Xây dựng dữ liệu playback và chỉ số đồng bộ cho route đang vẽ trên bản đồ.
+ * Đảm bảo line hiển thị, marker đầu/cuối, slider và icon di chuyển dùng chung 1 quỹ đạo.
+ */
+export const buildPlaybackRoute = (mapPoints = [], mapToRawIndices = [], snappedCoords = [], useSnapped = false) => {
+    const validMap = [];
+    for (let j = 0; j < mapPoints.length; j++) {
+        const p = mapPoints[j];
+        if (!isFiniteCoord(p?.lat) || !isFiniteCoord(p?.lon)) continue;
+        validMap.push({
+            lat: p.lat,
+            lon: p.lon,
+            renderIdx: j,
+            rawIdx: typeof mapToRawIndices[j] === 'number' ? mapToRawIndices[j] : j,
+        });
+    }
+
+    const renderToPlayIdx = new Array(mapPoints.length).fill(0);
+
+    if (!validMap.length) {
+        return {
+            points: [],
+            coords: [],
+            isSnapped: false,
+            renderToPlayIdx,
+            playToRenderIdx: [],
+            playToRawIdx: [],
+        };
+    }
+
+    // Chuẩn hóa snappedCoords khi bật chế độ bám đường
+    let snapPts = [];
+    if (useSnapped && Array.isArray(snappedCoords) && snappedCoords.length >= 2) {
+        for (let i = 0; i < snappedCoords.length; i++) {
+            const pt = parseCoordPoint(snappedCoords[i]);
+            if (!pt) continue;
+            const prev = snapPts[snapPts.length - 1];
+            const isLast = i === snappedCoords.length - 1;
+            if (!prev || isLast || distanceMeters(prev, pt) >= 0.05) {
+                snapPts.push(pt);
+            }
+        }
+        // Loại điểm cuối nếu trùng hệt điểm áp chót
+        if (snapPts.length >= 3) {
+            const last = snapPts[snapPts.length - 1];
+            const prev = snapPts[snapPts.length - 2];
+            if (distanceMeters(prev, last) < 0.05) snapPts.pop();
+        }
+    }
+
+    if (snapPts.length < 2) {
+        const points = validMap.map(({ lat, lon }) => ({ lat, lon }));
+        const coords = validMap.map(({ lat, lon }) => [lat, lon]);
+        const playToRenderIdx = validMap.map((m) => m.renderIdx);
+        const playToRawIdx = validMap.map((m) => m.rawIdx);
+
+        let lastPlay = 0;
+        let ptr = 0;
+        for (let j = 0; j < mapPoints.length; j++) {
+            if (ptr < validMap.length && validMap[ptr].renderIdx === j) {
+                lastPlay = ptr;
+                ptr++;
+            }
+            renderToPlayIdx[j] = lastPlay;
+        }
+
+        return { points, coords, isSnapped: false, renderToPlayIdx, playToRenderIdx, playToRawIdx };
+    }
+
+    const cumSnapM = buildCumulativeMeters(snapPts);
+    const totalSnapM = cumSnapM[cumSnapM.length - 1] || 0;
+    const cumMapM = buildCumulativeMeters(validMap);
+    const totalMapM = cumMapM[cumMapM.length - 1] || 0;
+
+    const M = snapPts.length;
+    const N = validMap.length;
+    const validPlayIdx = new Array(N).fill(0);
+
+    // Điểm đầu và cuối khớp với đầu/cuối polyline bám đường
+    validPlayIdx[0] = 0;
+    validPlayIdx[N - 1] = M - 1;
+
+    for (let i = 1; i < N - 1; i++) {
+        const prevK = validPlayIdx[i - 1];
+        const dStep = distanceMeters(validMap[i - 1], validMap[i]);
+        const maxAdvanceM = Math.max(250, dStep * 2.8);
+
+        let bestK = prevK;
+        let bestDist = Infinity;
+
+        for (let k = prevK; k < M; k++) {
+            if (k > prevK && cumSnapM[k] - cumSnapM[prevK] > maxAdvanceM) break;
+            const d = distanceMeters(validMap[i], snapPts[k]);
+            if (d < bestDist - 0.1) {
+                bestDist = d;
+                bestK = k;
+            }
+        }
+
+        // Fallback theo tỉ lệ quãng đường nếu đoạn routing vòng xa hơn giới hạn cửa sổ cục bộ
+        if (bestDist > 120) {
+            const fracI = totalMapM > 0 ? cumMapM[i] / totalMapM : i / Math.max(1, N - 1);
+            let bandBestK = bestK;
+            let bandBestDist = bestDist;
+
+            for (let k = prevK; k < M; k++) {
+                const fracK = totalSnapM > 0 ? cumSnapM[k] / totalSnapM : k / Math.max(1, M - 1);
+                if (fracK < fracI - 0.15) continue;
+                if (fracK > fracI + 0.15) break;
+                const d = distanceMeters(validMap[i], snapPts[k]);
+                if (d < bandBestDist - 0.1) {
+                    bandBestDist = d;
+                    bandBestK = k;
+                }
+            }
+            bestK = bandBestK;
+        }
+
+        validPlayIdx[i] = bestK;
+    }
+
+    const playToRenderIdx = new Array(M).fill(validMap[0].renderIdx);
+    const playToRawIdx = new Array(M).fill(validMap[0].rawIdx);
+
+    for (let i = 0; i < N - 1; i++) {
+        const kA = validPlayIdx[i];
+        const kB = validPlayIdx[i + 1];
+        if (kB <= kA) continue;
+
+        const spanM = cumSnapM[kB] - cumSnapM[kA];
+        for (let k = kA; k < kB; k++) {
+            const u = spanM > 0 ? (cumSnapM[k] - cumSnapM[kA]) / spanM : (k - kA) / (kB - kA);
+            playToRenderIdx[k] = u < 0.5 ? validMap[i].renderIdx : validMap[i + 1].renderIdx;
+            playToRawIdx[k] = Math.round(validMap[i].rawIdx + u * (validMap[i + 1].rawIdx - validMap[i].rawIdx));
+        }
+    }
+
+    for (let k = validPlayIdx[N - 1]; k < M; k++) {
+        playToRenderIdx[k] = validMap[N - 1].renderIdx;
+        playToRawIdx[k] = validMap[N - 1].rawIdx;
+    }
+
+    let lastPlay = validPlayIdx[0];
+    let ptr = 0;
+    for (let j = 0; j < mapPoints.length; j++) {
+        if (ptr < N && validMap[ptr].renderIdx === j) {
+            lastPlay = validPlayIdx[ptr];
+            ptr++;
+        }
+        renderToPlayIdx[j] = lastPlay;
+    }
+
+    return {
+        points: snapPts,
+        coords: snapPts.map((pt) => [pt.lat, pt.lon]),
+        isSnapped: true,
+        renderToPlayIdx,
+        playToRenderIdx,
+        playToRawIdx,
+    };
+};
+
 // ===============================
 // ✅ Popup text
 // ===============================

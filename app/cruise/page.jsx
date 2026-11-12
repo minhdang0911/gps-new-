@@ -50,6 +50,7 @@ import {
     getBearing,
     normalizeAngle,
     buildMapSample,
+    buildPlaybackRoute,
     nearestRenderIndex,
     toNum,
     getStatusType,
@@ -116,7 +117,6 @@ const CruisePage = () => {
     const mapToRawIndexRef = useRef([]);
 
     const [activeIndex, setActiveIndex] = useState(0);
-    const [activeRenderIndex, setActiveRenderIndex] = useState(0);
     const [sliderValue, setSliderValue] = useState(0);
     const [navOpen, setNavOpen] = useState(true);
 
@@ -157,9 +157,66 @@ const CruisePage = () => {
     const segMRef = useRef([]);
     const cumMRef = useRef([0]);
     const totalMRef = useRef(0);
+    const traveledMRef = useRef(0);
 
     const animationFrameRef = useRef(null);
-    const pendingRenderIdxRef = useRef(0);
+    const pendingPlayIdxRef = useRef(0);
+    const activeIndexRef = useRef(0);
+    const playbackRateRef = useRef(playbackRate);
+    const followModeRef = useRef(followMode);
+    const lastBearingRef = useRef(0);
+    const routeLoadSeqRef = useRef(0);
+
+    useEffect(() => {
+        playbackRateRef.current = playbackRate;
+    }, [playbackRate]);
+
+    useEffect(() => {
+        followModeRef.current = followMode;
+    }, [followMode]);
+
+    useEffect(() => {
+        activeIndexRef.current = activeIndex;
+    }, [activeIndex]);
+
+    const playbackRoute = useMemo(
+        () => buildPlaybackRoute(mapRouteData, mapToRawIndexRef.current, snappedPolyline, snapToRoad),
+        [mapRouteData, snappedPolyline, snapToRoad],
+    );
+
+    const getRouteBearing = (points, idx) => {
+        if (!points || points.length < 2) return lastBearingRef.current;
+        const curr = points[idx];
+        if (!curr) return lastBearingRef.current;
+        for (let j = idx + 1; j < points.length; j++) {
+            const next = points[j];
+            if (distanceMeters(curr, next) >= 0.5) {
+                return getBearing(curr.lat, curr.lon, next.lat, next.lon);
+            }
+        }
+        for (let j = idx - 1; j >= 0; j--) {
+            const prev = points[j];
+            if (distanceMeters(prev, curr) >= 0.5) {
+                return getBearing(prev.lat, prev.lon, curr.lat, curr.lon);
+            }
+        }
+        return lastBearingRef.current;
+    };
+
+    const applyMovingMarkerPose = (lat, lon, bearing) => {
+        if (lat == null || lon == null) return;
+        movingMarkerRef.current?.setLatLng([lat, lon]);
+        highlightDotRef.current?.setLatLng([lat, lon]);
+        if (typeof bearing === 'number' && Number.isFinite(bearing)) {
+            lastBearingRef.current = bearing;
+            const el = movingMarkerRef.current?.getElement?.();
+            if (el) {
+                el.style.transformOrigin = 'center center';
+                const baseTransform = el.style.transform.replace(/rotate\([^)]*\)/g, '').trim();
+                el.style.transform = `${baseTransform} rotate(${normalizeAngle(bearing)}deg)`;
+            }
+        }
+    };
 
     const vlistRef = useRef(null);
     const popupRef = useRef(null);
@@ -526,76 +583,88 @@ const CruisePage = () => {
     }, [activeIndex, isEn, rawRouteData]);
 
     // ✅ popup: show ngay -> update khi có address
-    const openInfoPopup = async (p) => {
+    const openInfoPopup = async (p, anchorLatLng = null) => {
         if (!LMap || !mapRef.current) return;
         if (!p || p.lat == null || p.lon == null) return;
 
-        currentPopupPointRef.current = p;
+        const targetLatLng = anchorLatLng || [p.lat, p.lon];
+        currentPopupPointRef.current = { point: p, anchorLatLng: targetLatLng };
 
         if (!popupRef.current) {
             popupRef.current = LMap.popup({ closeButton: true, autoPan: true });
         }
 
-        popupRef.current.setLatLng([p.lat, p.lon]).setContent(buildPopupHtml(p, isEn)).openOn(mapRef.current);
+        popupRef.current.setLatLng(targetLatLng).setContent(buildPopupHtml(p, isEn)).openOn(mapRef.current);
 
         const addr = await ensureAddress(p.lat, p.lon);
         if (!addr) return;
+        if (currentPopupPointRef.current?.point !== p) return;
 
         const updated = { ...p, address: addr };
-        popupRef.current.setLatLng([p.lat, p.lon]).setContent(buildPopupHtml(updated, isEn)).openOn(mapRef.current);
-
-        currentPopupPointRef.current = updated;
+        currentPopupPointRef.current = { point: updated, anchorLatLng: targetLatLng };
+        popupRef.current.setLatLng(targetLatLng).setContent(buildPopupHtml(updated, isEn)).openOn(mapRef.current);
     };
 
     // ✅ When language changes: rerender popup
     useEffect(() => {
         if (!popupRef.current || !mapRef.current) return;
-        const p = currentPopupPointRef.current;
+        const entry = currentPopupPointRef.current;
+        const p = entry?.point || entry;
         if (!p || p.lat == null || p.lon == null) return;
 
-        popupRef.current.setLatLng([p.lat, p.lon]).setContent(buildPopupHtml(p, isEn)).openOn(mapRef.current);
+        const targetLatLng = entry?.anchorLatLng || [p.lat, p.lon];
+        popupRef.current.setLatLng(targetLatLng).setContent(buildPopupHtml(p, isEn)).openOn(mapRef.current);
 
         (async () => {
             const addr = await ensureAddress(p.lat, p.lon);
             if (!addr) return;
+            const current = currentPopupPointRef.current?.point || currentPopupPointRef.current;
+            if (current !== p) return;
             const updated = { ...p, address: addr };
-            currentPopupPointRef.current = updated;
+            currentPopupPointRef.current = { point: updated, anchorLatLng: targetLatLng };
             popupRef.current
-                ?.setLatLng([p.lat, p.lon])
+                ?.setLatLng(targetLatLng)
                 .setContent(buildPopupHtml(updated, isEn))
                 .openOn(mapRef.current);
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isEn]);
 
-    const syncRenderFromRaw = (rawIdx) => {
+    const getPlayIndexForRaw = (rawIdx, route = playbackRoute) => {
+        const pts = route?.points || [];
+        if (!pts.length) return 0;
         const rIdx = nearestRenderIndex(mapToRawIndexRef.current, rawIdx);
-        if (rIdx >= 0) {
-            pendingRenderIdxRef.current = rIdx;
-            setActiveRenderIndex(rIdx);
-            setSliderValue(rIdx);
-        }
-        return rIdx;
+        if (rIdx < 0) return 0;
+        const mappedPlay = route.renderToPlayIdx?.[rIdx] ?? rIdx;
+        return Math.max(0, Math.min(pts.length - 1, mappedPlay));
     };
 
     const handlePointClickRaw = (rawIdx) => {
         if (!rawRouteData.length) return;
         stopPlaying();
 
+        activeIndexRef.current = rawIdx;
         setActiveIndex(rawIdx);
-        const rIdx = syncRenderFromRaw(rawIdx);
 
-        if (rIdx >= 0) {
-            const p = mapRouteData[rIdx];
+        const pts = playbackRoute.points;
+        let popupAnchor = null;
+
+        if (pts.length > 0) {
+            const playIdx = getPlayIndexForRaw(rawIdx);
+            pendingPlayIdxRef.current = playIdx;
+            traveledMRef.current = cumMRef.current?.[playIdx] ?? 0;
+            setSliderValue(playIdx);
+
+            const p = pts[playIdx];
             if (p?.lat != null && p?.lon != null) {
-                movingMarkerRef.current?.setLatLng([p.lat, p.lon]);
-                highlightDotRef.current?.setLatLng([p.lat, p.lon]);
+                applyMovingMarkerPose(p.lat, p.lon, getRouteBearing(pts, playIdx));
                 mapRef.current?.panTo([p.lat, p.lon], { animate: true, duration: 0.25 });
+                popupAnchor = [p.lat, p.lon];
             }
         }
 
         const pRaw = rawRouteData[rawIdx];
-        if (pRaw) openInfoPopup(pRaw);
+        if (pRaw) openInfoPopup(pRaw, popupAnchor);
 
         vlistRef.current?.scrollToItem(rawIdx, 'center');
     };
@@ -694,48 +763,6 @@ const CruisePage = () => {
         if (!rawRouteData.length) return;
         handlePointClickRaw(rawIdx);
     };
-
-    // ===============================
-    // build segment distances for playback
-    // ===============================
-    useEffect(() => {
-        if (!mapRouteData?.length || mapRouteData.length < 2) {
-            segMRef.current = [];
-            cumMRef.current = [0];
-            totalMRef.current = 0;
-            return;
-        }
-
-        const segM = [];
-        const cum = [0];
-        let sum = 0;
-
-        for (let i = 0; i < mapRouteData.length - 1; i++) {
-            const a = mapRouteData[i];
-            const b = mapRouteData[i + 1];
-
-            if (
-                typeof a?.lat !== 'number' ||
-                typeof a?.lon !== 'number' ||
-                typeof b?.lat !== 'number' ||
-                typeof b?.lon !== 'number'
-            ) {
-                segM.push(0);
-                cum.push(sum);
-                continue;
-            }
-
-            const d = distanceMeters({ lat: a.lat, lon: a.lon }, { lat: b.lat, lon: b.lon });
-            const safe = d > 0 && d < 5000 ? d : 0;
-            segM.push(safe);
-            sum += safe;
-            cum.push(sum);
-        }
-
-        segMRef.current = segM;
-        cumMRef.current = cum;
-        totalMRef.current = sum;
-    }, [mapRouteData]);
 
     // Dots render
     const drawDots = () => {
@@ -884,21 +911,9 @@ const CruisePage = () => {
         popupRef.current = null;
         currentPopupPointRef.current = null;
 
-        if (!mapRouteData.length) return;
-
-        const isValidPoint = (p) => p && typeof p.lat === 'number' && typeof p.lon === 'number';
-        const firstRenderIdx = mapRouteData.findIndex(isValidPoint);
-        if (firstRenderIdx === -1) return;
-
-        const latlngs = [];
-        for (let i = 0; i < mapRouteData.length; i++) {
-            const p = mapRouteData[i];
-            if (!isValidPoint(p)) continue;
-            latlngs.push([p.lat, p.lon]);
-        }
-        if (!latlngs.length) return;
-
-        const initialCoords = snapToRoad && snappedPolyline.length >= 2 ? snappedPolyline : latlngs;
+        const pts = playbackRoute.points;
+        const initialCoords = playbackRoute.coords;
+        if (!pts.length || !initialCoords.length) return;
 
         // ✅ Grab/Be style: 2-layer casing polyline
         // Layer 1: outer white casing (border) — dày hơn, trắng/xám nhạt
@@ -924,7 +939,7 @@ const CruisePage = () => {
         }).addTo(map);
 
         // ✅ Marker điểm bắt đầu (xanh lá — START)
-        const startLL = latlngs[0];
+        const startLL = initialCoords[0];
         startMarkerRef.current = LMap.circleMarker(startLL, {
             radius: 9,
             weight: 3,
@@ -936,7 +951,7 @@ const CruisePage = () => {
         }).addTo(map);
 
         // ✅ Marker điểm cuối (cam/đỏ — END)
-        const endLL = latlngs[latlngs.length - 1];
+        const endLL = initialCoords[initialCoords.length - 1];
         endMarkerRef.current = LMap.circleMarker(endLL, {
             radius: 9,
             weight: 3,
@@ -947,12 +962,12 @@ const CruisePage = () => {
             pane: 'markerPane',
         }).addTo(map);
 
-        const firstPoint = mapRouteData[firstRenderIdx];
+        const firstPoint = pts[0];
 
         const customIcon = LMap.icon({
             iconUrl: markerIconImg.src,
             iconSize: [50, 50],
-            iconAnchor: [24, 24],
+            iconAnchor: [25, 25],
         });
 
         movingMarkerRef.current = LMap.marker([firstPoint.lat, firstPoint.lon], { icon: customIcon }).addTo(map);
@@ -969,54 +984,107 @@ const CruisePage = () => {
 
         stopPlaying();
 
-        pendingRenderIdxRef.current = firstRenderIdx;
-        setActiveRenderIndex(firstRenderIdx);
-        setSliderValue(firstRenderIdx);
+        pendingPlayIdxRef.current = 0;
+        traveledMRef.current = 0;
+        setSliderValue(0);
 
-        const rawIdx = mapToRawIndexRef.current?.[firstRenderIdx] ?? 0;
+        const rawIdx = playbackRoute.playToRawIdx?.[0] ?? mapToRawIndexRef.current?.[0] ?? 0;
+        activeIndexRef.current = rawIdx;
         setActiveIndex(rawIdx);
 
+        applyMovingMarkerPose(firstPoint.lat, firstPoint.lon, getRouteBearing(pts, 0));
+
         const bounds = polylineRef.current.getBounds();
-        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 19 });
+        if (bounds?.isValid?.()) {
+            map.fitBounds(bounds, { padding: [40, 40], maxZoom: 19 });
+        }
         map.invalidateSize();
 
         scheduleDrawDots();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [mapRouteData, LMap]);
 
-    // ✅ Sync polyline coords when snapToRoad or snappedPolyline changes
+    // ✅ Đồng bộ khoảng cách, polyline, start/end và vị trí icon theo đường vẽ đang chọn
     useEffect(() => {
-        if (!polylineRef.current || !polylineCasingRef.current || !mapRouteData.length) return;
-        const isValidPoint = (p) => p && typeof p.lat === 'number' && typeof p.lon === 'number';
-        const rawCoords = mapRouteData.filter(isValidPoint).map((p) => [p.lat, p.lon]);
-        const coords = snapToRoad && snappedPolyline.length >= 2 ? snappedPolyline : rawCoords;
+        const pts = playbackRoute.points;
+        const coords = playbackRoute.coords;
+
+        if (!pts.length || pts.length < 2) {
+            segMRef.current = [];
+            cumMRef.current = [0];
+            totalMRef.current = 0;
+        } else {
+            const segM = [];
+            const cum = [0];
+            let sum = 0;
+
+            for (let i = 0; i < pts.length - 1; i++) {
+                const d = distanceMeters(pts[i], pts[i + 1]);
+                const safe = d > 0 && d < 5000 ? d : 0;
+                segM.push(safe);
+                sum += safe;
+                cum.push(sum);
+            }
+
+            segMRef.current = segM;
+            cumMRef.current = cum;
+            totalMRef.current = sum;
+        }
+
+        if (!polylineRef.current || !polylineCasingRef.current || !pts.length) return;
+
         if (coords.length >= 2) {
             polylineRef.current.setLatLngs(coords);
             polylineCasingRef.current.setLatLngs(coords);
         }
-    }, [snapToRoad, snappedPolyline, mapRouteData]);
+        if (coords.length >= 1) {
+            startMarkerRef.current?.setLatLng(coords[0]);
+            endMarkerRef.current?.setLatLng(coords[coords.length - 1]);
+        }
 
-    // redraw dots when map move/zoom end
+        const playIdx = getPlayIndexForRaw(activeIndexRef.current, playbackRoute);
+        pendingPlayIdxRef.current = playIdx;
+        traveledMRef.current = cumMRef.current?.[playIdx] ?? 0;
+        setSliderValue(playIdx);
+
+        const pt = pts[playIdx];
+        if (pt?.lat != null && pt?.lon != null) {
+            applyMovingMarkerPose(pt.lat, pt.lon, getRouteBearing(pts, playIdx));
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [playbackRoute]);
+
+    // redraw dots when map move/zoom end (and preserve marker rotation after Leaflet zoom reposition)
     useEffect(() => {
         if (!LMap || !mapRef.current) return;
         const map = mapRef.current;
 
         const onMove = () => scheduleDrawDots();
+        const onZoom = () => {
+            scheduleDrawDots();
+            const el = movingMarkerRef.current?.getElement?.();
+            if (el && Number.isFinite(lastBearingRef.current)) {
+                el.style.transformOrigin = 'center center';
+                const baseTransform = el.style.transform.replace(/rotate\([^)]*\)/g, '').trim();
+                el.style.transform = `${baseTransform} rotate(${normalizeAngle(lastBearingRef.current)}deg)`;
+            }
+        };
         map.on('moveend', onMove);
-        map.on('zoomend', onMove);
+        map.on('zoomend', onZoom);
 
         return () => {
             map.off('moveend', onMove);
-            map.off('zoomend', onMove);
+            map.off('zoomend', onZoom);
             if (drawDotsRafRef.current) cancelAnimationFrame(drawDotsRafRef.current);
             drawDotsRafRef.current = null;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [LMap, mapRouteData]);
 
-    // Playback loop
+    // Playback loop (di chuyển mượt theo chính polyline đang vẽ trên map)
     useEffect(() => {
-        if (!mapRouteData.length || !movingMarkerRef.current) return;
+        const pts = playbackRoute.points;
+        if (!pts.length || pts.length < 2 || !movingMarkerRef.current) return;
 
         isPlayingRef.current = isPlaying;
 
@@ -1028,9 +1096,17 @@ const CruisePage = () => {
             return;
         }
 
-        const speedMps = BASE_SPEED_MPS * playbackRate;
-        let traveledM = cumMRef.current?.[activeRenderIndex] ?? 0;
-        let segIdx = Math.max(0, Math.min(mapRouteData.length - 2, activeRenderIndex));
+        const totalM = totalMRef.current || 0;
+        if (traveledMRef.current >= totalM) {
+            traveledMRef.current = 0;
+        }
+
+        const initCum = cumMRef.current;
+        let segIdx = 0;
+        while (segIdx < initCum.length - 2 && traveledMRef.current >= initCum[segIdx + 1]) {
+            segIdx++;
+        }
+
         let lastTime = performance.now();
         let lastUi = 0;
         let lastFollow = 0;
@@ -1038,29 +1114,31 @@ const CruisePage = () => {
         const step = (now) => {
             if (!isPlayingRef.current) return;
 
-            const dtMs = now - lastTime;
+            const dtMs = Math.min(Math.max(0, now - lastTime), 100);
             lastTime = now;
 
-            traveledM += (dtMs / 1000) * speedMps;
+            const speedMps = BASE_SPEED_MPS * playbackRateRef.current;
+            const nextTraveled = traveledMRef.current + (dtMs / 1000) * speedMps;
+            traveledMRef.current = nextTraveled;
 
-            const totalM = totalMRef.current || 0;
-            if (totalM <= 0 || traveledM >= totalM) {
-                const last = mapRouteData.length - 1;
-                const pLast = mapRouteData[last];
+            const routeTotalM = totalMRef.current || 0;
+            if (routeTotalM <= 0 || nextTraveled >= routeTotalM) {
+                const last = pts.length - 1;
+                const pLast = pts[last];
                 if (pLast?.lat != null && pLast?.lon != null) {
-                    movingMarkerRef.current.setLatLng([pLast.lat, pLast.lon]);
-                    highlightDotRef.current?.setLatLng([pLast.lat, pLast.lon]);
+                    applyMovingMarkerPose(pLast.lat, pLast.lon, getRouteBearing(pts, last));
 
-                    // ✅ follow at end
-                    if (followMode && mapRef.current) {
+                    if (followModeRef.current && mapRef.current) {
                         mapRef.current.panTo([pLast.lat, pLast.lon], { animate: true, duration: 0.25 });
                     }
                 }
 
+                pendingPlayIdxRef.current = last;
+                const rawLast = playbackRoute.playToRawIdx?.[last];
+                if (typeof rawLast === 'number') activeIndexRef.current = rawLast;
+
                 startTransition(() => {
-                    setActiveRenderIndex(last);
                     setSliderValue(last);
-                    const rawLast = mapToRawIndexRef.current?.[last];
                     if (typeof rawLast === 'number') setActiveIndex(rawLast);
                 });
 
@@ -1070,11 +1148,16 @@ const CruisePage = () => {
             }
 
             const cum = cumMRef.current;
-            while (segIdx < cum.length - 2 && traveledM > cum[segIdx + 1]) segIdx++;
+            while (segIdx < cum.length - 2 && nextTraveled >= cum[segIdx + 1]) segIdx++;
 
-            const segLen = segMRef.current?.[segIdx] || 0;
-            const a = mapRouteData[segIdx];
-            const b = mapRouteData[segIdx + 1];
+            let segLen = segMRef.current?.[segIdx] || 0;
+            while (segIdx < pts.length - 2 && segLen <= 0) {
+                segIdx++;
+                segLen = segMRef.current?.[segIdx] || 0;
+            }
+
+            const a = pts[segIdx];
+            const b = pts[segIdx + 1];
 
             if (!a || !b || segLen <= 0) {
                 animationFrameRef.current = requestAnimationFrame(step);
@@ -1082,37 +1165,29 @@ const CruisePage = () => {
             }
 
             const segStart = cum[segIdx];
-            const t01 = (traveledM - segStart) / segLen;
+            const t01 = Math.max(0, Math.min(1, (nextTraveled - segStart) / segLen));
 
             const lat = a.lat + (b.lat - a.lat) * t01;
             const lon = a.lon + (b.lon - a.lon) * t01;
+            const bearing = segLen >= 0.5 ? getBearing(a.lat, a.lon, b.lat, b.lon) : lastBearingRef.current;
 
-            movingMarkerRef.current.setLatLng([lat, lon]);
-            highlightDotRef.current?.setLatLng([lat, lon]);
+            applyMovingMarkerPose(lat, lon, bearing);
 
             // ✅ follow mode (throttle)
-            if (followMode && mapRef.current && now - lastFollow > 180) {
+            if (followModeRef.current && mapRef.current && now - lastFollow > 180) {
                 lastFollow = now;
                 mapRef.current.panTo([lat, lon], { animate: true, duration: 0.18 });
             }
 
-            const bearing = getBearing(a.lat, a.lon, b.lat, b.lon);
-            const el = movingMarkerRef.current.getElement();
-            if (el) {
-                el.style.transformOrigin = 'center center';
-                const baseTransform = el.style.transform.replace(/rotate\([^)]*\)/g, '');
-                el.style.transform = `${baseTransform} rotate(${normalizeAngle(bearing)}deg)`;
-            }
-
             if (now - lastUi > UI_THROTTLE_MS) {
                 lastUi = now;
-                const renderIdx = segIdx;
-                pendingRenderIdxRef.current = renderIdx;
+                const playIdx = segIdx;
+                pendingPlayIdxRef.current = playIdx;
+                const rawIdx = playbackRoute.playToRawIdx?.[playIdx];
+                if (typeof rawIdx === 'number') activeIndexRef.current = rawIdx;
 
                 startTransition(() => {
-                    setActiveRenderIndex(renderIdx);
-                    setSliderValue(renderIdx);
-                    const rawIdx = mapToRawIndexRef.current?.[renderIdx];
+                    setSliderValue(playIdx);
                     if (typeof rawIdx === 'number') setActiveIndex(rawIdx);
                 });
             }
@@ -1128,32 +1203,47 @@ const CruisePage = () => {
                 animationFrameRef.current = null;
             }
         };
-    }, [isPlaying, mapRouteData, playbackRate, activeRenderIndex, followMode]);
+    }, [isPlaying, playbackRoute]);
 
     // Slider behavior
     const handleSliderChange = (e) => {
-        const renderIdx = Number(e.target.value);
-        pendingRenderIdxRef.current = renderIdx;
-        setSliderValue(renderIdx);
+        if (isPlayingRef.current) stopPlaying();
+        const pts = playbackRoute.points;
+        if (!pts.length) return;
 
-        const p = mapRouteData[renderIdx];
+        const playIdx = Math.max(0, Math.min(pts.length - 1, Number(e.target.value)));
+        pendingPlayIdxRef.current = playIdx;
+        traveledMRef.current = cumMRef.current?.[playIdx] ?? 0;
+        setSliderValue(playIdx);
+
+        const p = pts[playIdx];
         if (p?.lat != null && p?.lon != null) {
-            movingMarkerRef.current?.setLatLng([p.lat, p.lon]);
-            highlightDotRef.current?.setLatLng([p.lat, p.lon]);
+            applyMovingMarkerPose(p.lat, p.lon, getRouteBearing(pts, playIdx));
+        }
+
+        const rawIdx = playbackRoute.playToRawIdx?.[playIdx];
+        if (typeof rawIdx === 'number') {
+            activeIndexRef.current = rawIdx;
+            startTransition(() => setActiveIndex(rawIdx));
         }
     };
 
     const commitSlider = () => {
         stopPlaying();
-        const renderIdx = pendingRenderIdxRef.current;
-        const rawIdx = mapToRawIndexRef.current?.[renderIdx];
+        const pts = playbackRoute.points;
+        const playIdx = pts.length ? Math.max(0, Math.min(pts.length - 1, pendingPlayIdxRef.current)) : 0;
+        const rawIdx = playbackRoute.playToRawIdx?.[playIdx];
 
-        setActiveRenderIndex(renderIdx);
-        setSliderValue(renderIdx);
-        if (typeof rawIdx === 'number') setActiveIndex(rawIdx);
+        traveledMRef.current = cumMRef.current?.[playIdx] ?? 0;
+        setSliderValue(playIdx);
+        if (typeof rawIdx === 'number') {
+            activeIndexRef.current = rawIdx;
+            setActiveIndex(rawIdx);
+        }
 
-        const p = mapRouteData[renderIdx];
+        const p = pts[playIdx];
         if (p?.lat != null && p?.lon != null) {
+            applyMovingMarkerPose(p.lat, p.lon, getRouteBearing(pts, playIdx));
             mapRef.current?.panTo([p.lat, p.lon], { animate: true, duration: 0.25 });
         }
         if (typeof rawIdx === 'number') vlistRef.current?.scrollToItem(rawIdx, 'center');
@@ -1172,6 +1262,8 @@ const CruisePage = () => {
 
         const currentDevice = deviceList.find((d) => d._id === selectedDeviceId);
         if (!currentDevice) return setError(t.error.noVehicleInfo);
+
+        const loadSeq = ++routeLoadSeqRef.current;
 
         try {
             setLoadingRoute(true);
@@ -1193,8 +1285,11 @@ const CruisePage = () => {
             mapToRawIndexRef.current = [];
             setTotalKm(0);
             setActiveIndex(0);
-            setActiveRenderIndex(0);
             setSliderValue(0);
+            pendingPlayIdxRef.current = 0;
+            traveledMRef.current = 0;
+            activeIndexRef.current = 0;
+            lastBearingRef.current = 0;
 
             setActiveTab('route');
             setStatsOpen(false);
@@ -1219,6 +1314,7 @@ const CruisePage = () => {
                 fetchPageFn,
                 FETCH_PAGE_LIMIT,
             );
+            if (routeLoadSeqRef.current !== loadSeq) return;
 
             const allData = result.data;
             if (!allData || allData.length === 0) return setError(t.error.noData);
@@ -1276,18 +1372,25 @@ const CruisePage = () => {
                 setIsSnappingRoad(true);
                 setSnapProgress(5);
                 snapRouteToRoads(sample.points, {
-                    onProgress: (pct) => setSnapProgress(pct),
+                    onProgress: (pct) => {
+                        if (routeLoadSeqRef.current === loadSeq) setSnapProgress(pct);
+                    },
                 })
                     .then((snapped) => {
+                        if (routeLoadSeqRef.current !== loadSeq) return;
                         if (snapped && snapped.length >= 2) {
                             setSnappedPolyline(snapped);
                         }
                     })
                     .catch((err) => {
-                        console.error('Road snap error:', err);
+                        if (routeLoadSeqRef.current === loadSeq) {
+                            console.error('Road snap error:', err);
+                        }
                     })
                     .finally(() => {
-                        setIsSnappingRoad(false);
+                        if (routeLoadSeqRef.current === loadSeq) {
+                            setIsSnappingRoad(false);
+                        }
                     });
             }
 
@@ -1295,14 +1398,30 @@ const CruisePage = () => {
             if (firstValid) ensureAddress(firstValid.lat, firstValid.lon);
         } catch (e) {
             console.error(e);
-            setError(t.error.loadFailed);
+            if (routeLoadSeqRef.current === loadSeq) {
+                setError(t.error.loadFailed);
+            }
         } finally {
-            setLoadingRoute(false);
+            if (routeLoadSeqRef.current === loadSeq) {
+                setLoadingRoute(false);
+            }
         }
     };
 
     const handleStart = () => {
-        if (!mapRouteData.length) return;
+        const pts = playbackRoute.points;
+        if (pts.length < 2) return;
+        const lastIdx = pts.length - 1;
+        const totalM = totalMRef.current || 0;
+        if (pendingPlayIdxRef.current >= lastIdx || (totalM > 0 && traveledMRef.current >= totalM - 0.1)) {
+            pendingPlayIdxRef.current = 0;
+            traveledMRef.current = 0;
+            setSliderValue(0);
+            const rawIdx = playbackRoute.playToRawIdx?.[0] ?? 0;
+            activeIndexRef.current = rawIdx;
+            setActiveIndex(rawIdx);
+            applyMovingMarkerPose(pts[0].lat, pts[0].lon, getRouteBearing(pts, 0));
+        }
         setIsPlaying(true);
         isPlayingRef.current = true;
     };
@@ -1310,21 +1429,22 @@ const CruisePage = () => {
     const handlePause = () => stopPlaying();
 
     const handleReset = () => {
-        if (!mapRouteData.length) return;
+        const pts = playbackRoute.points;
+        if (!pts.length) return;
         stopPlaying();
 
         const idx = 0;
-        pendingRenderIdxRef.current = idx;
-        setActiveRenderIndex(idx);
+        pendingPlayIdxRef.current = idx;
+        traveledMRef.current = 0;
         setSliderValue(idx);
 
-        const rawIdx = mapToRawIndexRef.current?.[idx] ?? 0;
+        const rawIdx = playbackRoute.playToRawIdx?.[idx] ?? mapToRawIndexRef.current?.[idx] ?? 0;
+        activeIndexRef.current = rawIdx;
         setActiveIndex(rawIdx);
 
-        const p = mapRouteData[idx];
+        const p = pts[idx];
         if (p?.lat != null && p?.lon != null) {
-            movingMarkerRef.current?.setLatLng([p.lat, p.lon]);
-            highlightDotRef.current?.setLatLng([p.lat, p.lon]);
+            applyMovingMarkerPose(p.lat, p.lon, getRouteBearing(pts, idx));
             mapRef.current?.panTo([p.lat, p.lon], { animate: true, duration: 0.25 });
         }
 
@@ -1697,13 +1817,13 @@ const CruisePage = () => {
                             </div>
 
                             <div className="iky-cruise__controls">
-                                <button onClick={handleStart} disabled={isPlaying || !mapRouteData.length}>
+                                <button onClick={handleStart} disabled={isPlaying || playbackRoute.points.length < 2}>
                                     ▶
                                 </button>
                                 <button onClick={handlePause} disabled={!isPlaying}>
                                     ⏸
                                 </button>
-                                <button onClick={handleReset} disabled={!mapRouteData.length}>
+                                <button onClick={handleReset} disabled={!playbackRoute.points.length}>
                                     ⏹
                                 </button>
 
@@ -1759,7 +1879,7 @@ const CruisePage = () => {
                                 <input
                                     type="range"
                                     min={0}
-                                    max={Math.max(0, mapRouteData.length - 1)}
+                                    max={Math.max(0, playbackRoute.points.length - 1)}
                                     value={sliderValue}
                                     onChange={handleSliderChange}
                                     onMouseUp={commitSlider}
