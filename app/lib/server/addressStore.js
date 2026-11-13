@@ -9,7 +9,7 @@ import {
 import { fetchAddressFromProviders } from '../address/providers';
 import { getAddressCollection, isMongoConfigured } from './mongodb';
 
-const MAX_SERVER_CONCURRENT_PROVIDER_CALLS = 4;
+const MAX_SERVER_CONCURRENT_PROVIDER_CALLS = 10;
 const serverInflightMap = new Map();
 let activeProviderCalls = 0;
 const providerWaitQueue = [];
@@ -28,20 +28,22 @@ async function runProviderLimited(fn) {
     }
 }
 
-export async function findAddressInMongo(collection, latNum, lonNum, lang) {
+export async function findAddressInMongo(collection, latNum, lonNum, lang, { skipExact = false } = {}) {
     if (!collection) return null;
 
-    const key = getCoordCacheKey(latNum, lonNum, lang);
-    const exact = await collection.findOne(
-        { key },
-        { projection: { _id: 0, address: 1, deprecatedAddress: 1 } },
-    );
-    if (exact?.address) {
-        return {
-            address: exact.address,
-            deprecatedAddress: exact.deprecatedAddress || '',
-            source: 'mongo',
-        };
+    if (!skipExact) {
+        const key = getCoordCacheKey(latNum, lonNum, lang);
+        const exact = await collection.findOne(
+            { key },
+            { projection: { _id: 0, address: 1, deprecatedAddress: 1 } },
+        );
+        if (exact?.address) {
+            return {
+                address: exact.address,
+                deprecatedAddress: exact.deprecatedAddress || '',
+                source: 'mongo',
+            };
+        }
     }
 
     try {
@@ -227,19 +229,22 @@ export async function resolveBatchServerAddresses(items = [], { resolveMissing =
         }
     }
 
-    // 2. Các điểm còn thiếu exact -> check $nearSphere 25m trong MongoDB, và chỉ gọi provider nếu resolveMissing=true
+    // 2. Các điểm còn thiếu exact -> check $nearSphere 50m trong MongoDB trước
     const missing = Array.from(uniqueByKey.values()).filter((entry) => !results[entry.key]);
 
     await Promise.all(
         missing.map(async (entry) => {
             try {
-                if (!resolveMissing) {
-                    const dbHit = await findAddressInMongo(collection, entry.latNum, entry.lonNum, entry.lang);
-                    if (dbHit?.address) {
-                        results[entry.key] = dbHit;
-                    }
+                // Kiểm tra bán kính 50m trong MongoDB trước
+                const nearbyHit = await findAddressInMongo(collection, entry.latNum, entry.lonNum, entry.lang, {
+                    skipExact: true,
+                });
+                if (nearbyHit?.address) {
+                    results[entry.key] = nearbyHit;
                     return;
                 }
+
+                if (!resolveMissing) return;
 
                 const res = await resolveOrFetchServerAddress(entry.latNum, entry.lonNum, { lang: entry.lang });
                 if (res?.data?.address) {

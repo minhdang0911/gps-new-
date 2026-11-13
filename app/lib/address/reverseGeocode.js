@@ -19,7 +19,7 @@ export {
     callGoongWithRotation,
 };
 
-const WRITE_BATCH_CHUNK_SIZE = 8;
+const WRITE_BATCH_CHUNK_SIZE = 25;
 const READ_BATCH_CHUNK_SIZE = 30;
 const SERVER_API_TIMEOUT_MS = 6500;
 let serverApiSkipUntil = 0;

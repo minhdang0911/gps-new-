@@ -10,8 +10,8 @@ export const ADDRESS_CACHE_TTL_MS = 365 * 24 * 60 * 60 * 1000; // Lưu dài hạ
 export const ADDRESS_NEGATIVE_TTL_MS = 5 * 60 * 1000; // 5 phút cho tọa độ không giải mã được
 export const MAX_ADDRESS_CACHE_ENTRIES = 50000; // Lưu tối đa 50.000 tọa độ (~10MB IDB)
 const MAX_NEGATIVE_ENTRIES = 1000;
-const CELL_DEG = 0.00025; // ~27.8m mỗi ô lưới
-export const PROXIMITY_RADIUS_METERS = 25;
+const CELL_DEG = 0.0005; // ~55.5m mỗi ô lưới (độ phủ 3x3 ~166m)
+export const PROXIMITY_RADIUS_METERS = 50; // Gom điểm lân cận trong bán kính 50m
 export const MAX_CONCURRENT_GEOCODE_REQUESTS = 4;
 const TOUCH_IDB_MIN_INTERVAL_MS = 60 * 60 * 1000; // chỉ sync lastUsedAt xuống IDB tối đa mỗi 1h/entry
 

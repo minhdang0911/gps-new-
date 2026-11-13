@@ -114,9 +114,10 @@ const LastCruiseReportPage = () => {
         t,
     });
 
-    // Lazy-resolve địa chỉ chỉ cho các dòng đang hiển thị ở bảng (tránh gọi hàng trăm request 1 lúc)
+    // Lazy-resolve địa chỉ chỉ cho các dòng đang hiển thị ở bảng + tự động nạp ngầm trang kế tiếp
     const { enrichedRows: tableDataWithAddress, enrichRows: enrichRowsWithAddresses } = useLastCruiseAddresses({
         rows: tableData,
+        allRows: processedData,
         isEn,
         enabled: viewMode === 'table',
     });
