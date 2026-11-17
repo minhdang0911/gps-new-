@@ -82,6 +82,16 @@ export const normalizeAngle = (a) => ((a % 360) + 360) % 360;
  * @param {number} stillThresholdM - ngưỡng "coi là đứng yên" (mét), default 15m
  * @returns {{ filtered: Array, rawIndices: Array<number> }}
  */
+const isPointParked = (p) => p?.statusType === 'PARK' || Number(p?.acc) === 1;
+
+const isPointStationary = (p) => {
+    if (!p) return true;
+    // acc === 1 hoặc statusType === 'PARK' là Tắt máy (PARK)
+    if (isPointParked(p)) return true;
+    const spd = Math.max(Number(p.spd ?? 0) || 0, Number(p.velocityNum ?? 0) || 0);
+    return spd <= 2;
+};
+
 export const filterStationaryNoise = (points, stillThresholdM = 15) => {
     if (!points || points.length === 0) return { filtered: [], rawIndices: [] };
     const isValid = (p) => p && typeof p.lat === 'number' && typeof p.lon === 'number';
@@ -94,32 +104,29 @@ export const filterStationaryNoise = (points, stillThresholdM = 15) => {
         const p = points[i];
         if (!isValid(p)) { i++; continue; }
 
-        // Điểm p có tốc độ = 0 không? (acc=1 hoặc spd=0)
-        const pMoving = (p.spd != null ? Number(p.spd) : 0) > 2
-            || (p.velocityNum != null ? Number(p.velocityNum) : 0) > 2;
+        const pMoving = !isPointStationary(p);
 
         if (!pMoving) {
-            // Chế độ đứng yên: gom tất cả điểm trong bán kính stillThresholdM từ p
-            // hoặc cho đến khi xe bắt đầu di chuyển
+            // Chế độ đứng yên / tắt máy: gom toàn bộ dao động GPS trong nhà (multipath 50-220m khi tắt máy)
             let j = i + 1;
             while (j < points.length) {
                 const q = points[j];
                 if (!isValid(q)) { j++; continue; }
 
-                const qMoving = (q.spd != null ? Number(q.spd) : 0) > 2
-                    || (q.velocityNum != null ? Number(q.velocityNum) : 0) > 2;
+                const qMoving = !isPointStationary(q);
 
-                // Nếu xe bắt đầu di chuyển → kết thúc cluster
+                // Nếu xe thực sự mở máy và bắt đầu di chuyển → kết thúc cluster đỗ
                 if (qMoving) break;
 
                 const d = distanceMeters({ lat: p.lat, lon: p.lon }, { lat: q.lat, lon: q.lon });
-                // Khi đứng yên, dùng threshold lớn hơn (GPS drift thực tế ~50-100m)
-                if (d > stillThresholdM * 3) break;
+                // Khi tắt máy (acc=1), sóng GPS trong phòng trọ/nhà ống dễ văng 80-220m qua bên kia đường rồi tự về
+                const maxDrift = isPointParked(q) ? Math.max(220, stillThresholdM * 7) : stillThresholdM * 3.5;
+                if (d > maxDrift) break;
                 j++;
             }
 
             if (j - i > 1) {
-                // Cluster đứng yên: chỉ giữ điểm đầu
+                // Cluster đứng yên: chỉ giữ 1 điểm đại diện duy nhất
                 filtered.push(points[i]);
                 rawIndices.push(i);
                 i = j;
@@ -140,58 +147,62 @@ export const filterStationaryNoise = (points, stillThresholdM = 15) => {
 };
 
 /**
- * Loại bỏ GPS outlier dạng "nhảy xa rồi về" (GPS multipath):
- * Pattern: A(ở gần) → B(ở xa, speed≈0) → C(ở gần) → B là outlier.
- * Đây là nguyên nhân chính tạo đường đi xuyên sông/tường.
- *
- * @param {Array} pts   - mảng GPS points đã lọc bước trước
- * @param {number} maxJumpM - khoảng cách tối đa "bình thường" (mét)
+ * Loại bỏ GPS outlier dạng "nhảy xa rồi về" (GPS multipath, kể cả cụm 1-3 điểm nhảy sang mái nhà đối diện):
+ * Pattern: A(ở gần) → B1..Bk(ở xa) → C(quay về gần A) → B1..Bk là nhiễu sóng GPS.
  */
 const removeGpsJumps = (pts, maxJumpM = 60) => {
     if (!pts || pts.length < 2) return pts;
     const isValid = (p) => p && typeof p.lat === 'number' && typeof p.lon === 'number';
 
     const out = [pts[0]];
+    let i = 1;
 
-    for (let i = 1; i < pts.length - 1; i++) {
+    while (i < pts.length - 1) {
         const prev = out[out.length - 1];
         const curr = pts[i];
-        const next = pts[i + 1];
 
-        if (!isValid(curr)) continue;
-        if (!isValid(prev) || !isValid(next)) { out.push(curr); continue; }
+        if (!isValid(curr)) { i++; continue; }
+        if (!isValid(prev)) { out.push(curr); i++; continue; }
 
-        const currSpd = Number(curr.spd ?? curr.velocityNum ?? 0);
-
-        // Chỉ filter khi xe đứng yên hoặc chậm
-        if (currSpd > 5) { out.push(curr); continue; }
-
+        const stationary = isPointStationary(curr);
         const dPrevCurr = distanceMeters(prev, curr);
-        const dPrevNext = distanceMeters(prev, next);
 
-        // Pattern outlier: nhảy xa rồi next về gần hơn
-        if (dPrevCurr > maxJumpM && dPrevNext < dPrevCurr * 0.85) {
-            continue;
+        if (dPrevCurr > maxJumpM) {
+            // Kiểm tra cửa sổ 1..4 điểm tiếp theo xem tọa độ có quay về gần prev không (bẫy cụm nhiễu nhiều điểm liên tiếp)
+            let returnedIdx = -1;
+            const maxLookahead = stationary ? 6 : 2;
+            for (let step = 1; step <= maxLookahead && i + step < pts.length; step++) {
+                const cand = pts[i + step];
+                if (!isValid(cand)) continue;
+                const dPrevCand = distanceMeters(prev, cand);
+                const ratio = stationary ? 0.8 : 0.45;
+                if (dPrevCand < Math.min(dPrevCurr * ratio, maxJumpM * 1.1)) {
+                    returnedIdx = i + step;
+                    break;
+                }
+            }
+            if (returnedIdx !== -1) {
+                // Bỏ qua toàn bộ cụm điểm văng ảo i .. returnedIdx-1
+                i = returnedIdx;
+                continue;
+            }
         }
 
         out.push(curr);
+        i++;
     }
 
-    // ✅ Kiểm tra điểm CUỐI: nếu nó cũng là outlier thì bỏ qua
+    // ✅ Kiểm tra điểm CUỐI: nếu nó cũng là outlier khi tắt máy/đứng yên thì bỏ qua
     const lastPoint = pts[pts.length - 1];
     if (isValid(lastPoint)) {
         const prevKept = out[out.length - 1];
-        const lastSpd = Number(lastPoint.spd ?? lastPoint.velocityNum ?? 0);
-        if (!isValid(prevKept) || lastSpd > 5) {
-            // Xe đang chạy hoặc không có điểm trước → giữ
+        if (!isValid(prevKept) || !isPointStationary(lastPoint)) {
             out.push(lastPoint);
         } else {
             const dLast = distanceMeters(prevKept, lastPoint);
-            // Nếu điểm cuối xa quá và xe đứng yên → đây là outlier
             if (dLast <= maxJumpM) {
                 out.push(lastPoint);
             }
-            // Nếu dLast > maxJumpM và speed=0: bỏ qua (outlier cuối)
         }
     }
 
@@ -354,6 +365,33 @@ export const buildPlaybackRoute = (mapPoints = [], mapToRawIndices = [], snapped
             const last = snapPts[snapPts.length - 1];
             const prev = snapPts[snapPts.length - 2];
             if (distanceMeters(prev, last) < 0.05) snapPts.pop();
+        }
+
+        // Chia mịn các đoạn thẳng dài (mỗi ~8m) để mọi chấm xanh GPS đều chiếu vuông góc nằm trọn giữa tâm đường line
+        if (snapPts.length >= 2) {
+            let approxTotalM = 0;
+            for (let i = 1; i < snapPts.length; i++) {
+                approxTotalM += distanceMeters(snapPts[i - 1], snapPts[i]);
+            }
+            const targetStepM = Math.max(8, approxTotalM / 5000);
+            const densified = [snapPts[0]];
+            for (let i = 1; i < snapPts.length; i++) {
+                const a = snapPts[i - 1];
+                const b = snapPts[i];
+                const segLen = distanceMeters(a, b);
+                if (segLen > targetStepM * 1.25) {
+                    const steps = Math.min(200, Math.ceil(segLen / targetStepM));
+                    for (let s = 1; s < steps; s++) {
+                        const t = s / steps;
+                        densified.push({
+                            lat: a.lat + (b.lat - a.lat) * t,
+                            lon: a.lon + (b.lon - a.lon) * t,
+                        });
+                    }
+                }
+                densified.push(b);
+            }
+            snapPts = densified;
         }
     }
 

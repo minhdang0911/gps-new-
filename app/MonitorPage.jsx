@@ -465,7 +465,10 @@ const MonitorPage = () => {
 
         mapRef.current = map;
 
-        LMap.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+        LMap.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+            maxZoom: 20,
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+        }).addTo(map);
 
         // Đảm bảo map tính toán lại kích thước sau khi DOM ổn định (tránh lỗi bản đồ xám ở local/flexbox)
         setTimeout(() => {
@@ -587,14 +590,14 @@ const MonitorPage = () => {
             return undefined;
         },
 
-        // ✅ Cache 1 phút — tránh refetch liên tục gây flash UI
-        staleTime: 60_000,
-        gcTime: 5 * 60_000,
+        // ✅ Cache 3 phút — tránh refetch liên tục gây flash UI và đơ CPU máy yếu
+        staleTime: 3 * 60_000,
+        gcTime: 10 * 60_000,
 
-        // ✅ refetch khi mount + reconnect, KHÔNG refetch khi focus window (gây lag khi alt+tab)
-        refetchOnMount: 'always',
+        // ✅ Dùng cache tức thì khi chuyển tab/trang, không refetch liên tục
+        refetchOnMount: false,
         refetchOnWindowFocus: false,
-        refetchOnReconnect: true,
+        refetchOnReconnect: false,
     });
 
     const deviceList = devicesQuery.data?.devices || [];

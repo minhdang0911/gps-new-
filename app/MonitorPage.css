@@ -726,6 +726,8 @@
 }
 
 .iky-monitor__device-item {
+    content-visibility: auto;
+    contain-intrinsic-size: 58px;
     border-radius: 8px;
     padding: 8px 10px;
     margin-bottom: 8px;

@@ -1,20 +1,18 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 
 function makeQueryClient() {
     return new QueryClient({
         defaultOptions: {
             queries: {
-                staleTime: 5 * 60_000, // 5 phút
-                gcTime: 24 * 60 * 60_000, // 24h
+                staleTime: 5 * 60_000, // 5 phút cache trong RAM
+                gcTime: 10 * 60_000, // 10 phút dọn dẹp memory
 
-                refetchOnWindowFocus: false,
+                refetchOnWindowFocus: false, // không lag khi alt-tab
                 refetchOnReconnect: false,
-                refetchOnMount: false, // mount/F5 không tự gọi lại
+                refetchOnMount: false, // dùng dữ liệu cache RAM tức thì, không block UI
                 retry: 0,
             },
         },
@@ -22,34 +20,8 @@ function makeQueryClient() {
 }
 
 export default function ReactQueryProvider({ children }) {
+    // ✅ In-memory QueryClient: Cực nhanh, 0ms lag, không block Main Thread bằng synchronous localStorage
     const [queryClient] = useState(() => makeQueryClient());
-    const [restored, setRestored] = useState(false);
 
-    const persister = useMemo(() => {
-        if (typeof window === 'undefined') return null;
-        return createSyncStoragePersister({
-            storage: window.localStorage,
-            key: 'iky_monitor_rq_cache',
-        });
-    }, []);
-
-    // ✅ SSR (không có window): vẫn phải có QueryClientProvider
-    if (!persister) {
-        return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
-    }
-
-    return (
-        <PersistQueryClientProvider
-            client={queryClient}
-            persistOptions={{
-                persister,
-                maxAge: 24 * 60 * 60 * 1000, // 24h
-                buster: 'monitor-v7',
-            }}
-            onSuccess={() => setRestored(true)}
-        >
-            {/* ✅ Chặn render đến khi restore xong để tránh query gọi API */}
-            {children}
-        </PersistQueryClientProvider>
-    );
+    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }

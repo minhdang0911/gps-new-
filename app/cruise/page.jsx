@@ -157,6 +157,7 @@ const CruisePage = () => {
     const dotRendererRef = useRef(null);
     const dotCacheRef = useRef([]);
     const drawDotsRafRef = useRef(null);
+    const drawDotsFnRef = useRef(null);
 
     // playback meters
     const segMRef = useRef([]);
@@ -343,12 +344,17 @@ const CruisePage = () => {
 
         mapRef.current = map;
 
-        LMap.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            maxNativeZoom: 19,
+        LMap.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+            maxNativeZoom: 20,
             maxZoom: 22,
+            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
         }).addTo(map);
 
-        dotRendererRef.current = LMap.canvas({ padding: 0.5 });
+        const dotsPane = map.createPane('cruiseDotsPane');
+        dotsPane.style.zIndex = '450';
+        dotsPane.style.pointerEvents = 'none';
+
+        dotRendererRef.current = LMap.canvas({ padding: 0.5, pane: 'cruiseDotsPane' });
 
         return () => map.remove();
     }, [LMap]);
@@ -691,6 +697,7 @@ const CruisePage = () => {
             const p = pts[playIdx];
             if (p?.lat != null && p?.lon != null) {
                 applyMovingMarkerPose(p.lat, p.lon, getRouteBearing(pts, playIdx));
+                highlightDotRef.current?.setLatLng([p.lat, p.lon]);
                 mapRef.current?.panTo([p.lat, p.lon], { animate: true, duration: 0.25 });
                 popupAnchor = [p.lat, p.lon];
             }
@@ -813,28 +820,38 @@ const CruisePage = () => {
 
         const MAX_DOTS = zoom >= 18 ? 12000 : zoom >= 16 ? 8000 : zoom >= 14 ? 5000 : zoom >= 12 ? 2500 : 1200;
         const step = Math.max(1, Math.ceil(mapRouteData.length / MAX_DOTS));
-        const renderer = dotRendererRef.current || LMap.canvas({ padding: 0.5 });
+        const renderer = dotRendererRef.current || LMap.canvas({ padding: 0.5, pane: 'cruiseDotsPane' });
 
         const group = LMap.layerGroup();
         const cache = [];
 
+        const dotRadius = zoom >= 20 ? 8 : zoom >= 18 ? 7 : zoom >= 16 ? 6 : zoom >= 14 ? 5 : 4;
+        const dotWeight = zoom >= 18 ? 2.2 : zoom >= 15 ? 1.8 : 1.3;
+
         for (let i = 0; i < mapRouteData.length; i += step) {
-            const p = mapRouteData[i];
-            if (p?.lat == null || p?.lon == null) continue;
+            const rawP = mapRouteData[i];
+            if (rawP?.lat == null || rawP?.lon == null) continue;
+
+            const playIdx = playbackRoute.renderToPlayIdx?.[i];
+            const p = (snapToRoad && playbackRoute.isSnapped && playIdx != null && playbackRoute.points?.[playIdx])
+                ? playbackRoute.points[playIdx]
+                : rawP;
+
             if (!bounds.contains([p.lat, p.lon])) continue;
 
             const ll = LMap.latLng(p.lat, p.lon);
             const cp = map.latLngToContainerPoint(ll);
 
-            cache.push({ x: cp.x, y: cp.y, renderIdx: i });
+            cache.push({ x: cp.x, y: cp.y, renderIdx: i, lat: p.lat, lon: p.lon });
 
             LMap.circleMarker([p.lat, p.lon], {
                 renderer,
-                radius: 3,
-                weight: 1,
+                pane: 'cruiseDotsPane',
+                radius: dotRadius,
+                weight: dotWeight,
                 color: '#ffffff',
                 fillColor: '#22c55e',
-                fillOpacity: 0.9,
+                fillOpacity: 1,
                 interactive: false,
             }).addTo(group);
         }
@@ -843,11 +860,14 @@ const CruisePage = () => {
         pointLayerRef.current = group.addTo(map);
     };
 
+    // Luôn trỏ tới hàm drawDots mới nhất để tránh stale closure khi zoom/pan hoặc khi snapRouteToRoads vừa xong
+    drawDotsFnRef.current = drawDots;
+
     const scheduleDrawDots = () => {
         if (drawDotsRafRef.current) cancelAnimationFrame(drawDotsRafRef.current);
         drawDotsRafRef.current = requestAnimationFrame(() => {
             drawDotsRafRef.current = null;
-            drawDots();
+            drawDotsFnRef.current?.();
         });
     };
 
@@ -858,7 +878,7 @@ const CruisePage = () => {
         const x = containerPoint.x;
         const y = containerPoint.y;
 
-        const R = 12;
+        const R = 14;
         const R2 = R * R;
 
         let best = -1;
@@ -895,17 +915,23 @@ const CruisePage = () => {
             const pRaw = rawRouteData[rawIdx];
             if (!pRaw) return;
 
-            if (pRaw.lat != null && pRaw.lon != null) {
-                highlightDotRef.current?.setLatLng([pRaw.lat, pRaw.lon]);
+            const playIdx = playbackRoute.renderToPlayIdx?.[renderIdx];
+            const dotPt =
+                snapToRoad && playbackRoute.isSnapped && playIdx != null && playbackRoute.points?.[playIdx]
+                    ? playbackRoute.points[playIdx]
+                    : pRaw;
+
+            if (dotPt?.lat != null && dotPt?.lon != null) {
+                highlightDotRef.current?.setLatLng([dotPt.lat, dotPt.lon]);
             }
 
-            openInfoPopup(pRaw);
+            openInfoPopup(pRaw, dotPt?.lat != null && dotPt?.lon != null ? [dotPt.lat, dotPt.lon] : undefined);
         };
 
         map.on('click', onClick);
         return () => map.off('click', onClick);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [mapRouteData, rawRouteData, isEn]);
+    }, [mapRouteData, rawRouteData, playbackRoute, snapToRoad, isEn]);
 
     // Render route on map (polyline + moving + highlight)
     useEffect(() => {
@@ -1007,8 +1033,9 @@ const CruisePage = () => {
         movingMarkerRef.current.setZIndexOffset(15000);
 
         highlightDotRef.current = LMap.circleMarker([firstPoint.lat, firstPoint.lon], {
-            radius: 7,
-            weight: 2,
+            pane: 'cruiseDotsPane',
+            radius: 8,
+            weight: 2.5,
             color: '#ffffff',
             fillColor: '#facc15',
             fillOpacity: 1,
@@ -1083,9 +1110,13 @@ const CruisePage = () => {
         const pt = pts[playIdx];
         if (pt?.lat != null && pt?.lon != null) {
             applyMovingMarkerPose(pt.lat, pt.lon, getRouteBearing(pts, playIdx));
+            highlightDotRef.current?.setLatLng([pt.lat, pt.lon]);
         }
+
+        // Vẽ lại ngay các chấm xanh GPS để khớp chính xác lên tâm đường line vừa snap
+        scheduleDrawDots();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [playbackRoute]);
+    }, [playbackRoute, snapToRoad]);
 
     // redraw dots when map move/zoom end (and preserve marker rotation after Leaflet zoom reposition)
     useEffect(() => {
@@ -1359,7 +1390,10 @@ const CruisePage = () => {
 
             const mapped = allData.map((item) => {
                 const speedNum = toNum(item.vgp) ?? 0;
-                const status = buildStatusHard({ acc: item.acc, spd: speedNum }, isEn);
+                const status = buildStatusHard(
+                    { acc: item.acc, spd: speedNum, onl: item.onl, ste: item.ste, state: item.state },
+                    isEn,
+                );
 
                 const timRaw = item.tim;
                 const createdAt = item.createdAt;
@@ -1387,6 +1421,7 @@ const CruisePage = () => {
 
                     acc: item.acc,
                     spd: item.vgp,
+                    statusType: status.type,
 
                     address: '',
                     __timeMs: safeTimeMs({ timRaw, dateTime, createdAt }),
@@ -1958,22 +1993,7 @@ const CruisePage = () => {
             <div className="iky-cruise__map">
                 <div id="iky-cruise-map" className="iky-cruise__map-inner" />
 
-                {/* ✅ Map matching progress bar */}
-                {isSnappingRoad && (
-                    <div className="iky-cruise__match-progress">
-                        <span className="iky-cruise__spin">🔄</span>
-                        <span className="iky-cruise__match-progress-text">
-                            {isEn ? 'Snapping to road network...' : 'Đang khớp vào mặt đường...'}
-                        </span>
-                        <div className="iky-cruise__match-progress-bar">
-                            <div
-                                className="iky-cruise__match-progress-fill"
-                                style={{ width: `${Math.max(8, snapProgress)}%` }}
-                            />
-                        </div>
-                        <span className="iky-cruise__match-progress-pct">{snapProgress}%</span>
-                    </div>
-                )}
+                {/* ✅ Map matching progress bar (đã ẩn theo yêu cầu, chạy ngầm trong background) */}
 
                 {/* ✅ Fixed current point info panel */}
                 {rawRouteData.length > 0 && currentInfo && (
