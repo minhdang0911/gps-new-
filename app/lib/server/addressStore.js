@@ -229,40 +229,31 @@ export async function resolveBatchServerAddresses(items = [], { resolveMissing =
         }
     }
 
-    // 2. Các điểm còn thiếu exact -> check $nearSphere 50m trong MongoDB trước
+    // 2. Các điểm còn thiếu exact -> check $nearSphere 50m trong MongoDB
     const missing = Array.from(uniqueByKey.values()).filter((entry) => !results[entry.key]);
 
-    await Promise.all(
-        missing.map(async (entry) => {
-            try {
-                // Kiểm tra bán kính 50m trong MongoDB trước
-                const nearbyHit = await findAddressInMongo(collection, entry.latNum, entry.lonNum, entry.lang, {
-                    skipExact: true,
-                });
-                if (nearbyHit?.address) {
-                    results[entry.key] = nearbyHit;
-                    // Auto-promote: lưu lại exact key vào MongoDB để lần sau chỉ cần find $in là trúng 0ms
-                    void saveAddressToMongo(collection, {
-                        latNum: entry.latNum,
-                        lonNum: entry.lonNum,
-                        lang: entry.lang,
-                        address: nearbyHit.address,
-                        deprecatedAddress: nearbyHit.deprecatedAddress || '',
+    if (missing.length > 0) {
+        const nearTargets = missing.slice(0, 15);
+        await Promise.all(
+            nearTargets.map(async (entry) => {
+                try {
+                    const nearbyHit = await findAddressInMongo(collection, entry.latNum, entry.lonNum, entry.lang, {
+                        skipExact: true,
                     });
-                    return;
-                }
-
-                if (!resolveMissing) return;
-
-                const res = await resolveOrFetchServerAddress(entry.latNum, entry.lonNum, { lang: entry.lang });
-                if (res?.data?.address) {
-                    results[entry.key] = res.data;
-                }
-            } catch {
-                // ignore item error so other rows still resolve
-            }
-        }),
-    );
+                    if (nearbyHit?.address) {
+                        results[entry.key] = nearbyHit;
+                        void saveAddressToMongo(collection, {
+                            latNum: entry.latNum,
+                            lonNum: entry.lonNum,
+                            lang: entry.lang,
+                            address: nearbyHit.address,
+                            deprecatedAddress: nearbyHit.deprecatedAddress || '',
+                        });
+                    }
+                } catch {}
+            }),
+        );
+    }
 
     return { configured: true, results };
 }

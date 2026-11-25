@@ -155,25 +155,25 @@ export function useLastCruiseAddresses({ rows = [], allRows = [], isEn = false, 
                 // Nếu tất cả đã có sẵn trong MongoDB, hoàn tất ngay lập tức (< 50ms)
                 if (stillUnresolvedMedoids.length === 0) return;
 
-                // Giai đoạn 2: Chỉ những tọa độ chưa từng xuất hiện trên DB mới gọi Goong có điều tiết
-                const slowChunkPayloads = splitArrayIntoChunks(stillUnresolvedMedoids, 25);
-                const slowBatchResultMap = await executeChunkedBatchGeocode(
-                    slowChunkPayloads,
-                    (chunk) => reverseGeocodeBatch(chunk, { lang, isEn, resolveMissing: true }),
-                    { delayBetweenChunksMs: 40 }
-                );
-
+                // Giai đoạn 2: Chỉ những tọa độ chưa từng xuất hiện trên DB mới gọi Goong trực tiếp từ client (~126ms)
+                // và tự động lưu ngược vào MongoDB Atlas trong nền
                 const slowResolvedUpdates = {};
-                for (const [satelliteKey, matchedMedoidKey] of satelliteToMedoidKeyMap.entries()) {
-                    if (!addressByKeyRef.current[satelliteKey]) {
-                        const resolvedAddress = slowBatchResultMap?.[matchedMedoidKey]?.address || '';
-                        if (resolvedAddress) {
-                            addressByKeyRef.current[satelliteKey] = resolvedAddress;
-                            slowResolvedUpdates[satelliteKey] = resolvedAddress;
-                        }
-                        clearLoadingKey(satelliteKey);
-                    }
-                }
+                await Promise.all(
+                    stillUnresolvedMedoids.map(async (medoid) => {
+                        try {
+                            const res = await reverseGeocodeAddress(medoid.lat, medoid.lon, { lang, isEn });
+                            if (res?.address) {
+                                for (const [satKey, targetMedoidKey] of satelliteToMedoidKeyMap.entries()) {
+                                    if (targetMedoidKey === medoid.key) {
+                                        addressByKeyRef.current[satKey] = res.address;
+                                        slowResolvedUpdates[satKey] = res.address;
+                                        clearLoadingKey(satKey);
+                                    }
+                                }
+                            }
+                        } catch {}
+                    })
+                );
 
                 if (isEffectActive && mountedRef.current && Object.keys(slowResolvedUpdates).length > 0) {
                     setAddressByKey((prev) => ({ ...prev, ...slowResolvedUpdates }));
@@ -251,7 +251,7 @@ export function useLastCruiseAddresses({ rows = [], allRows = [], isEn = false, 
             } catch {
                 // Background warmup lỗi thì bỏ qua
             }
-        }, 100);
+        }, 1200);
 
         return () => {
             if (prefetchTimerRef.current) {
