@@ -2,7 +2,8 @@
 
 import { NextResponse } from 'next/server';
 import { isValidGeocodeCoord, normalizeGeocodeLang } from '../../../lib/address/addressCache';
-import { resolveOrFetchServerAddress } from '../../../lib/server/addressStore';
+import { resolveOrFetchServerAddress, saveAddressToMongo } from '../../../lib/server/addressStore';
+import { getAddressCollection } from '../../../lib/server/mongodb';
 import { checkGeocodeRateLimit, isAllowedGeocodeOrigin } from '../../../lib/server/geocodeGuard';
 
 export const runtime = 'nodejs';
@@ -17,12 +18,30 @@ async function handleReverse(req, rawParams) {
         return NextResponse.json({ error: 'Too many requests' }, { status: 429 });
     }
 
-    const { lat, lon, lang: rawLang, isEn } = rawParams || {};
+    const { lat, lon, lang: rawLang, isEn, address: clientAddress, deprecatedAddress: clientDeprecated } = rawParams || {};
     if (!isValidGeocodeCoord(lat, lon)) {
         return NextResponse.json({ address: '', deprecatedAddress: '', valid: false }, { status: 400 });
     }
 
     const lang = normalizeGeocodeLang({ lang: rawLang, isEn });
+
+    if (clientAddress && typeof clientAddress === 'string') {
+        try {
+            const collection = await getAddressCollection();
+            if (collection) {
+                await saveAddressToMongo(collection, {
+                    latNum: Number(lat),
+                    lonNum: Number(lon),
+                    lang,
+                    address: clientAddress,
+                    deprecatedAddress: clientDeprecated || '',
+                });
+            }
+            return NextResponse.json({ configured: true, address: clientAddress, source: 'client-sync' });
+        } catch {
+            return NextResponse.json({ configured: false, source: 'error' }, { status: 500 });
+        }
+    }
 
     try {
         const result = await resolveOrFetchServerAddress(lat, lon, { lang });

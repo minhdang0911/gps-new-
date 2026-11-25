@@ -142,11 +142,30 @@ export const reverseGeocodeAddress = async (lat, lon, opts = {}) => {
         ]);
 
         if (winner?.data?.address) {
+            if (winner.type === 'client') {
+                void fetchServerApi('/api/geocode/reverse', {
+                    lat: latNum,
+                    lon: lonNum,
+                    lang: resolvedLang,
+                    address: winner.data.address,
+                    deprecatedAddress: winner.data.deprecatedAddress || '',
+                }).catch(() => {});
+            }
             return winner.data;
         }
 
         const [serverRes, clientRes] = await Promise.all([serverPromise, clientPromise]);
-        return serverRes || clientRes || null;
+        const finalData = serverRes || clientRes || null;
+        if (finalData?.address && clientRes && !serverRes) {
+            void fetchServerApi('/api/geocode/reverse', {
+                lat: latNum,
+                lon: lonNum,
+                lang: resolvedLang,
+                address: finalData.address,
+                deprecatedAddress: finalData.deprecatedAddress || '',
+            }).catch(() => {});
+        }
+        return finalData;
     });
 };
 
