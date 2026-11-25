@@ -136,9 +136,16 @@ export const reverseGeocodeAddress = async (lat, lon, opts = {}) => {
 
         const clientPromise = fetchAddressFromProviders(latNum, lonNum, resolvedLang).catch(() => null);
 
+        const makeRacer = (p, type) =>
+            p.then((d) => {
+                if (d && d.address) return { type, data: d };
+                return new Promise(() => {});
+            });
+
         const winner = await Promise.race([
-            serverPromise.then((d) => (d ? { type: 'server', data: d } : null)),
-            clientPromise.then((d) => (d ? { type: 'client', data: d } : null)),
+            makeRacer(serverPromise, 'server'),
+            makeRacer(clientPromise, 'client'),
+            new Promise((resolve) => setTimeout(() => resolve(null), 1500)),
         ]);
 
         if (winner?.data?.address) {
@@ -155,8 +162,8 @@ export const reverseGeocodeAddress = async (lat, lon, opts = {}) => {
         }
 
         const [serverRes, clientRes] = await Promise.all([serverPromise, clientPromise]);
-        const finalData = serverRes || clientRes || null;
-        if (finalData?.address && clientRes && !serverRes) {
+        const finalData = (serverRes?.address ? serverRes : null) || (clientRes?.address ? clientRes : null);
+        if (finalData?.address && clientRes?.address && !serverRes?.address) {
             void fetchServerApi('/api/geocode/reverse', {
                 lat: latNum,
                 lon: lonNum,

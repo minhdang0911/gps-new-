@@ -62,7 +62,7 @@ export function useLastCruiseAddresses({ rows = [], allRows = [], isEn = false, 
                 if (!isValidGeocodeCoord(rowItem.lat, rowItem.lon)) continue;
 
                 const coordKey = getCoordCacheKey(rowItem.lat, rowItem.lon, lang);
-                if (Object.prototype.hasOwnProperty.call(addressByKeyRef.current, coordKey)) {
+                if (addressByKeyRef.current[coordKey]) {
                     syncHits[coordKey] = addressByKeyRef.current[coordKey];
                     continue;
                 }
