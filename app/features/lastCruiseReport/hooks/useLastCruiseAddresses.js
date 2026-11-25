@@ -153,7 +153,12 @@ export function useLastCruiseAddresses({ rows = [], allRows = [], isEn = false, 
                 }
 
                 // Nếu tất cả đã có sẵn trong MongoDB, hoàn tất ngay lập tức (< 50ms)
-                if (stillUnresolvedMedoids.length === 0) return;
+                if (stillUnresolvedMedoids.length === 0) {
+                    for (const coordKey of missingTasks.keys()) {
+                        clearLoadingKey(coordKey);
+                    }
+                    return;
+                }
 
                 // Giai đoạn 2: Chỉ những tọa độ chưa từng xuất hiện trên DB mới gọi Goong trực tiếp từ client (~126ms)
                 // và tự động lưu ngược vào MongoDB Atlas trong nền
@@ -162,29 +167,34 @@ export function useLastCruiseAddresses({ rows = [], allRows = [], isEn = false, 
                     stillUnresolvedMedoids.map(async (medoid) => {
                         try {
                             const res = await reverseGeocodeAddress(medoid.lat, medoid.lon, { lang, isEn });
-                            if (res?.address) {
-                                for (const [satKey, targetMedoidKey] of satelliteToMedoidKeyMap.entries()) {
-                                    if (targetMedoidKey === medoid.key) {
-                                        addressByKeyRef.current[satKey] = res.address;
-                                        slowResolvedUpdates[satKey] = res.address;
-                                        clearLoadingKey(satKey);
+                            const address = res?.address || '';
+                            for (const [satKey, targetMedoidKey] of satelliteToMedoidKeyMap.entries()) {
+                                if (targetMedoidKey === medoid.key) {
+                                    if (address) {
+                                        addressByKeyRef.current[satKey] = address;
+                                        slowResolvedUpdates[satKey] = address;
                                     }
+                                    clearLoadingKey(satKey);
                                 }
                             }
-                        } catch {}
+                        } catch {
+                            for (const [satKey, targetMedoidKey] of satelliteToMedoidKeyMap.entries()) {
+                                if (targetMedoidKey === medoid.key) {
+                                    clearLoadingKey(satKey);
+                                }
+                            }
+                        }
                     })
                 );
 
                 if (isEffectActive && mountedRef.current && Object.keys(slowResolvedUpdates).length > 0) {
                     setAddressByKey((prev) => ({ ...prev, ...slowResolvedUpdates }));
                 }
-            } catch {
+            } catch (err) {
+                console.warn('Address resolve error:', err);
+            } finally {
                 for (const coordKey of missingTasks.keys()) {
-                    addressByKeyRef.current[coordKey] = '';
                     clearLoadingKey(coordKey);
-                }
-                if (isEffectActive && mountedRef.current) {
-                    setAddressByKey((prev) => ({ ...prev }));
                 }
             }
         })();
