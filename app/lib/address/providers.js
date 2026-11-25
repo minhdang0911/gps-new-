@@ -13,7 +13,7 @@ import {
     markGoongKeyDead,
 } from './keys';
 
-const PROVIDER_TIMEOUT_MS = 1500;
+const PROVIDER_TIMEOUT_MS = 1200;
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = PROVIDER_TIMEOUT_MS) {
     if (typeof AbortController === 'undefined') {

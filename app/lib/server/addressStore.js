@@ -155,13 +155,13 @@ export async function resolveOrFetchServerAddress(lat, lon, opts = {}) {
             const fetched = await fetchAddressFromProviders(latNum, lonNum, lang);
             if (!fetched || !fetched.address) return null;
 
-            await saveAddressToMongo(collection, {
+            saveAddressToMongo(collection, {
                 latNum,
                 lonNum,
                 lang,
                 address: fetched.address,
                 deprecatedAddress: fetched.deprecatedAddress || '',
-            });
+            }).catch(() => {});
 
             return {
                 address: fetched.address,

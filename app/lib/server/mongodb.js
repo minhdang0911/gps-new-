@@ -54,7 +54,6 @@ export async function getAddressCollection() {
         });
     }
 
-    await globalForMongo._ikyAddressIndexesPromise;
     return collection;
 }
 

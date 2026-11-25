@@ -125,14 +125,28 @@ export const reverseGeocodeAddress = async (lat, lon, opts = {}) => {
     const skipServerApi = Boolean(opts.skipServerApi);
 
     return resolveAddressWithCache(lat, lon, { lang, isEn }, async (latNum, lonNum, resolvedLang) => {
-        if (!skipServerApi) {
-            const serverRes = await callServerGeocodeReverse(latNum, lonNum, resolvedLang);
-            if (serverRes.handled) {
-                return serverRes.data;
-            }
+        if (typeof window === 'undefined' || skipServerApi) {
+            return fetchAddressFromProviders(latNum, lonNum, resolvedLang);
         }
 
-        return fetchAddressFromProviders(latNum, lonNum, resolvedLang);
+        const serverPromise = callServerGeocodeReverse(latNum, lonNum, resolvedLang).then((res) => {
+            if (res.handled && res.data && res.data.address) return res.data;
+            return null;
+        }).catch(() => null);
+
+        const clientPromise = fetchAddressFromProviders(latNum, lonNum, resolvedLang).catch(() => null);
+
+        const winner = await Promise.race([
+            serverPromise.then((d) => (d ? { type: 'server', data: d } : null)),
+            clientPromise.then((d) => (d ? { type: 'client', data: d } : null)),
+        ]);
+
+        if (winner?.data?.address) {
+            return winner.data;
+        }
+
+        const [serverRes, clientRes] = await Promise.all([serverPromise, clientPromise]);
+        return serverRes || clientRes || null;
     });
 };
 
