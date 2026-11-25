@@ -1,2053 +1,246 @@
+/**
+ * @file VietnamMapDrillDown.jsx
+ * @description Component bản đồ phân cấp hành chính 3 tầng (Cả nước -> Tỉnh -> Quận -> Xe).
+ * Tích hợp IKY-SpatialCore Engine cho tốc độ phản hồi < 1ms, zero-jank.
+ */
+
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import * as turf from '@turf/turf';
+import { useLeafletOverviewMap } from './hooks/useLeafletOverviewMap';
+import { useProvinceDevices } from './hooks/useProvinceDevices';
+import { useSpatialDistrict } from '../lib/spatial/useSpatialDistrict';
+import DevicePopup from './components/DevicePopup';
+import MapLegend from './components/MapLegend';
+import ZoneStatsPanel from './components/ZoneStatsPanel';
+import { MapBreadcrumb, ZoomControl, ResetViewBtn } from './components/MapControls';
+import {
+    drawProvinceClusters,
+    drawDistrictClusters,
+    drawIndividualDevicePins,
+} from './components/MapPinDrawer';
 
-// ✅ Module-level GeoJSON cache — dữ liệu tĩnh, không bao giờ thay đổi → cache suốt session
-let _geoJsonCache = null;
-let _geoJsonPromise = null;
-let _vnBoundsCache = [[8.18, 102.14], [23.39, 109.46]];
-let _vnGeoCache = null;
+export default function VietnamMapDrillDown({
+    devices = [],
+    cruiseByImei = {},
+    height = 580,
+    forceAllDevices = false,
+    highlightDevice = null,
+    onDrillChange = null,
+}) {
+    const mapContainerRef = useRef(null);
+    const {
+        L, leafletMap, markersLayer, isMobile, showTileLayer, hideTileLayer, fitToVietnam, focusProvince,
+    } = useLeafletOverviewMap(mapContainerRef);
 
-// ============================================================
-// CONSTANTS — esgoo API for province/district centroids
-// ============================================================
-const PROVINCE_API = 'https://esgoo.net/api-tinhthanh/1/0.htm';
-const DISTRICT_API = (provinceId) => `https://esgoo.net/api-tinhthanh/2/${provinceId}.htm`;
+    const { provinces, provinceGroups } = useProvinceDevices(devices, cruiseByImei);
+    const { initSpatialIndex, groupProvinceVehicles } = useSpatialDistrict();
+    const lastFittedProvinceIdRef = useRef(null);
 
-// Loader quận/huyện 36MB: chỉ tải 1 lần, hỗ trợ tải ngầm khi rảnh rỗi (idle)
-export const loadDistrictGeoJson = () => {
-    if (_geoJsonCache) return Promise.resolve(_geoJsonCache);
-    if (_geoJsonPromise) return _geoJsonPromise;
-    _geoJsonPromise = fetch('/geojson/VietNam63.geojson')
-        .then((r) => r.json())
-        .then((geo) => {
-            geo.features.forEach((f) => {
-                f._center = turf.centroid(f);
-            });
-            _geoJsonCache = geo;
-            return geo;
-        })
-        .catch((err) => {
-            console.error('Failed to load district geojson:', err);
-            _geoJsonPromise = null;
-            return null;
-        });
-    return _geoJsonPromise;
-};
-
-// Cache danh sách 63 tỉnh thành vào localStorage (0ms cho các lần sau)
-export const getProvincesCached = async () => {
-    if (typeof window !== 'undefined') {
-        const cached = localStorage.getItem('iky_provinces_cache');
-        if (cached) {
-            try { return JSON.parse(cached); } catch {}
-        }
-    }
-    try {
-        const res = await fetch(PROVINCE_API);
-        const d = await res.json();
-        const list = d.data || [];
-        if (list.length > 0 && typeof window !== 'undefined') {
-            try { localStorage.setItem('iky_provinces_cache', JSON.stringify(list)); } catch {}
-        }
-        return list;
-    } catch (e) {
-        console.error('Failed to fetch provinces:', e);
-        return [];
-    }
-};
-
-// Haversine distance (km)
-const haversine = (lat1, lon1, lat2, lon2) => {
-    const R = 6371;
-    const dLat = ((lat2 - lat1) * Math.PI) / 180;
-    const dLon = ((lon2 - lon1) * Math.PI) / 180;
-    const a =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-};
-
-const findNearest = (lat, lon, list) => {
-    let best = null,
-        bestDist = Infinity;
-    for (const item of list) {
-        const d = haversine(lat, lon, parseFloat(item.latitude), parseFloat(item.longitude));
-        if (d < bestDist) {
-            bestDist = d;
-            best = item;
-        }
-    }
-    return best;
-};
-
-// ============================================================
-// HELPERS
-// ============================================================
-const isOnline = (cruise) => {
-    if (!cruise) return false;
-    const updated = cruise.updatedAt || cruise.createdAt;
-    if (!updated) return false;
-    return Date.now() - new Date(updated).getTime() < 24 * 60 * 60 * 1000;
-};
-
-const formatDateTime = (isoStr) => {
-    if (!isoStr) return '—';
-    return new Date(isoStr).toLocaleString('vi-VN');
-};
-
-// Compact cluster SVG
-const clusterSvg = (count, online, total, type) => {
-    const cfg = type === 'province' ? { bg: '#1d4ed8', border: '#93c5fd' } : { bg: '#7c3aed', border: '#c4b5fd' };
-    const size = Math.max(26, Math.min(38, 26 + Math.log10(count + 1) * 8));
-    const r = size / 2;
-
-    return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="${r}" cy="${r}" r="${r - 1.5}" fill="${cfg.bg}" stroke="${cfg.border}" stroke-width="2" opacity="0.93"/>
-    <text x="${r}" y="${r + 0.5}" text-anchor="middle" dominant-baseline="middle" font-size="${Math.max(9, size * 0.32)}px" font-weight="700" fill="#fff" font-family="system-ui,sans-serif">${count}</text>
-  </svg>`;
-};
-
-const getDistrictName = (district) => {
-    return `${district.properties.loai} ${district.properties.ten_huyen}`;
-};
-
-// ============================================================
-// DEVICE POPUP
-// ============================================================
-const DevicePopup = ({ device, cruise, onClose }) => {
-    const online = isOnline(cruise);
-    const color = online ? '#22c55e' : '#ef4444';
-    return (
-        <div
-            className="ov-device-popup"
-            style={{
-                position: 'absolute',
-                top: 12,
-                right: 12,
-                width: 295,
-                zIndex: 1000,
-                background: '#fff',
-                borderRadius: 12,
-                boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
-                border: '1px solid #e5e7eb',
-                fontFamily: 'system-ui,-apple-system,sans-serif',
-                overflow: 'hidden',
-            }}
-        >
-            <div
-                style={{
-                    padding: '10px 14px',
-                    background: color,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                }}
-            >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff', flexShrink: 0 }} />
-                    <span style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>
-                        {device.license_plate || device.imei}
-                    </span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                    <span style={{ background: 'rgba(255,255,255,0.25)', color: '#fff', fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 9 }}>
-                        {online ? 'Online' : 'Offline'}
-                    </span>
-                    <button
-                        onClick={onClose}
-                        style={{ background: 'none', border: 'none', color: '#fff', fontSize: 17, cursor: 'pointer', lineHeight: 1, padding: '0 2px' }}
-                    >
-                        ×
-                    </button>
-                </div>
-            </div>
-            <div style={{ padding: '10px 14px' }}>
-                {!cruise ? (
-                    <div style={{ color: '#9ca3af', fontSize: 12, textAlign: 'center', padding: '12px 0' }}>
-                        Chưa có dữ liệu hành trình
-                    </div>
-                ) : (
-                    <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
-                        {[
-                            ['IMEI', device.imei],
-                            ['Lái xe', device.driver || '—'],
-                            ['Loại xe', device.vehicle_category_id?.name || '—'],
-                            ['Tọa độ', cruise.lat && cruise.lon ? `${cruise.lat.toFixed(5)}, ${cruise.lon.toFixed(5)}` : '—'],
-                            ['Tốc độ', cruise.spd != null ? `${cruise.spd} km/h` : '—'],
-                            ['ODO', cruise.mil != null ? `${cruise.mil.toLocaleString()} km` : '—'],
-                            ['ACC', cruise.acc === 1 ? 'Tắt máy' : 'Mở máy'],
-                            ['Cập nhật', formatDateTime(cruise.updatedAt || cruise.createdAt)],
-                        ].map(([k, v]) => (
-                            <tr key={k}>
-                                <td style={{ color: '#6b7280', padding: '3px 0', width: 80 }}>{k}</td>
-                                <td style={{ color: '#111827', fontWeight: 500 }}>{v}</td>
-                            </tr>
-                        ))}
-                    </table>
-                )}
-            </div>
-
-            {/* ── Quick-action buttons ── */}
-            <div style={{
-                display: 'flex',
-                gap: 8,
-                padding: '10px 14px 12px',
-                borderTop: '1px solid #f3f4f6',
-                background: '#fafafa',
-            }}>
-                {/* Xem hành trình */}
-                <a
-                    href={`/cruise?imei=${encodeURIComponent(device.imei || '')}&deviceId=${encodeURIComponent(device._id || '')}`}
-                    onClick={() => {
-                        try {
-                            localStorage.setItem('iky_preselect_imei', device.imei || '');
-                            localStorage.setItem('iky_preselect_device_id', device._id || '');
-                        } catch (_) {}
-                    }}
-                    style={{
-                        flex: 1,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 5,
-                        padding: '7px 10px',
-                        borderRadius: 8,
-                        background: '#eff6ff',
-                        border: '1px solid #bfdbfe',
-                        color: '#1d4ed8',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        textDecoration: 'none',
-                        cursor: 'pointer',
-                        transition: 'background .15s',
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#dbeafe'}
-                    onMouseLeave={e => e.currentTarget.style.background = '#eff6ff'}
-                >
-                    {/* Route icon */}
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6z"/>
-                        <line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="6" x2="15" y2="18"/>
-                    </svg>
-                    Hành trình
-                </a>
-
-                {/* Giám sát realtime */}
-                <a
-                    href={`/?imei=${encodeURIComponent(device.imei || '')}&deviceId=${encodeURIComponent(device._id || '')}`}
-                    onClick={() => {
-                        try {
-                            localStorage.setItem('iky_preselect_imei', device.imei || '');
-                            localStorage.setItem('iky_preselect_device_id', device._id || '');
-                        } catch (_) {}
-                    }}
-                    style={{
-                        flex: 1,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 5,
-                        padding: '7px 10px',
-                        borderRadius: 8,
-                        background: online ? '#f0fdf4' : '#fef2f2',
-                        border: `1px solid ${online ? '#bbf7d0' : '#fecaca'}`,
-                        color: online ? '#15803d' : '#dc2626',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        textDecoration: 'none',
-                        cursor: 'pointer',
-                        transition: 'background .15s',
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = online ? '#dcfce7' : '#fee2e2'}
-                    onMouseLeave={e => e.currentTarget.style.background = online ? '#f0fdf4' : '#fef2f2'}
-                >
-                    {/* Monitor icon */}
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="2"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-                    </svg>
-                    Giám sát
-                </a>
-            </div>
-        </div>
-    );
-};
-
-// ============================================================
-// BREADCRUMB
-// ============================================================
-// SVG Icons — inline, không cần import
-const IconMap = () => (
-    <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor">
-        <circle cx="10" cy="10" r="7.5" stroke="currentColor" strokeWidth="1.4" strokeDasharray="3.5 2" />
-        <line x1="10" y1="1" x2="10" y2="4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        <line x1="10" y1="16" x2="10" y2="19" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        <line x1="1" y1="10" x2="4" y2="10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        <line x1="16" y1="10" x2="19" y2="10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-        <path d="M10 6L12.5 12.5L10 11.2L7.5 12.5L10 6Z" fill="#38bdf8" stroke="currentColor" strokeWidth="0.8" strokeLinejoin="round" />
-    </svg>
-);
-const IconInfo = () => (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="10"/>
-        <line x1="12" y1="8" x2="12" y2="12"/>
-        <line x1="12" y1="16" x2="12.01" y2="16"/>
-    </svg>
-);
-const IconChevron = () => (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <polyline points="9 18 15 12 9 6"/>
-    </svg>
-);
-const IconHome = () => (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-        <polyline points="9 22 9 12 15 12 15 22"/>
-    </svg>
-);
-const IconReset = () => (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-        <path d="M3 3v5h5"/>
-    </svg>
-);
-
-// ── Custom Zoom Control ────────────────────────────────────────
-const ZoomControl = ({ mapRef }) => {
-    const [zoom, setZoom] = useState(null);
-    const [minZoom, setMinZoom] = useState(4);
-    const [maxZoom, setMaxZoom] = useState(18);
-
-    useEffect(() => {
-        const map = mapRef.current;
-        if (!map) return;
-        const update = () => setZoom(map.getZoom());
-        map.on('zoomend', update);
-        setZoom(map.getZoom());
-        setMinZoom(map.getMinZoom());
-        setMaxZoom(map.getMaxZoom());
-        return () => { map.off('zoomend', update); };
-    }, [mapRef.current]);
-
-    const btnBase = {
-        width: 32, height: 32,
-        border: 'none',
-        background: 'rgba(15,23,42,0.82)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
-        color: '#e2e8f0',
-        fontSize: 18,
-        fontWeight: 700,
-        cursor: 'pointer',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        transition: 'background .15s, color .15s',
-        outline: 'none',
-        lineHeight: 1,
-    };
-
-    return (
-        <div style={{
-            position: 'absolute',
-            right: 14,
-            top: '50%',
-            transform: 'translateY(-50%)',
-            zIndex: 1000,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 2,
-            borderRadius: 10,
-            overflow: 'hidden',
-            boxShadow: '0 2px 12px rgba(0,0,0,0.28)',
-            border: '1px solid rgba(255,255,255,0.12)',
-        }}>
-            {/* Zoom In */}
-            <button
-                title="Phóng to (zoom in)"
-                disabled={zoom >= maxZoom}
-                style={{
-                    ...btnBase,
-                    borderRadius: '10px 10px 0 0',
-                    opacity: zoom >= maxZoom ? 0.4 : 1,
-                    color: zoom >= maxZoom ? '#64748b' : '#93c5fd',
-                }}
-                onMouseEnter={e => { if (zoom < maxZoom) e.currentTarget.style.background = 'rgba(37,99,235,0.85)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(15,23,42,0.82)'; }}
-                onClick={() => mapRef.current?.zoomIn()}
-            >
-                +
-            </button>
-
-            {/* Zoom level badge */}
-            <div style={{
-                width: 32,
-                height: 26,
-                background: 'rgba(15,23,42,0.72)',
-                color: '#94a3b8',
-                fontSize: 10,
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontFamily: 'system-ui,monospace',
-                letterSpacing: '0.3px',
-            }}>
-                {zoom != null ? `z${zoom}` : '—'}
-            </div>
-
-            {/* Zoom Out */}
-            <button
-                title="Thu nhỏ (zoom out)"
-                disabled={zoom <= minZoom}
-                style={{
-                    ...btnBase,
-                    borderRadius: '0 0 10px 10px',
-                    opacity: zoom <= minZoom ? 0.4 : 1,
-                    color: zoom <= minZoom ? '#64748b' : '#93c5fd',
-                }}
-                onMouseEnter={e => { if (zoom > minZoom) e.currentTarget.style.background = 'rgba(37,99,235,0.85)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(15,23,42,0.82)'; }}
-                onClick={() => mapRef.current?.zoomOut()}
-            >
-                −
-            </button>
-        </div>
-    );
-};
-
-// ── Reset View Button ──────────────────────────────────────────
-const ResetViewBtn = ({ onClick }) => (
-    <button
-        title="Về toàn quốc"
-        onClick={onClick}
-        style={{
-            position: 'absolute',
-            right: 14,
-            top: 'calc(50% + 68px)',
-            zIndex: 1000,
-            width: 32,
-            height: 32,
-            border: '1px solid rgba(255,255,255,0.12)',
-            borderRadius: 10,
-            background: 'rgba(15,23,42,0.82)',
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
-            color: '#a5f3fc',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 2px 12px rgba(0,0,0,0.28)',
-            outline: 'none',
-            transition: 'background .15s',
-        }}
-        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(6,182,212,0.75)'; }}
-        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(15,23,42,0.82)'; }}
-    >
-        <IconReset />
-    </button>
-);
-
-const Breadcrumb = ({ province, district, onClickRoot, onClickProvince }) => (
-    <div
-        style={{
-            position: 'absolute',
-            top: 12,
-            left: 12,
-            zIndex: 1000,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 5,
-            background: 'rgba(15,23,42,0.78)',
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
-            borderRadius: 8,
-            padding: '5px 11px',
-            boxShadow: '0 2px 12px rgba(0,0,0,0.22)',
-            fontSize: 12,
-            fontFamily: 'system-ui,sans-serif',
-            border: '1px solid rgba(255,255,255,0.1)',
-        }}
-    >
-        <button
-            onClick={onClickRoot}
-            style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                color: province ? '#93c5fd' : '#e2e8f0',
-                fontWeight: province ? 500 : 700,
-                padding: 0,
-                fontSize: 12,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-            }}
-        >
-            <span style={{ color: province ? '#93c5fd' : '#60a5fa' }}><IconMap /></span>
-            Việt Nam
-        </button>
-
-        {province && (
-            <>
-                <IconChevron />
-                <button
-                    onClick={onClickProvince}
-                    style={{
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        color: district ? '#93c5fd' : '#e2e8f0',
-                        fontWeight: district ? 500 : 700,
-                        padding: 0,
-                        fontSize: 12,
-                    }}
-                >
-                    {province.full_name}
-                </button>
-            </>
-        )}
-
-        {district && (
-            <>
-                <IconChevron />
-                <span style={{ fontWeight: 700, color: '#f1f5f9' }}>{getDistrictName(district)}</span>
-            </>
-        )}
-    </div>
-);
-
-// ============================================================
-// LEGEND
-// ============================================================
-const Legend = ({ level, isMobile }) => (
-    <div
-        style={{
-            position: 'absolute',
-            bottom: isMobile ? 8 : 70,
-            right: isMobile ? 8 : 'auto',
-            left: isMobile ? 'auto' : 12,
-            zIndex: 1000,
-            background: 'rgba(15,23,42,0.78)',
-            backdropFilter: 'blur(8px)',
-            WebkitBackdropFilter: 'blur(8px)',
-            borderRadius: 8,
-            padding: isMobile ? '5px 9px' : '8px 13px',
-            boxShadow: '0 2px 12px rgba(0,0,0,0.22)',
-            fontSize: 11,
-            fontFamily: 'system-ui,sans-serif',
-            border: '1px solid rgba(255,255,255,0.1)',
-        }}
-    >
-        {!isMobile && (
-            <div style={{ marginBottom: 5, fontWeight: 600, color: '#94a3b8', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                {level === 'province' && 'Cụm tỉnh'}
-                {level === 'district' && 'Cụm quận/huyện'}
-                {level === 'device' && 'Thiết bị'}
-            </div>
-        )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: isMobile ? 0 : 4, flexDirection: isMobile ? 'row' : 'row' }}>
-            <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#4ade80', boxShadow: '0 0 4px #4ade80' }} />
-            {!isMobile && <span style={{ color: '#d1fae5', fontWeight: 500 }}>Online</span>}
-            {isMobile && <span style={{ color: '#d1fae5', fontWeight: 500, fontSize: 10 }}>On</span>}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: isMobile ? 2 : 0 }}>
-            <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#f87171', boxShadow: '0 0 4px #f87171' }} />
-            {!isMobile && <span style={{ color: '#fee2e2', fontWeight: 500 }}>Offline</span>}
-            {isMobile && <span style={{ color: '#fee2e2', fontWeight: 500, fontSize: 10 }}>Off</span>}
-        </div>
-    </div>
-);
-
-// ============================================================
-// ZONE STATS PANEL
-// ============================================================
-const ZoneStatsPanel = ({ zones, level, onClickZone, selectedId, onGoRoot, provinceName, onGoProvince, isMobile }) => {
-    const [collapsed, setCollapsed] = React.useState(false);
-    if (!zones || zones.length === 0) return null;
-
-    // On mobile: auto-collapse
-    const isCollapsed = isMobile ? true : collapsed;
-
-    const levelLabel =
-        level === 'province' ? 'Thống kê theo tỉnh' :
-        level === 'district' ? 'Thống kê theo quận/huyện' :
-        'Thiết bị trong quận';
-
-    return (
-        <div style={{
-            position: 'absolute',
-            left: 12,
-            top: 12,
-            zIndex: 1001,
-            width: isMobile ? 180 : 236,
-            maxHeight: isMobile ? 'calc(100% - 60px)' : 'calc(100% - 80px)',
-            display: 'flex',
-            flexDirection: 'column',
-            fontFamily: 'system-ui,sans-serif',
-        }}>
-            {/* Navigation breadcrumb (district/device level) */}
-            {(level === 'district' || level === 'device') && (
-                <div style={{
-                    background: 'rgba(15,23,42,0.88)',
-                    backdropFilter: 'blur(8px)',
-                    WebkitBackdropFilter: 'blur(8px)',
-                    borderRadius: '10px 10px 0 0',
-                    padding: '5px 10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    borderBottom: '1px solid rgba(255,255,255,0.06)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderBottomColor: 'rgba(255,255,255,0.04)',
-                    flexShrink: 0,
-                }}>
-                    <button onClick={onGoRoot} style={{
-                        background: 'none', border: 'none', cursor: 'pointer',
-                        color: '#93c5fd', fontWeight: 600, padding: 0, fontSize: 11,
-                        display: 'flex', alignItems: 'center', gap: 4,
-                    }}>
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-                            <polyline points="9 22 9 12 15 12 15 22"/>
-                        </svg>
-                        VN
-                    </button>
-                    <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-                    {level === 'district' ? (
-                        <span style={{ color: '#e2e8f0', fontSize: 11, fontWeight: 600,
-                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 140 }}>
-                            {provinceName}
-                        </span>
-                    ) : (
-                        <>
-                            <button onClick={onGoProvince} style={{
-                                background: 'none', border: 'none', cursor: 'pointer',
-                                color: '#93c5fd', fontWeight: 500, padding: 0, fontSize: 11,
-                                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 80,
-                            }}>{provinceName}</button>
-                            <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-                            <span style={{ color: '#e2e8f0', fontSize: 11, fontWeight: 700,
-                                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 90 }}>
-                                {zones[0] && selectedId
-                                    ? (zones.find(z => z.id === selectedId)?.name || 'Quận')
-                                    : 'Quận'}
-                            </span>
-                        </>
-                    )}
-                </div>
-            )}
-
-            {/* Header */}
-            <div
-                onClick={() => !isMobile && setCollapsed(!collapsed)}
-                style={{
-                    background: 'rgba(15,23,42,0.88)',
-                    backdropFilter: 'blur(8px)',
-                    WebkitBackdropFilter: 'blur(8px)',
-                    borderRadius: level === 'province'
-                        ? (isCollapsed ? 10 : '10px 10px 0 0')
-                        : (isCollapsed ? '0 0 10px 10px' : 0),
-                    padding: '7px 12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    cursor: isMobile ? 'default' : 'pointer',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderTop: (level === 'district' || level === 'device') ? 'none' : '1px solid rgba(255,255,255,0.1)',
-                    borderBottom: isCollapsed ? '1px solid rgba(255,255,255,0.1)' : 'none',
-                    userSelect: 'none',
-                    gap: 8,
-                    flexShrink: 0,
-                }}
-            >
-                <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', letterSpacing: '0.3px', textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {levelLabel}
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                    <span style={{ fontSize: 10, color: '#334155', background: 'rgba(255,255,255,0.07)', borderRadius: 4, padding: '1px 6px', fontWeight: 600 }}>
-                        {zones.length} vùng
-                    </span>
-                    {!isMobile && (
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2.5"
-                            style={{ transition: 'transform .2s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>
-                            <polyline points="6 9 12 15 18 9"/>
-                        </svg>
-                    )}
-                </div>
-            </div>
-
-            {/* Body */}
-            {!isCollapsed && (
-                <div style={{
-                    background: 'rgba(15,23,42,0.82)',
-                    backdropFilter: 'blur(8px)',
-                    WebkitBackdropFilter: 'blur(8px)',
-                    borderRadius: '0 0 10px 10px',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderTop: 'none',
-                    overflowY: 'auto',
-                    flex: 1,
-                    minHeight: 0,
-                }}>
-                    {/* Column headers */}
-                    <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: '1fr 36px 40px 36px',
-                        gap: 0,
-                        padding: '5px 10px 4px',
-                        borderBottom: '1px solid rgba(255,255,255,0.06)',
-                        position: 'sticky', top: 0,
-                        background: 'rgba(15,23,42,0.95)',
-                    }}>
-                        <span style={{ fontSize: 9, color: '#334155', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Vùng</span>
-                        <span style={{ fontSize: 9, color: '#334155', fontWeight: 700, textAlign: 'right' }}>Tổng</span>
-                        <span style={{ fontSize: 9, color: '#16a34a', fontWeight: 700, textAlign: 'right' }}>● Onl</span>
-                        <span style={{ fontSize: 9, color: '#dc2626', fontWeight: 700, textAlign: 'right' }}>● Off</span>
-                    </div>
-
-                    {/* Zone rows */}
-                    {zones.map((z) => {
-                        const onlinePct = z.total > 0 ? (z.online / z.total) * 100 : 0;
-                        const isSelected = z.id === selectedId;
-                        return (
-                            <div
-                                key={z.id}
-                                onClick={() => onClickZone && onClickZone(z)}
-                                style={{
-                                    padding: '6px 10px 5px',
-                                    cursor: onClickZone ? 'pointer' : 'default',
-                                    background: isSelected ? 'rgba(37,99,235,0.22)' : 'transparent',
-                                    borderLeft: isSelected ? '2px solid #3b82f6' : '2px solid transparent',
-                                    transition: 'background .12s',
-                                    borderBottom: '1px solid rgba(255,255,255,0.03)',
-                                }}
-                                onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
-                                onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
-                            >
-                                {/* Name + numbers */}
-                                <div style={{
-                                    display: 'grid',
-                                    gridTemplateColumns: '1fr 36px 40px 36px',
-                                    alignItems: 'center',
-                                    gap: 0,
-                                    marginBottom: 4,
-                                }}>
-                                    <span style={{
-                                        fontSize: 11,
-                                        color: isSelected ? '#93c5fd' : '#cbd5e1',
-                                        fontWeight: isSelected ? 700 : 500,
-                                        whiteSpace: 'nowrap',
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        paddingRight: 4,
-                                    }} title={z.name}>
-                                        {z.name}
-                                    </span>
-                                    <span style={{ fontSize: 11, color: '#e2e8f0', fontWeight: 700, textAlign: 'right' }}>{z.total}</span>
-                                    <span style={{ fontSize: 11, color: '#4ade80', fontWeight: 700, textAlign: 'right' }}>{z.online}</span>
-                                    <span style={{ fontSize: 11, color: '#f87171', fontWeight: 700, textAlign: 'right' }}>{z.offline}</span>
-                                </div>
-
-                                {/* Progress bar */}
-                                <div style={{
-                                    height: 3,
-                                    borderRadius: 3,
-                                    background: 'rgba(255,255,255,0.06)',
-                                    overflow: 'hidden',
-                                    position: 'relative',
-                                }}>
-                                    <div style={{
-                                        position: 'absolute', left: 0, top: 0, bottom: 0,
-                                        width: `${onlinePct}%`,
-                                        background: 'linear-gradient(90deg,#166534,#4ade80)',
-                                        borderRadius: 3,
-                                    }} />
-                                    <div style={{
-                                        position: 'absolute', top: 0, bottom: 0,
-                                        left: `${onlinePct}%`, right: 0,
-                                        background: 'rgba(239,68,68,0.38)',
-                                        borderRadius: '0 3px 3px 0',
-                                    }} />
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-        </div>
-    );
-};
-
-// ============================================================
-// DISTRICT LIST PANEL
-// ============================================================
-const DistrictListPanel = ({ zones, selectedDistrictId, onClickZone, mapRef }) => {
-    const [open, setOpen] = React.useState(true);
-    if (!zones || zones.length === 0) return null;
-
-    return (
-        <div style={{
-            position: 'absolute',
-            left: 12,
-            top: 46,
-            zIndex: 1001,
-            width: 220,
-            maxHeight: 'calc(100% - 120px)',
-            display: 'flex',
-            flexDirection: 'column',
-            fontFamily: 'system-ui,sans-serif',
-            pointerEvents: 'auto',
-        }}>
-            {/* Header toggle */}
-            <div
-                onClick={() => setOpen(!open)}
-                style={{
-                    background: 'rgba(15,23,42,0.88)',
-                    backdropFilter: 'blur(8px)',
-                    WebkitBackdropFilter: 'blur(8px)',
-                    borderRadius: open ? '8px 8px 0 0' : 8,
-                    padding: '5px 10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    cursor: 'pointer',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderBottom: open ? 'none' : '1px solid rgba(255,255,255,0.1)',
-                    userSelect: 'none',
-                    flexShrink: 0,
-                }}
-            >
-                <span style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                    {zones.length} quận/huyện
-                </span>
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2.5"
-                    style={{ transition: 'transform .15s', transform: open ? 'rotate(0)' : 'rotate(-90deg)' }}>
-                    <polyline points="6 9 12 15 18 9"/>
-                </svg>
-            </div>
-
-            {/* List body */}
-            {open && (
-                <div style={{
-                    background: 'rgba(15,23,42,0.82)',
-                    backdropFilter: 'blur(8px)',
-                    WebkitBackdropFilter: 'blur(8px)',
-                    borderRadius: '0 0 8px 8px',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderTop: 'none',
-                    overflowY: 'auto',
-                    flex: 1,
-                    minHeight: 0,
-                }}>
-                    {/* Column labels */}
-                    <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: '1fr 32px 32px 32px',
-                        padding: '4px 8px 3px',
-                        borderBottom: '1px solid rgba(255,255,255,0.06)',
-                        position: 'sticky', top: 0,
-                        background: 'rgba(15,23,42,0.98)',
-                    }}>
-                        <span style={{ fontSize: 9, color: '#334155', fontWeight: 700, textTransform: 'uppercase' }}>Vùng</span>
-                        <span style={{ fontSize: 9, color: '#334155', fontWeight: 700, textAlign: 'right' }}>TB</span>
-                        <span style={{ fontSize: 9, color: '#16a34a', fontWeight: 700, textAlign: 'right' }}>Onl</span>
-                        <span style={{ fontSize: 9, color: '#dc2626', fontWeight: 700, textAlign: 'right' }}>Off</span>
-                    </div>
-
-                    {zones.map((z) => {
-                        const pct = z.total > 0 ? (z.online / z.total) * 100 : 0;
-                        const isActive = z.id === selectedDistrictId;
-                        return (
-                            <div
-                                key={z.id}
-                                onClick={() => onClickZone && onClickZone(z)}
-                                style={{
-                                    padding: '5px 8px 4px',
-                                    borderBottom: '1px solid rgba(255,255,255,0.03)',
-                                    borderLeft: isActive ? '2px solid #3b82f6' : '2px solid transparent',
-                                    background: isActive ? 'rgba(37,99,235,0.18)' : 'transparent',
-                                    cursor: 'pointer',
-                                    transition: 'background .1s',
-                                }}
-                                onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; }}
-                                onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
-                            >
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 32px 32px 32px', alignItems: 'center', marginBottom: 3 }}>
-                                    <span style={{
-                                        fontSize: 11,
-                                        color: isActive ? '#93c5fd' : '#cbd5e1',
-                                        fontWeight: isActive ? 700 : 500,
-                                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingRight: 4,
-                                    }} title={z.name}>{z.name}</span>
-                                    <span style={{ fontSize: 11, color: '#e2e8f0', fontWeight: 700, textAlign: 'right' }}>{z.total}</span>
-                                    <span style={{ fontSize: 11, color: '#4ade80', fontWeight: 700, textAlign: 'right' }}>{z.online}</span>
-                                    <span style={{ fontSize: 11, color: '#f87171', fontWeight: 700, textAlign: 'right' }}>{z.offline}</span>
-                                </div>
-                                <div style={{ height: 2.5, borderRadius: 2, background: 'rgba(255,255,255,0.06)', overflow: 'hidden', position: 'relative' }}>
-                                    <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, background: 'linear-gradient(90deg,#166534,#4ade80)', borderRadius: 2 }} />
-                                    <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${pct}%`, right: 0, background: 'rgba(239,68,68,0.38)', borderRadius: '0 2px 2px 0' }} />
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-        </div>
-    );
-};
-
-// ============================================================
-// MAIN COMPONENT
-// ============================================================
-const VietnamMapDrillDown = ({ devices = [], cruiseByImei = {}, loading = false, height = 580, forceAllDevices = false, highlightDevice = null, onDrillChange = null }) => {
-    const mapRef = useRef(null);
-    const leafletMapRef = useRef(null);
-    const markersLayerRef = useRef(null);
-    const labelsLayerRef = useRef(null); // province name labels
-    const geoLayerRef = useRef(null); // province outline (vn_geo.json)
-    const districtLayerRef = useRef(null); // district outlines (diaphanhuyen.geojson, visual only)
-    const tileLayerRef = useRef(null); // OSM tile layer — chỉ bật ở level district/device
-
-    const [L, setL] = useState(null);
-    const [provinces, setProvinces] = useState([]);
     const [level, setLevel] = useState('province');
     const [selectedProvince, setSelectedProvince] = useState(null);
     const [selectedDistrict, setSelectedDistrict] = useState(null);
-    const [districts, setDistricts] = useState([]);
-    const [loadingDistricts, setLoadingDistricts] = useState(false);
-    const [districtGeoJson, setDistrictGeoJson] = useState(null);
-    const [provinceGroups, setProvinceGroups] = useState({});
-    const workerRef = useRef(null);
-
     const [popupDevice, setPopupDevice] = useState(null);
     const [popupCruise, setPopupCruise] = useState(null);
-    const [zoneStats, setZoneStats] = useState([]); // [{id,name,total,online,offline,lat,lon}]
-    const [containerWidth, setContainerWidth] = useState(800);
-    const isMobile = containerWidth < 480;
 
-    // ── Init Leaflet ─────────────────────────────────────────
-    useEffect(() => {
-        const container = mapRef.current?.parentElement;
-        if (!container) return;
-        const ro = new ResizeObserver((entries) => {
-            for (const entry of entries) {
-                setContainerWidth(entry.contentRect.width);
-            }
-        });
-        ro.observe(container);
-        setContainerWidth(container.offsetWidth);
-        return () => ro.disconnect();
-    }, []);
+    // Gom nhóm xe theo quận huyện (Level 1) dùng IKY-SpatialCore
+    const districtGroups = useMemo(() => {
+        if (!selectedProvince || !devices.length) return {};
+        const provDevices = provinceGroups[selectedProvince.id]?.items?.map((x) => x.device) || [];
+        return groupProvinceVehicles(provDevices, cruiseByImei, selectedProvince.id);
+    }, [selectedProvince, provinceGroups, devices, cruiseByImei, groupProvinceVehicles]);
 
-    useEffect(() => {
-        let cancelled = false;
-        const init = async () => {
-            if (leafletMapRef.current || !mapRef.current) return;
-            const Lf = (await import('leaflet')).default;
-            await import('leaflet/dist/leaflet.css');
-            if (cancelled || !mapRef.current) return;
+    // Các xe trong quận được chọn (Level 2)
+    const activeDistrictDevices = useMemo(() => {
+        if (!selectedDistrict || !selectedProvince) return [];
+        const districtKey = String(
+            selectedDistrict.id || selectedDistrict.properties?.ma_huyen || ''
+        );
+        const group = districtGroups[districtKey];
+        return group && Array.isArray(group.items) ? group.items.map((x) => x.device) : [];
+    }, [selectedDistrict, selectedProvince, districtGroups]);
 
-            // Reset nếu bị Strict Mode double-init
-            if (mapRef.current._leaflet_id) {
-                mapRef.current._leaflet_id = null;
-            }
-
-            const map = Lf.map(mapRef.current, {
-                center: [16.5, 107.5],
-                zoom: 6,
-                minZoom: 4,
-                maxZoom: 19,
-                zoomControl: false,      // ✅ Dùng custom zoom control thay Leaflet default
-                attributionControl: false,
-                boxZoom: false,          // ✅ Tắt hộp đen khi kéo (box selection)
-                wheelPxPerZoomLevel: 80, // ✅ Zoom mượt hơn với scroll wheel (default 60)
-                zoomSnap: 0.5,           // ✅ Cho phép zoom nửa bước để mượt hơn
-            });
-
-            // ✅ Auto re-center:
-            // 1. Khi zoom về zoom <= 5 (rất rộng) → luôn fitBounds về Việt Nam
-            // 2. Khi kéo quá xa đến mức Việt Nam không còn trong viewport → pan về
-            let _isRecentering = false; // guard chống infinite loop fitBounds→moveend→fitBounds
-            map.on('moveend zoomend', () => {
-                if (_isRecentering || !_vnBoundsCache) return;
-                const [[s, w], [n, e]] = _vnBoundsCache;
-                const vp = map.getBounds();
-                const z = map.getZoom();
-                // Việt Nam hoàn toàn nằm ngoài viewport — chỉ recenter khi out-of-view
-                // KHÔNG recenter khi user đang zoom in (bỏ điều kiện z <= 5)
-                const outOfView =
-                    vp.getSouth() > n ||
-                    vp.getNorth() < s ||
-                    vp.getWest()  > e ||
-                    vp.getEast()  < w;
-                if (outOfView) {
-                    _isRecentering = true;
-                    map.fitBounds(_vnBoundsCache, { padding: [10, 10], animate: true });
-                    setTimeout(() => { _isRecentering = false; }, 600);
-                }
-            });
-
-
-            leafletMapRef.current = map;
-            markersLayerRef.current = Lf.layerGroup().addTo(map);
-            labelsLayerRef.current = Lf.layerGroup().addTo(map);
-
-            // ✅ FIX DRAG: invalidateSize + dragging.enable() sau khi DOM đã render xong
-            setTimeout(() => {
-                if (!cancelled && map && !map._removed) {
-                    map.invalidateSize({ animate: false });
-                    map.dragging.enable();
-                    map.scrollWheelZoom.enable();
-                }
-            }, 50);
-
-            // ── Google Maps Tile layer (ẩn mặc định, hiện khi vào quận/thiết bị) ──
-            const tile = Lf.tileLayer(
-                'https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
-                {
-                    maxZoom: 20,
-                    subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
-                    opacity: 0,      // ẩn lúc khởi tạo
-                    zIndex: 1,
-                }
-            ).addTo(map);
-            tileLayerRef.current = tile;
-
-            setL(Lf);
-        };
-        init();
-        return () => {
-            cancelled = true;
-            if (leafletMapRef.current) {
-                leafletMapRef.current.remove();
-                leafletMapRef.current = null;
-            }
-        };
-    }, []);
-
-    useEffect(() => {
-        // Chỉ tải VietNam63.geojson (36MB) khi người dùng bấm chọn tỉnh
-        if (!selectedProvince) return;
-        if (_geoJsonCache) {
-            setDistrictGeoJson(_geoJsonCache);
-            return;
-        }
-        loadDistrictGeoJson().then((geo) => {
-            if (geo) setDistrictGeoJson(geo);
-        });
-    }, [selectedProvince]);
-
-    // Tải trước ngầm (pre-warm) sau 4s khi country map đã vẽ xong
-    useEffect(() => {
-        const t = setTimeout(() => {
-            loadDistrictGeoJson();
-        }, 4000);
-        return () => clearTimeout(t);
-    }, []);
-
-    const findDistrictByPoint = (lat, lon, geojson) => {
-        if (!geojson?.features?.length) return null;
-
-        const point = turf.point([lon, lat]);
-
-        const normalize = (str = '') =>
-            str
-                .toLowerCase()
-                .normalize('NFD')
-                .replace(/[\u0300-\u036f]/g, '')
-                .replace(/^tp\.?\s*/i, '')
-                .replace(/^thanh pho\s*/i, '')
-                .replace(/^tinh\s*/i, '')
-                .trim();
-
-        for (const feature of geojson.features) {
-            if (!feature?.geometry) continue;
-
-            try {
-                const geom = feature.geometry;
-
-                let inside = false;
-
-                if (geom.type === 'Polygon') {
-                    inside = turf.booleanPointInPolygon(point, turf.polygon(geom.coordinates));
-                } else if (geom.type === 'MultiPolygon') {
-                    inside = turf.booleanPointInPolygon(point, turf.multiPolygon(geom.coordinates));
-                }
-
-                if (inside) return feature;
-            } catch (e) {
-                console.warn('GEO ERROR:', e);
-            }
-        }
-
-        return null;
-    };
-    // ── Fetch provinces from esgoo (cached in localStorage) ───
-    useEffect(() => {
-        getProvincesCached().then(setProvinces);
-    }, []);
-
-    // ── Draw province GeoJSON outline + province labels ───────
-    useEffect(() => {
-        if (!L || !leafletMapRef.current) return;
-        if (geoLayerRef.current) {
-            geoLayerRef.current.remove();
-            geoLayerRef.current = null;
-        }
-        if (labelsLayerRef.current) labelsLayerRef.current.clearLayers();
-
-        const loadGeo = async () => {
-            if (_vnGeoCache) return _vnGeoCache;
-            const r = await fetch('/vn_geo.json');
-            _vnGeoCache = await r.json();
-            return _vnGeoCache;
-        };
-
-        loadGeo()
-            .then((geo) => {
-                if (!leafletMapRef.current) return;
-
-                geoLayerRef.current = L.geoJSON(geo, {
-                    style: { color: '#60a5fa', weight: 1, fillColor: '#dbeafe', fillOpacity: 0.5 },
-                    onEachFeature: (feature, layer) => {
-                        const name = feature.properties.oldName || feature.properties.name || '';
-
-                        // Hover tooltip
-                        layer.bindTooltip(name, {
-                            permanent: false,
-                            direction: 'center',
-                            className: 'vn-prov-hover',
-                            sticky: false,
-                        });
-
-                        // Permanent label — dùng turf.pointOnFeature để đảm bảo label nằm trong đất liền
-                        // (không bị lệch ra biển như getBounds().getCenter() với tỉnh ven biển)
-                        let labelLat, labelLng;
-                        try {
-                            const pt = turf.pointOnFeature(feature);
-                            [labelLng, labelLat] = pt.geometry.coordinates;
-                        } catch (_) {
-                            const c = layer.getBounds().getCenter();
-                            labelLat = c.lat; labelLng = c.lng;
-                        }
-                        const label = L.marker([labelLat, labelLng], {
-                            icon: L.divIcon({
-                                className: 'vn-prov-label',
-                                html: name,
-                                iconSize: [130, 16],
-                                iconAnchor: [65, 8],
-                            }),
-                            interactive: false,
-                            keyboard: false,
-                            zIndexOffset: -1000,
-                        });
-                        labelsLayerRef.current.addLayer(label);
-                    },
-                }).addTo(leafletMapRef.current);
-
-                leafletMapRef.current.fitBounds(geoLayerRef.current.getBounds(), {
-                    padding: [8, 8],
-                    animate: false,
-                });
-
-                // Toggle permanent labels theo zoom — ở mức toàn quốc (zoom >= 4) luôn hiện đầy đủ tên tỉnh thành
-                const toggleLabels = () => {
-                    const z = leafletMapRef.current?.getZoom() ?? 5.5;
-                    document.querySelectorAll('.vn-prov-label').forEach((el) => {
-                        el.style.display = z >= 4 ? '' : 'none';
-                    });
-                };
-                leafletMapRef.current.on('zoomend', toggleLabels);
-                toggleLabels();
-            })
-            .catch(console.error);
-    }, [L]);
-
-    // ── Draw district GeoJSON boundaries (visual only) ────────
-    const drawDistrictBoundaries = useCallback(
-        (provinceName) => {
-            if (!L || !leafletMapRef.current) return;
-            if (districtLayerRef.current) {
-                districtLayerRef.current.remove();
-                districtLayerRef.current = null;
-            }
-            loadDistrictGeoJson().then((geo) => {
-                if (!geo || !leafletMapRef.current) return;
-                const fc = {
-                    type: 'FeatureCollection',
-                    features: geo.features.filter((f) => f.properties.Ten_Tinh === provinceName),
-                };
-                if (!fc.features.length) return;
-                districtLayerRef.current = L.geoJSON(fc, {
-                    style: {
-                        color: '#6d28d9',
-                        weight: 2,
-                        dashArray: '5 4',
-                        fillColor: 'transparent',
-                        fillOpacity: 0,
-                        opacity: 0.75,
-                    },
-                    onEachFeature: (feature, layer) => {
-                        layer.bindTooltip(`<b>${feature.properties.Ten_Huyen}</b>`, {
-                            sticky: true,
-                            className: 'vn-district-tip',
-                            direction: 'top',
-                        });
-                    },
-                }).addTo(leafletMapRef.current);
-            });
-        },
-        [L],
-    );
-
-    const clearDistrictBoundaries = useCallback(() => {
-        if (districtLayerRef.current) {
-            districtLayerRef.current.remove();
-            districtLayerRef.current = null;
-        }
-    }, []);
-
-    // ── Tile layer toggle ─────────────────────────────────────────────
-    const showTile = useCallback(() => {
-        if (!tileLayerRef.current) return;
-        tileLayerRef.current.setOpacity(1);
-        // Ẩn GeoJSON province outline — tile đã có ranh giới rồi
-        if (geoLayerRef.current) geoLayerRef.current.setStyle({ opacity: 0, fillOpacity: 0 });
-        // Ẩn province name labels
-        if (labelsLayerRef.current) labelsLayerRef.current.eachLayer((l) => { if (l._icon) l._icon.style.display = 'none'; });
-    }, []);
-
-    const hideTile = useCallback(() => {
-        if (!tileLayerRef.current) return;
-        tileLayerRef.current.setOpacity(0);
-        // Hiện lại GeoJSON province outline
-        if (geoLayerRef.current) geoLayerRef.current.setStyle({ color: '#60a5fa', weight: 1, fillColor: '#dbeafe', fillOpacity: 0.5, opacity: 1 });
-        if (labelsLayerRef.current) labelsLayerRef.current.eachLayer((l) => { if (l._icon) l._icon.style.display = ''; });
-    }, []);
-
-    // ── Grouping helpers (haversine) — Web Worker nếu có, fallback sync ─────────────
-    // Worker chạy off main thread: không block UI dù 50k+ devices
-    useEffect(() => {
-        if (!provinces.length || !devices.length) {
-            setProvinceGroups({});
-            return;
-        }
-
-        // Build cruiseByImei plain object để transfer sang worker
-        const cruiseData = {};
-        devices.forEach(d => {
-            const c = cruiseByImei[d.imei];
-            if (c) cruiseData[d.imei] = c;
-        });
-
-        if (typeof Worker !== 'undefined') {
-            // Tạo worker mới mỗi lần (đơn giản, tránh stale closure)
-            if (workerRef.current) workerRef.current.terminate();
-            const worker = new Worker('/workers/clusterWorker.js');
-            workerRef.current = worker;
-
-            worker.onmessage = ({ data }) => {
-                if (data.type === 'GROUP_BY_PROVINCE_RESULT') {
-                    setProvinceGroups(data.groups);
-                    worker.terminate();
-                    workerRef.current = null;
-                }
-            };
-            worker.onerror = (err) => {
-                console.warn('[ClusterWorker] error, falling back to sync:', err);
-                // Fallback sync
-                const groups = {};
-                for (const d of devices) {
-                    const cruise = cruiseData[d.imei];
-                    if (!cruise?.lat || !cruise?.lon) continue;
-                    const prov = findNearest(cruise.lat, cruise.lon, provinces);
-                    if (!prov) continue;
-                    if (!groups[prov.id]) groups[prov.id] = { province: prov, items: [] };
-                    groups[prov.id].items.push({ device: d, cruise });
-                }
-                setProvinceGroups(groups);
-            };
-
-            worker.postMessage({ type: 'GROUP_BY_PROVINCE', devices, cruiseByImei: cruiseData, provinces });
-        } else {
-            // Fallback sync (Safari cũ, etc.)
-            const groups = {};
-            for (const d of devices) {
-                const cruise = cruiseData[d.imei];
-                if (!cruise?.lat || !cruise?.lon) continue;
-                const prov = findNearest(cruise.lat, cruise.lon, provinces);
-                if (!prov) continue;
-                if (!groups[prov.id]) groups[prov.id] = { province: prov, items: [] };
-                groups[prov.id].items.push({ device: d, cruise });
-            }
-            setProvinceGroups(groups);
-        }
-
-        return () => {
-            // Cleanup nếu deps thay đổi khi worker đang chạy
-            if (workerRef.current) {
-                workerRef.current.terminate();
-                workerRef.current = null;
-            }
-        };
-    }, [provinces, devices, cruiseByImei]);
-
-    // ── Emit drill-level devices to parent ───────────────────────────────────────
-    // Khi level thay đổi, tính devices đang hiển thị trên map và báo lên parent
+    // Báo ra ngoài component cha khi drill thay đổi
     useEffect(() => {
         if (!onDrillChange) return;
-        if (level === 'province' && !selectedProvince) {
-            // Level toàn quốc — không drill: rất đủ devices
-            onDrillChange(null);
-            return;
-        }
-        if (level === 'district' && selectedProvince) {
-            // Đang xem tỉnh — emit devices trong tỉnh đó
-            const provinceDevices = devices.filter(d => {
-                const cruise = cruiseByImei[d.imei];
-                if (!cruise?.lat || !cruise?.lon) return false;
-                const prov = findNearest(cruise.lat, cruise.lon, provinces);
-                return prov?.id === selectedProvince.id;
-            });
-            onDrillChange(provinceDevices);
-            return;
-        }
-        if (level === 'device' && selectedDistrict) {
-            // Đang xem quận/huyện — emit devices trong quận đó
-            const districtDevices = devices.filter(d => {
-                const cruise = cruiseByImei[d.imei];
-                if (!cruise?.lat || !cruise?.lon) return false;
-                const f = findDistrictByPoint(cruise.lat, cruise.lon, districtGeoJson, selectedProvince?.full_name);
-                return f?.properties?.ma_huyen === selectedDistrict?.properties?.ma_huyen;
-            });
-            onDrillChange(districtDevices);
-            return;
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [level, selectedProvince, selectedDistrict]);
+        if (level === 'province') onDrillChange(null);
+        else if (level === 'district') onDrillChange(provinceGroups[selectedProvince?.id]?.items?.map((x) => x.device) || []);
+        else if (level === 'device') onDrillChange(activeDistrictDevices);
+    }, [level, selectedProvince, selectedDistrict, onDrillChange, provinceGroups, activeDistrictDevices]);
 
-    // groupByDistrict: tính lại khi province/district/cruiseByImei thay đổi
-    const districtGroups = useMemo(() => {
-        if (!districts.length || !devices.length || !selectedProvince) return {};
-        const provinceDevices = devices.filter((d) => {
-            const cruise = cruiseByImei[d.imei];
-            if (!cruise?.lat || !cruise?.lon) return false;
-            const prov = findNearest(cruise.lat, cruise.lon, provinces);
-            return prov?.id === selectedProvince?.id;
-        });
-        const groups = {};
-        for (const d of provinceDevices) {
-            const cruise = cruiseByImei[d.imei];
+    // Helper căn chỉnh góc nhìn tập trung sâu vào khu vực tỉnh & cụm quận
+    const focusProvinceView = useCallback((prov, clusterBounds = null) => {
+        if (!leafletMap || !prov) return;
+        focusProvince?.(prov);
+        lastFittedProvinceIdRef.current = prov.id;
+        const padLeft = isMobile ? 20 : 280;
 
-            const districtFeature = findDistrictByPoint(
-                cruise.lat,
-                cruise.lon,
-                districtGeoJson,
-                selectedProvince.full_name,
-            );
-
-            if (!districtFeature) {
-                console.log('NOT FOUND', selectedProvince.full_name, cruise.lat, cruise.lon);
-                continue;
-            }
-            const key = districtFeature.properties.ma_huyen;
-
-            if (!groups[key]) {
-                groups[key] = {
-                    district: districtFeature,
-                    items: [],
-                };
-            }
-
-            groups[key].items.push({
-                device: d,
-                cruise,
-            });
-        }
-        return groups;
-    }, [districts, devices, cruiseByImei, provinces, selectedProvince, districtGeoJson]);
-
-    const getDistrictName = (district) => {
-        return `${district.properties.loai} ${district.properties.ten_huyen}`;
-    };
-
-    const clearMarkers = useCallback(() => markersLayerRef.current?.clearLayers(), []);
-
-    // ── Draw: province clusters ───────────────────────────────
-    const drawProvinceLevel = useCallback(() => {
-        if (!L || !leafletMapRef.current) return;
-        clearMarkers();
-        clearDistrictBoundaries();
-        const groups = provinceGroups; // dùng memo value thay vì gọi hàm
-
-        Object.values(groups).forEach(({ province, items }) => {
-            const online = items.filter((i) => isOnline(i.cruise)).length;
-            const total = items.length;
-            const lat = parseFloat(province.latitude);
-            const lon = parseFloat(province.longitude);
-
-            const sz = Math.round(Math.max(26, Math.min(38, 26 + Math.log10(total + 1) * 8)));
-            const icon = L.divIcon({
-                className: '',
-                iconSize: [sz, sz],
-                iconAnchor: [sz / 2, sz / 2],
-                html: clusterSvg(total, online, total, 'province'),
-            });
-
-            const marker = L.marker([lat, lon], { icon });
-            marker.bindTooltip(`<b>${province.full_name}</b><br>${total} thiết bị · ${online} online`, {
-                direction: 'top',
-                offset: [0, -27],
-            });
-            marker.on('click', async () => {
-                setSelectedProvince(province);
-                setSelectedDistrict(null);
-                setPopupDevice(null);
-                leafletMapRef.current.setView([lat, lon], 9, { animate: true });
-
-                // Bật tile layer — hiện đường phố chi tiết
-                showTile();
-
-                // Draw district boundaries (visual)
-                drawDistrictBoundaries(province.full_name);
-
-                // Fetch district centroids
-                setLoadingDistricts(true);
-                try {
-                    const res = await fetch(DISTRICT_API(province.id));
-                    const data = await res.json();
-                    setDistricts(data.data || []);
-                    console.log('DISTRICTS:', province.full_name, data);
-                    setLevel('district');
-                } catch (e) {
-                    console.error(e);
-                } finally {
-                    setLoadingDistricts(false);
-                }
-            });
-            markersLayerRef.current.addLayer(marker);
-        });
-    }, [L, provinceGroups, clearMarkers, clearDistrictBoundaries, drawDistrictBoundaries]);
-
-    // ── Draw: district clusters ───────────────────────────────
-    const drawDistrictLevel = useCallback(() => {
-        if (!L || !leafletMapRef.current || !districts.length) return;
-        clearMarkers();
-        const groups = districtGroups; // dùng memo value thay vì gọi hàm
-
-        Object.values(groups).forEach(({ district, items }) => {
-            const online = items.filter((i) => isOnline(i.cruise)).length;
-            const total = items.length;
-            const [lon, lat] = district._center.geometry.coordinates;
-
-            const sz = Math.round(Math.max(26, Math.min(38, 26 + Math.log10(total + 1) * 8)));
-            const icon = L.divIcon({
-                className: '',
-                iconSize: [sz, sz],
-                iconAnchor: [sz / 2, sz / 2],
-                html: clusterSvg(total, online, total, 'district'),
-            });
-
-            const marker = L.marker([lat, lon], { icon });
-            marker.bindTooltip(`<b>${getDistrictName(district)}</b><br>${total} thiết bị · ${online} online`, {
-                direction: 'top',
-                offset: [0, -23],
-            });
-            marker.on('click', () => {
-                setSelectedDistrict(district);
-                setPopupDevice(null);
-                leafletMapRef.current.setView([lat, lon], 13, { animate: true });
-                setLevel('device');
-            });
-            markersLayerRef.current.addLayer(marker);
-        });
-    }, [L, districtGroups, clearMarkers]);
-
-    // ── Draw: individual device pins ──────────────────────────
-    const drawDeviceLevel = useCallback(() => {
-        if (!L || !leafletMapRef.current || !selectedDistrict || !districts.length) return;
-        clearMarkers();
-
-        const districtDevices = devices.filter((d) => {
-            const cruise = cruiseByImei[d.imei];
-            if (!cruise?.lat || !cruise?.lon) return false;
-            const districtFeature = findDistrictByPoint(
-                cruise.lat,
-                cruise.lon,
-                districtGeoJson,
-                selectedProvince.full_name,
-            );
-
-            console.log({
-                lat: cruise.lat,
-                lon: cruise.lon,
-                district: districtFeature?.properties?.Ten_Huyen,
-            });
-
-            return districtFeature?.properties.ma_huyen === selectedDistrict?.properties?.ma_huyen;
-        });
-
-        districtDevices.forEach((d) => {
-            const cruise = cruiseByImei[d.imei];
-            if (!cruise?.lat || !cruise?.lon) return;
-            const online = isOnline(cruise);
-            const color = online ? '#22c55e' : '#ef4444';
-
-            const svgHtml = `<svg width="32" height="42" viewBox="0 0 36 47" xmlns="http://www.w3.org/2000/svg">
-        <path d="M18 0C8.06 0 0 8.06 0 18c0 12.5 18 29 18 29S36 30.5 36 18C36 8.06 27.94 0 18 0z" fill="${color}" stroke="white" stroke-width="2"/>
-        <circle cx="18" cy="18" r="8" fill="white"/>
-        <circle cx="18" cy="18" r="4.5" fill="${color}"/>
-      </svg>`;
-
-            const icon = L.divIcon({
-                className: '',
-                iconSize: [32, 42],
-                iconAnchor: [16, 42],
-                html: svgHtml,
-            });
-
-            const marker = L.marker([cruise.lat, cruise.lon], { icon });
-            marker.bindTooltip(
-                `<b>${d.license_plate || d.imei}</b><br><svg width="8" height="8" viewBox="0 0 8 8" style="vertical-align:middle;margin-right:3px"><circle cx="4" cy="4" r="4" fill="${online ? '#22c55e' : '#ef4444'}"/></svg>${online ? 'Online' : 'Offline'}`,
-                { direction: 'top', offset: [0, -43] },
-            );
-            marker.on('click', () => {
-                setPopupDevice(d);
-                setPopupCruise(cruise);
-            });
-            markersLayerRef.current.addLayer(marker);
-        });
-    }, [L, devices, cruiseByImei, selectedDistrict, districts, clearMarkers]);
-
-    // ── Draw: all devices as individual pins (forceAllDevices mode) ─────────
-    const drawAllDevicesLevel = useCallback(() => {
-        if (!L || !leafletMapRef.current) return;
-        clearMarkers();
-        showTile();
-
-        const bounds = [];
-
-        // Jitter: nhóm các thiết bị có cùng tọa độ → xếp thành vòng xoắn
-        // để tránh chồng pin khi nhiều xe đậu cùng chỗ
-        const coordGroups = {};
-        devices.forEach((d) => {
-            const cruise = cruiseByImei[d.imei];
-            if (!cruise?.lat || !cruise?.lon) return;
-            const key = `${cruise.lat.toFixed(5)},${cruise.lon.toFixed(5)}`;
-            if (!coordGroups[key]) coordGroups[key] = [];
-            coordGroups[key].push({ device: d, cruise });
-        });
-
-        Object.values(coordGroups).forEach((group) => {
-            group.forEach(({ device: d, cruise }, idx) => {
-                const online = isOnline(cruise);
-                const color = online ? '#22c55e' : '#ef4444';
-
-                // Spiral jitter: idx=0 ở giữa, các cái sau ra vòng xoắn
-                let lat = cruise.lat;
-                let lon = cruise.lon;
-                if (idx > 0) {
-                    // Vòng xoắn Archimedes: mỗi 6 pins lên 1 vòng
-                    const ring   = Math.ceil(idx / 6);
-                    const angle  = (idx % 6) * (Math.PI / 3) + ring * 0.5;
-                    const radius = 0.000035 * ring; // ~3.5m mỗi vòng
-                    lat = cruise.lat + radius * Math.cos(angle);
-                    lon = cruise.lon + radius * Math.sin(angle) / Math.cos((cruise.lat * Math.PI) / 180);
-                }
-
-                const svgHtml = `<svg width="26" height="34" viewBox="0 0 36 47" xmlns="http://www.w3.org/2000/svg">
-        <path d="M18 0C8.06 0 0 8.06 0 18c0 12.5 18 29 18 29S36 30.5 36 18C36 8.06 27.94 0 18 0z" fill="${color}" stroke="white" stroke-width="2"/>
-        <circle cx="18" cy="18" r="8" fill="white"/>
-        <circle cx="18" cy="18" r="4.5" fill="${color}"/>
-      </svg>`;
-
-                const icon = L.divIcon({
-                    className: '',
-                    iconSize: [26, 34],
-                    iconAnchor: [13, 34],
-                    html: svgHtml,
-                });
-
-                const marker = L.marker([lat, lon], { icon });
-                marker.bindTooltip(
-                    `<b>${d.license_plate || d.imei}</b><br><svg width="8" height="8" viewBox="0 0 8 8" style="vertical-align:middle;margin-right:3px"><circle cx="4" cy="4" r="4" fill="${online ? '#22c55e' : '#ef4444'}"/></svg>${online ? 'Online' : 'Offline'}`,
-                    { direction: 'top', offset: [0, -35] },
-                );
-                marker.on('click', () => {
-                    setPopupDevice(d);
-                    setPopupCruise(cruise);
-                });
-                markersLayerRef.current.addLayer(marker);
-                bounds.push([lat, lon]);
-            });
-        });
-
-        // Auto-fit to all device pins
-        if (bounds.length > 0 && leafletMapRef.current) {
+        if (clusterBounds && clusterBounds.length > 1) {
             try {
-                leafletMapRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 19, animate: true });
+                leafletMap.fitBounds(clusterBounds, {
+                    paddingTopLeft: [padLeft, 40],
+                    paddingBottomRight: [40, 40],
+                    maxZoom: 13,
+                    animate: true,
+                });
+                return;
             } catch (_) {}
         }
-    }, [L, devices, cruiseByImei, clearMarkers, showTile]);
-
-    // ── Trigger redraws ───────────────────────────────────────
-    useEffect(() => {
-        if (!L || !provinces.length) return;
-        if (forceAllDevices) return; // skip — handled by forceAllDevices effect below
-        if (level === 'province') drawProvinceLevel();
-    }, [L, level, provinces, devices, cruiseByImei, drawProvinceLevel, forceAllDevices]);
-
-    useEffect(() => {
-        if (!L || level !== 'district' || !districts.length) return;
-        if (forceAllDevices) return;
-        drawDistrictLevel();
-    }, [L, level, districts, devices, cruiseByImei, drawDistrictLevel, forceAllDevices]);
-
-    useEffect(() => {
-        if (!L || level !== 'device' || !selectedDistrict) return;
-        if (forceAllDevices) return;
-        drawDeviceLevel();
-    }, [L, level, selectedDistrict, devices, cruiseByImei, drawDeviceLevel, forceAllDevices]);
-
-    // forceAllDevices: show all devices as pins regardless of level
-    useEffect(() => {
-        if (!L) return;
-        if (forceAllDevices) {
-            drawAllDevicesLevel();
-        } else {
-            // Restore normal province view + reset map to full Vietnam view
-            hideTile();
-            setLevel('province');
-            setSelectedProvince(null);
-            setSelectedDistrict(null);
-            if (provinces.length) drawProvinceLevel();
-            // Fit back to Vietnam bounds
-            if (_vnBoundsCache && leafletMapRef.current) {
-                try {
-                    leafletMapRef.current.fitBounds(_vnBoundsCache, { padding: [10, 10], animate: true });
-                } catch (_) {}
-            }
-        }
-    }, [L, forceAllDevices, drawAllDevicesLevel, drawProvinceLevel, hideTile, provinces]);
-
-    // ── highlightDevice: pan/zoom + show popup khi search từ page.jsx ────
-    useEffect(() => {
-        if (!highlightDevice || !L || !leafletMapRef.current) return;
-
-        const cruise = cruiseByImei[highlightDevice.imei];
-        if (!cruise?.lat || !cruise?.lon) {
-            // Thiết bị không có tọa độ — chỉ hiện popup không có vị trí
-            setPopupDevice(highlightDevice);
-            setPopupCruise(null);
+        if (clusterBounds && clusterBounds.length === 1) {
+            leafletMap.setView(clusterBounds[0], 12.5, { animate: true });
             return;
         }
 
-        const lat = cruise.lat;
-        const lon = cruise.lon;
+        const lat = parseFloat(prov.latitude), lon = parseFloat(prov.longitude);
+        if (!isNaN(lat) && !isNaN(lon)) leafletMap.setView([lat, lon], 11.5, { animate: true });
+    }, [leafletMap, focusProvince, isMobile]);
 
-        // Bật tile layer nếu chưa bật, zoom đến xe
-        showTile();
-        leafletMapRef.current.setView([lat, lon], 16, { animate: true });
-
-        // Show popup sau khi animation xong
-        const timer = setTimeout(() => {
-            setPopupDevice(highlightDevice);
-            setPopupCruise(cruise);
-        }, 450);
-
-        return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [highlightDevice]);
-
-    // ── Compute zone stats ─────────────────────────────────────
-    useEffect(() => {
-        if (!provinces.length || !devices.length) return;
-
-        if (level === 'province') {
-            const groups = provinceGroups; // dùng memo value
-            const stats = Object.values(groups)
-                .map(({ province, items }) => ({
-                    id: province.id,
-                    name: province.full_name,
-                    total: items.length,
-                    online: items.filter((i) => isOnline(i.cruise)).length,
-                    offline: items.filter((i) => !isOnline(i.cruise)).length,
-                    lat: parseFloat(province.latitude),
-                    lon: parseFloat(province.longitude),
-                    province,
-                }))
-                .sort((a, b) => b.total - a.total);
-            setZoneStats(stats);
-        } else if (level === 'district' && districts.length) {
-            const groups = districtGroups; // dùng memo value
-            const stats = Object.values(groups)
-                .map(({ district, items }) => {
-                    // Lấy centroid từ GeoJSON feature, fallback về avg lat/lon của thiết bị
-                    let lat = 0, lon = 0;
-                    try {
-                        const pt = turf.centroid(district);
-                        [lon, lat] = pt.geometry.coordinates;
-                    } catch (_) {
-                        const validItems = items.filter(i => i.cruise?.lat && i.cruise?.lon);
-                        if (validItems.length) {
-                            lat = validItems.reduce((s, i) => s + i.cruise.lat, 0) / validItems.length;
-                            lon = validItems.reduce((s, i) => s + i.cruise.lon, 0) / validItems.length;
-                        }
-                    }
-                    return {
-                        id: district.properties.ma_huyen,
-                        name: `${district.properties.loai} ${district.properties.ten_huyen}`,
-                        total: items.length,
-                        online: items.filter((i) => isOnline(i.cruise)).length,
-                        offline: items.filter((i) => !isOnline(i.cruise)).length,
-                        lat, lon,
-                        district,
-                    };
-                })
-                .sort((a, b) => b.total - a.total);
-            setZoneStats(stats);
-        } else if (level === 'device') {
-            // Ở device level, giữ lại stats của district level
-            // (không reset — user vẫn thấy list quận)
-        }
-    }, [level, provinces, devices, cruiseByImei, districts, provinceGroups, districtGroups]);
-
-    // ── Navigation ────────────────────────────────────────────
-    const goRoot = () => {
-        setLevel('province');
-        setSelectedProvince(null);
+    // Handler chọn Tỉnh: Focus ngay lập tức vào tỉnh đã chọn (zoom 11.5)
+    const handleSelectProvince = useCallback((province, coords) => {
+        setSelectedProvince(province);
         setSelectedDistrict(null);
-        setDistricts([]);
         setPopupDevice(null);
-        clearDistrictBoundaries();
-        // Tắt tile layer — về nền trắng toàn quốc
-        hideTile();
-        if (leafletMapRef.current && geoLayerRef.current) {
-            leafletMapRef.current.fitBounds(geoLayerRef.current.getBounds(), {
-                padding: [20, 20],
-                animate: true,
-            });
+        showTileLayer();
+        initSpatialIndex();
+        setLevel('district');
+        const lat = parseFloat(coords?.[0] || province?.latitude);
+        const lon = parseFloat(coords?.[1] || province?.longitude);
+        focusProvinceView(province);
+        if (!isNaN(lat) && !isNaN(lon) && leafletMap) {
+            leafletMap.setView([lat, lon], 11.5, { animate: true });
         }
-    };
+    }, [showTileLayer, initSpatialIndex, focusProvinceView, leafletMap]);
 
-    const goProvince = () => {
-        if (!selectedProvince) return;
+    // Handler chọn Quận: Focus sâu vào quận chi tiết (zoom 13.5)
+    const handleSelectDistrict = useCallback((district, [lat, lon]) => {
+        setSelectedDistrict(district);
+        setPopupDevice(null);
+        leafletMap?.setView([lat, lon], 13.5, { animate: true });
+        setLevel('device');
+    }, [leafletMap]);
+
+    // Quay lại xem toàn tỉnh từ level xe
+    const handleBackToProvince = useCallback(() => {
         setLevel('district');
         setSelectedDistrict(null);
         setPopupDevice(null);
-        const lat = parseFloat(selectedProvince.latitude);
-        const lon = parseFloat(selectedProvince.longitude);
-        leafletMapRef.current?.setView([lat, lon], 9, { animate: true });
-        drawDistrictBoundaries(selectedProvince.full_name);
-        // Đảm bảo tile vẫn hiện khi quay lại province level từ district
-        showTile();
-    };
+        focusProvinceView(selectedProvince);
+    }, [selectedProvince, focusProvinceView]);
 
-    const totalOnline = devices.filter((d) => isOnline(cruiseByImei[d.imei])).length;
-    const totalOffline = devices.length - totalOnline;
+    // Về toàn quốc
+    const handleGoRoot = useCallback(() => {
+        lastFittedProvinceIdRef.current = null;
+        setLevel('province');
+        setSelectedProvince(null);
+        setSelectedDistrict(null);
+        setPopupDevice(null);
+        hideTileLayer();
+        fitToVietnam();
+    }, [hideTileLayer, fitToVietnam]);
+
+    // Vẽ markers theo từng level và tự động fitBounds tập trung góc nhìn (focus)
+    useEffect(() => {
+        if (!L || !markersLayer) return;
+        if (forceAllDevices) {
+            showTileLayer();
+            const bounds = drawIndividualDevicePins(L, markersLayer, devices, cruiseByImei, (d, c) => {
+                setPopupDevice(d); setPopupCruise(c);
+            });
+            if (bounds.length && leafletMap) {
+                try { leafletMap.fitBounds(bounds, { padding: [40, 40], maxZoom: 18, animate: true }); } catch {}
+            }
+            return;
+        }
+
+        if (level === 'province') {
+            drawProvinceClusters(L, markersLayer, provinceGroups, handleSelectProvince);
+        } else if (level === 'district') {
+            const bounds = drawDistrictClusters(L, markersLayer, districtGroups, handleSelectDistrict);
+            if (selectedProvince && lastFittedProvinceIdRef.current !== selectedProvince.id) {
+                focusProvinceView(selectedProvince, bounds);
+            }
+        } else if (level === 'device') {
+            drawIndividualDevicePins(L, markersLayer, activeDistrictDevices, cruiseByImei, (d, c) => {
+                setPopupDevice(d); setPopupCruise(c);
+            });
+        }
+    }, [L, markersLayer, level, selectedProvince, provinceGroups, districtGroups, activeDistrictDevices, forceAllDevices, devices, cruiseByImei, handleSelectProvince, handleSelectDistrict, showTileLayer, leafletMap, focusProvinceView]);
+
+    // Xử lý Highlight Device từ ô tìm kiếm
+    useEffect(() => {
+        if (!highlightDevice || !L || !leafletMap) return;
+        const cruise = cruiseByImei[highlightDevice.imei];
+        if (cruise?.lat && cruise?.lon) {
+            leafletMap.setView([cruise.lat, cruise.lon], 16, { animate: true });
+            showTileLayer();
+        }
+        setPopupDevice(highlightDevice);
+        setPopupCruise(cruise || null);
+    }, [highlightDevice, L, leafletMap, cruiseByImei, showTileLayer]);
+
+    // Dữ liệu bảng thống kê vùng
+    const zoneStats = useMemo(() => {
+        if (level === 'province') {
+            return Object.values(provinceGroups).map(({ province, items }) => ({
+                id: province.id, name: province.full_name, total: items.length,
+                online: items.filter((i) => i.cruise?.acc !== 1).length,
+                offline: items.filter((i) => i.cruise?.acc === 1).length,
+            }));
+        }
+        return Object.values(districtGroups).map(({ district, items }) => ({
+            id: district.id || district.properties?.ma_huyen,
+            name: district.name || district.properties?.ten_huyen || 'Quận',
+            total: items.length,
+            online: items.filter((i) => i.cruise?.acc !== 1).length,
+            offline: items.filter((i) => i.cruise?.acc === 1).length,
+        }));
+    }, [level, provinceGroups, districtGroups]);
 
     return (
-        <div
-            style={{
-                position: 'relative',
-                width: '100%',
-                height, 
-                borderRadius: 12,
-                overflow: 'hidden',
-                boxShadow: '0 2px 12px rgba(0,0,0,0.10)',
-                border: '1px solid #e5e7eb',
-                background: '#f0f6ff',
-                // ✅ Fix ô vuông đen: ngăn browser tạo native selection rectangle khi drag
-                userSelect: 'none',
-                WebkitUserSelect: 'none',
-                MozUserSelect: 'none',
-                msUserSelect: 'none',
-            }}
-        >
-            {/* Map container */}
-            <div ref={mapRef} style={{ width: '100%', height: '100%', userSelect: 'none' }} />
+        <div style={{ position: 'relative', width: '100%', height, overflow: 'hidden' }}>
+            <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }} />
 
-            {/* Breadcrumb — top left */}
-            <Breadcrumb
+            <MapBreadcrumb
                 province={selectedProvince}
                 district={selectedDistrict}
-                onClickRoot={goRoot}
-                onClickProvince={goProvince}
+                onClickRoot={handleGoRoot}
+                onClickProvince={handleBackToProvince}
             />
 
+            <ZoomControl mapRef={{ current: leafletMap }} />
+            <ResetViewBtn onClick={handleGoRoot} />
+            <MapLegend level={level} isMobile={isMobile} />
 
-
-
-            {/* Custom Zoom Control — thay thế leaflet default */}
-            {L && leafletMapRef.current && <ZoomControl mapRef={leafletMapRef} />}
-
-            {/* Reset về toàn quốc */}
-            <ResetViewBtn onClick={goRoot} />
-
-            <Legend level={level} isMobile={isMobile} />
-
-            {/* Bottom stats bar */}
-            <div style={{
-                position: 'absolute',
-                bottom: 14,
-                left: 14,
-                right: 14,
-                zIndex: 1000,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                pointerEvents: 'none',
-            }}>
-                {/* Global total pill — luôn hiện */}
-                <div style={{
-                    flexShrink: 0,
-                    background: 'rgba(15,23,42,0.88)',
-                    backdropFilter: 'blur(8px)',
-                    WebkitBackdropFilter: 'blur(8px)',
-                    borderRadius: 10,
-                    padding: isMobile ? '5px 10px' : '6px 13px',
-                    display: 'flex',
-                    gap: isMobile ? 7 : 10,
-                    alignItems: 'center',
-                    border: '1px solid rgba(255,255,255,0.12)',
-                    fontFamily: 'system-ui,sans-serif',
-                }}>
-                    <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: '#e2e8f0' }}>{devices.length} thiết bị</span>
-                    <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: '#4ade80' }}>● {totalOnline}</span>
-                    <span style={{ fontSize: isMobile ? 11 : 12, fontWeight: 700, color: '#f87171' }}>● {totalOffline}</span>
-                </div>
-
-                {/* Province level: pills theo từng tỉnh — ẩn trên mobile */}
-                {level === 'province' && zoneStats.length > 0 && !isMobile && (
-                    <div style={{
-                        flex: 1,
-                        overflowX: 'auto',
-                        display: 'flex',
-                        gap: 6,
-                        alignItems: 'center',
-                        pointerEvents: 'auto',
-                        scrollbarWidth: 'none',
-                        msOverflowStyle: 'none',
-                    }}>
-                        {zoneStats.map((z) => {
-                            const onlinePct = z.total > 0 ? (z.online / z.total) * 100 : 0;
-                            return (
-                                <div key={z.id} title={z.name} style={{
-                                    flexShrink: 0,
-                                    background: 'rgba(15,23,42,0.85)',
-                                    backdropFilter: 'blur(8px)',
-                                    WebkitBackdropFilter: 'blur(8px)',
-                                    borderRadius: 8,
-                                    padding: '5px 11px',
-                                    border: '1px solid rgba(255,255,255,0.10)',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: 3,
-                                    cursor: 'pointer',
-                                    minWidth: 110,
-                                    maxWidth: 160,
-                                    fontFamily: 'system-ui,sans-serif',
-                                    transition: 'border-color .15s, background .15s',
-                                }}
-                                    onMouseEnter={e => {
-                                        e.currentTarget.style.borderColor = 'rgba(96,165,250,0.5)';
-                                        e.currentTarget.style.background = 'rgba(30,41,59,0.95)';
-                                    }}
-                                    onMouseLeave={e => {
-                                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.10)';
-                                        e.currentTarget.style.background = 'rgba(15,23,42,0.85)';
-                                    }}
-                                >
-                                    <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{z.name}</span>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                        <span style={{ fontSize: 12, fontWeight: 700, color: '#e2e8f0' }}>{z.total}</span>
-                                        <span style={{ fontSize: 11, color: '#4ade80', fontWeight: 700 }}>● {z.online}</span>
-                                        <span style={{ fontSize: 11, color: '#f87171', fontWeight: 700 }}>● {z.offline}</span>
-                                    </div>
-                                    <div style={{ height: 2.5, borderRadius: 2, background: 'rgba(255,255,255,0.07)', overflow: 'hidden', position: 'relative' }}>
-                                        <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${onlinePct}%`, background: 'linear-gradient(90deg,#166534,#4ade80)', borderRadius: 2 }} />
-                                        <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${onlinePct}%`, right: 0, background: 'rgba(239,68,68,0.42)', borderRadius: '0 2px 2px 0' }} />
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
-
-                {/* District/device level: summary card — ẩn trên mobile */}
-                {(level === 'district' || level === 'device') && selectedProvince && !isMobile && (() => {
-                    // Ở device level + có quận được chọn → hiện stats quận đó
-                    const activeZone = level === 'device' && selectedDistrict
-                        ? zoneStats.find(z => z.id === selectedDistrict.properties?.ma_huyen)
-                        : null;
-
-                    // Ở district level hoặc chưa chọn quận → tổng tỉnh
-                    const total    = activeZone ? activeZone.total   : zoneStats.reduce((s, z) => s + z.total, 0);
-                    const online   = activeZone ? activeZone.online  : zoneStats.reduce((s, z) => s + z.online, 0);
-                    const offline  = activeZone ? activeZone.offline : zoneStats.reduce((s, z) => s + z.offline, 0);
-                    const onlinePct = total > 0 ? (online / total) * 100 : 0;
-
-                    return (
-                        <div style={{
-                            flexShrink: 0,
-                            background: 'rgba(15,23,42,0.88)',
-                            backdropFilter: 'blur(8px)',
-                            WebkitBackdropFilter: 'blur(8px)',
-                            borderRadius: 10,
-                            padding: '7px 14px',
-                            border: '1px solid rgba(96,165,250,0.25)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 12,
-                            fontFamily: 'system-ui,sans-serif',
-                            pointerEvents: 'auto',
-                        }}>
-                            {/* Path: Tỉnh > Quận (nếu có quận được chọn) */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                {activeZone ? (
-                                    /* Device level — hiện tỉnh > quận */
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                                        <span style={{ fontSize: 10, color: '#60a5fa', fontWeight: 600 }}>
-                                            {selectedProvince.full_name}
-                                        </span>
-                                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2.5">
-                                            <polyline points="9 18 15 12 9 6"/>
-                                        </svg>
-                                        <span style={{ fontSize: 10, color: '#e2e8f0', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.3px' }}>
-                                            {activeZone.name}
-                                        </span>
-                                    </div>
-                                ) : (
-                                    /* District level — hiện tổng tỉnh */
-                                    <>
-                                        <span style={{ fontSize: 10, color: '#60a5fa', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                                            {selectedProvince.full_name}
-                                        </span>
-                                        <span style={{ fontSize: 10, color: '#475569', fontWeight: 500 }}>
-                                            {zoneStats.length} quận/huyện có thiết bị
-                                        </span>
-                                    </>
-                                )}
-                            </div>
-
-                            {/* Divider */}
-                            <div style={{ width: 1, height: 28, background: 'rgba(255,255,255,0.1)' }} />
-
-                            {/* Stats */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <span style={{ fontSize: 13, fontWeight: 800, color: '#e2e8f0' }}>{total}</span>
-                                <span style={{ fontSize: 12, color: '#4ade80', fontWeight: 700 }}>● {online} online</span>
-                                <span style={{ fontSize: 12, color: '#f87171', fontWeight: 700 }}>● {offline} offline</span>
-                            </div>
-
-                            {/* Progress bar */}
-                            <div style={{ width: 80, height: 4, borderRadius: 3, background: 'rgba(255,255,255,0.07)', overflow: 'hidden', position: 'relative', flexShrink: 0 }}>
-                                <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${onlinePct}%`, background: 'linear-gradient(90deg,#166534,#4ade80)', borderRadius: 3 }} />
-                                <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${onlinePct}%`, right: 0, background: 'rgba(239,68,68,0.42)', borderRadius: '0 3px 3px 0' }} />
-                            </div>
-                        </div>
-                    );
-                })()}
-            </div>
-
-            {/* Hint pills — ẩn trên mobile */}
-            {level === 'province' && !loading && devices.length > 0 && !isMobile && (
-                <div
-                    style={{
-                        position: 'absolute',
-                        bottom: 58,
-                        right: 14,
-                        zIndex: 1000,
-                        background: 'rgba(22,119,255,0.88)',
-                        backdropFilter: 'blur(6px)',
-                        color: '#fff',
-                        borderRadius: 8,
-                        padding: '5px 11px',
-                        fontSize: 11,
-                        fontFamily: 'system-ui,sans-serif',
-                        fontWeight: 500,
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.22)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 5,
-                    }}
-                >
-                    <IconInfo /> Click vào cụm để xem quận/huyện
-                </div>
-            )}
-            {level === 'district' && (
-                <div
-                    style={{
-                        position: 'absolute',
-                        bottom: 58,
-                        right: 14,
-                        zIndex: 1000,
-                        background: 'rgba(124,58,237,0.88)',
-                        backdropFilter: 'blur(6px)',
-                        color: '#fff',
-                        borderRadius: 8,
-                        padding: '5px 11px',
-                        fontSize: 11,
-                        fontFamily: 'system-ui,sans-serif',
-                        fontWeight: 500,
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.22)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 5,
-                    }}
-                >
-                    <IconInfo /> Click vào cụm để xem từng thiết bị
-                </div>
-            )}
-
-            {/* Loading overlay */}
-            {(loading || loadingDistricts) && (
-                <div
-                    style={{
-                        position: 'absolute',
-                        inset: 0,
-                        background: 'rgba(255,255,255,0.65)',
-                        backdropFilter: 'blur(3px)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        zIndex: 2000,
-                        borderRadius: 11,
-                    }}
-                >
-                    <div
-                        style={{
-                            background: '#fff',
-                            borderRadius: 12,
-                            padding: '16px 28px',
-                            boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
-                            fontSize: 13,
-                            fontFamily: 'system-ui,sans-serif',
-                            color: '#374151',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 10,
-                        }}
-                    >
-                        <style>{`
-                            @keyframes vn-spin { to { transform: rotate(360deg); } }
-                            .vn-spinner { width:18px;height:18px;border:2px solid #e5e7eb;border-top-color:#1677ff;border-radius:50%;animation:vn-spin .7s linear infinite; }
-                        `}</style>
-                        <div className="vn-spinner" />
-                        Đang tải dữ liệu...
-                    </div>
-                </div>
-            )}
+            <ZoneStatsPanel
+                zones={zoneStats} level={level}
+                provinceName={selectedProvince?.full_name}
+                selectedId={selectedDistrict?.id}
+                onClickZone={(z) => {
+                    if (level === 'province') {
+                        const prov = provinces.find((p) => p.id === z.id);
+                        if (prov) handleSelectProvince(prov, [parseFloat(prov.latitude), parseFloat(prov.longitude)]);
+                    } else if (level === 'district') {
+                        const group = districtGroups[z.id];
+                        const dist = group?.districtInfo || group?.district;
+                        if (dist && group?.items?.length) {
+                            let lat = dist.centroid?.latitude ?? group.items[0]?.cruise?.lat;
+                            let lon = dist.centroid?.longitude ?? group.items[0]?.cruise?.lon;
+                            if (lat != null && lon != null) handleSelectDistrict(dist, [lat, lon]);
+                        }
+                    }
+                }}
+                onGoRoot={handleGoRoot}
+                onGoProvince={handleBackToProvince}
+                isMobile={isMobile}
+            />
 
             {popupDevice && (
-                <DevicePopup device={popupDevice} cruise={popupCruise} onClose={() => setPopupDevice(null)} />
+                <DevicePopup
+                    device={popupDevice}
+                    cruise={popupCruise}
+                    onClose={() => { setPopupDevice(null); setPopupCruise(null); }}
+                />
             )}
         </div>
     );
-};
-
-export default VietnamMapDrillDown;
-
+}

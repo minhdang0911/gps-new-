@@ -10,9 +10,10 @@ import {
     MAP4D_KEY,
     getCurrentGoongKey,
     moveToNextGoongKey,
+    markGoongKeyDead,
 } from './keys';
 
-const PROVIDER_TIMEOUT_MS = 3500;
+const PROVIDER_TIMEOUT_MS = 1500;
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = PROVIDER_TIMEOUT_MS) {
     if (typeof AbortController === 'undefined') {
@@ -87,6 +88,9 @@ export const callGoongWithRotation = async (lat, lon, lang = 'vi') => {
             const res = await fetchWithTimeout(url);
 
             if (!res.ok) {
+                if (res.status === 401 || res.status === 403) {
+                    markGoongKeyDead(key);
+                }
                 if (shouldRotateGoongStatus(res.status)) {
                     moveToNextGoongKey();
                     continue;
@@ -95,7 +99,12 @@ export const callGoongWithRotation = async (lat, lon, lang = 'vi') => {
             }
 
             const data = await res.json();
-            if (data?.status === 'OVER_QUERY_LIMIT' || data?.status === 'REQUEST_DENIED') {
+            if (data?.status === 'REQUEST_DENIED') {
+                markGoongKeyDead(key);
+                moveToNextGoongKey();
+                continue;
+            }
+            if (data?.status === 'OVER_QUERY_LIMIT') {
                 moveToNextGoongKey();
                 continue;
             }

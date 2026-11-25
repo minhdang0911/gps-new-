@@ -6,7 +6,7 @@ import { checkGeocodeRateLimit, isAllowedGeocodeOrigin } from '../../../lib/serv
 
 export const runtime = 'nodejs';
 
-const MAX_BATCH_ITEMS = 30;
+const MAX_BATCH_ITEMS = 50;
 
 export async function POST(req) {
     if (!isAllowedGeocodeOrigin(req)) {

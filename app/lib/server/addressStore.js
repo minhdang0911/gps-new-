@@ -241,6 +241,14 @@ export async function resolveBatchServerAddresses(items = [], { resolveMissing =
                 });
                 if (nearbyHit?.address) {
                     results[entry.key] = nearbyHit;
+                    // Auto-promote: lưu lại exact key vào MongoDB để lần sau chỉ cần find $in là trúng 0ms
+                    void saveAddressToMongo(collection, {
+                        latNum: entry.latNum,
+                        lonNum: entry.lonNum,
+                        lang: entry.lang,
+                        address: nearbyHit.address,
+                        deprecatedAddress: nearbyHit.deprecatedAddress || '',
+                    });
                     return;
                 }
 

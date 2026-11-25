@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getDevices } from '../../lib/api/devices';
+import { searchAndRankRecords } from '../../lib/search/bitParallelSearch';
 
 export function useDeviceCommandBar({
     isEn,
@@ -106,7 +107,15 @@ export function useDeviceCommandBar({
                     limit: 20, // 🔥 chỉ lấy 20 kết quả
                 });
 
-                setDeviceHits(res?.devices || []);
+                const rawHits = res?.devices || [];
+                // IKY-BitParallelEngine: Myers' 64-bit bit-vector fuzzy search & ranking
+                const rankedHits = searchAndRankRecords(rawHits, cmdQuery, [
+                    'imei',
+                    'license_plate',
+                    'driver',
+                    'phone_number',
+                ]);
+                setDeviceHits(rankedHits.length > 0 ? rankedHits : rawHits);
             } catch (err) {
                 console.error('Command search error:', err);
                 setDeviceHits([]);

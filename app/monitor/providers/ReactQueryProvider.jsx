@@ -20,7 +20,6 @@ function makeQueryClient() {
 }
 
 export default function ReactQueryProvider({ children }) {
-    // ✅ In-memory QueryClient: Cực nhanh, 0ms lag, không block Main Thread bằng synchronous localStorage
     const [queryClient] = useState(() => makeQueryClient());
 
     return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;

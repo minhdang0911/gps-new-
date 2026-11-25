@@ -1,285 +1,55 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo, useCallback, useDeferredValue } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import './MonitorPage.css';
 import dynamic from 'next/dynamic';
-
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-
-import { getDevices, getDeviceInfo } from './lib/api/devices';
-import { getCachedDevices, setCachedDevices } from './util/deviceCache';
-import { getBatteryStatusByImei } from './lib/api/batteryStatus';
-import { getLastCruise } from './lib/api/cruise';
-import { MAX_DEVICE_LIMIT } from './lib/constants';
+import { useRouter } from 'next/navigation';
 import { useIsEn } from './hooks/useLang';
 import { useAuthStore } from './stores/authStore';
+import { toLocalDateTimeInput } from './util/time';
+import { isMqttAlive } from './monitor/util/monitorHelpers';
 
-import markerIconStop from './assets/marker-red.webp';
-import markerRun from './assets/marker-run.webp';
-import markerRun50 from './assets/marker-run50.webp';
-import markerRun80 from './assets/marker-run80.webp';
+import { useMonitorDevices } from './monitor/hooks/useMonitorDevices';
+import { useMonitorLeafletMap } from './monitor/hooks/useMonitorLeafletMap';
+import { useMonitorTelemetry } from './monitor/hooks/useMonitorTelemetry';
+import { useMonitorControl } from './monitor/hooks/useMonitorControl';
 
-import { useRouter, usePathname } from 'next/navigation';
-import { message, Modal, Skeleton } from 'antd';
-import { CheckCircleFilled, LockFilled } from '@ant-design/icons';
-import { reverseGeocodeAddress, getCachedAddressSync, isValidGeocodeCoord } from './lib/address/reverseGeocode';
-import { parseTimToDate, toLocalDateTimeInput, formatFixedDateTime } from './util/time';
-import { getDistanceMeters } from './util/geo';
-import { toNumberOrNull } from './util/number';
-import { isDatBikeDevice, getDatBikeStateInfo } from './util/cruiseUtils';
+import MonitorSidebar from './monitor/components/MonitorSidebar';
+import MonitorPopup from './monitor/components/MonitorPopup';
 
-// ✅ Lazy-load MqttConnector — chỉ cần khi có IMEI, không cần ở initial render
+import vi from './locales/vi.json';
+import en from './locales/en.json';
+
+const locales = { vi, en };
+
 const MqttConnector = dynamic(() => import('./components/MqttConnector'), {
     ssr: false,
     loading: () => null,
 });
 
-
-// i18n
-import vi from './locales/vi.json';
-import en from './locales/en.json';
-
-const locales = { vi, en };
-const { confirm } = Modal;
-
-/** =========================
- *  Persist SOC (pin list bên trái)
- *  ========================= */
-const SOC_BY_IMEI_KEY = 'iky_monitor_soc_by_imei_v2'; // v2: có TTL
-const SOC_TTL_MS = 24 * 60 * 60 * 1000; // 24 giờ
-
-/**
- * Cache format v2: { [imei]: { soc: number, ts: number } }
- * - ts: timestamp khi lưu
- * - entries > 24h sẽ bị bỏ qua khi load
- */
-const loadSocCache = () => {
-    if (typeof window === 'undefined') return {};
-    try {
-        const raw = localStorage.getItem(SOC_BY_IMEI_KEY);
-        const obj = raw ? JSON.parse(raw) : {};
-        if (!obj || typeof obj !== 'object') return {};
-
-        const now = Date.now();
-        const result = {};
-        for (const [imei, entry] of Object.entries(obj)) {
-            // Hỗ trợ cả format cũ (number trực tiếp) và format mới ({soc, ts})
-            if (typeof entry === 'number') {
-                result[imei] = entry; // format cũ — giữ lại, không có TTL
-            } else if (entry && typeof entry === 'object' && entry.ts) {
-                if (now - entry.ts < SOC_TTL_MS) {
-                    result[imei] = entry.soc;
-                }
-                // entries quá 24h bị drop (không thêm vào result)
-            }
-        }
-        return result;
-    } catch {
-        return {};
-    }
-};
-
-const saveSocCache = (socMap) => {
-    if (typeof window === 'undefined') return;
-    try {
-        const now = Date.now();
-        // Lưu dạng { [imei]: { soc, ts } }
-        const stored = {};
-        for (const [imei, soc] of Object.entries(socMap)) {
-            stored[imei] = { soc, ts: now };
-        }
-        localStorage.setItem(SOC_BY_IMEI_KEY, JSON.stringify(stored));
-    } catch {}
-};
-
-// ✅ driver name helper (lấy từ API field `driver`)
-const getDriverName = (d) => {
-    const raw = d?.driver;
-    const s = typeof raw === 'string' ? raw.trim() : '';
-    return s || '';
-};
-
-/** =========================
- *  Battery UI
- *  ========================= */
-const clampSoc = (soc) => {
-    const n = toNumberOrNull(soc);
-    if (n == null) return null;
-    return Math.max(0, Math.min(100, Math.round(n)));
-};
-
-const BatteryBadge = React.memo(({ soc, showText = true, title, compact = true }) => {
-    const s = clampSoc(soc);
-    const level = s == null ? 'na' : s < 20 ? 'low' : s < 40 ? 'mid' : 'ok';
-
-    return (
-        <div className={`iky-battery-badge ${compact ? 'iky-battery-badge--compact' : ''}`} title={title || ''}>
-            <div className={`iky-battery ${level}`}>
-                <div className="iky-battery__fill" style={{ width: s == null ? '0%' : `${s}%` }} />
-            </div>
-            {showText && <span className={`iky-battery__text ${level}`}>{s == null ? '--' : `${s}%`}</span>}
-        </div>
-    );
-});
-BatteryBadge.displayName = 'BatteryBadge';
-
-/** =========================
- *  ✅ DeviceListItem (React.memo để tránh re-render cả danh sách khi telemetry/map cập nhật)
- *  ========================= */
-const DeviceListItem = React.memo(({ d, idx, isActive, socForItem, isEn, unknownPlateText, phoneLabel, onSelectDevice }) => {
-    const driverName = getDriverName(d);
-    const NA_TEXT = isEn ? 'N/A' : 'Chưa rõ';
-
-    return (
-        <div
-            className={'iky-monitor__device-item' + (isActive ? ' iky-monitor__device-item--active' : '')}
-            onClick={() => onSelectDevice(d)}
-        >
-            <div className="iky-monitor__device-row">
-                <span className="iky-monitor__stt-badge">{idx + 1}</span>
-
-                <div className="iky-monitor__device-main">
-                    <div className="iky-monitor__plate-row">
-                        <div
-                            className="plate"
-                            title={isEn ? 'Click to copy plate' : 'Click để copy biển số'}
-                            style={{ cursor: 'pointer' }}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                const txt = d.license_plate || '';
-                                if (!txt) return;
-                                navigator.clipboard.writeText(txt).then(() => {
-                                    message.success({ content: isEn ? `Copied: ${txt}` : `Đã copy: ${txt}`, duration: 1.5 });
-                                }).catch(() => {
-                                    message.error(isEn ? 'Copy failed' : 'Copy thất bại');
-                                });
-                            }}
-                        >
-                            {d.license_plate || unknownPlateText}
-                        </div>
-
-                        <BatteryBadge
-                            soc={socForItem}
-                            showText
-                            compact
-                            title={
-                                socForItem == null
-                                    ? isEn
-                                        ? 'No battery data yet'
-                                        : 'Chưa có dữ liệu pin'
-                                    : isEn
-                                      ? `Battery: ${socForItem}%`
-                                      : `Pin: ${socForItem}%`
-                            }
-                        />
-                    </div>
-
-                    <div className="iky-monitor__meta" style={{ marginTop: 2 }}>
-                        <span
-                            className="imei"
-                            title={isEn ? 'Click to copy IMEI' : 'Click để copy IMEI'}
-                            style={{ cursor: 'pointer' }}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                navigator.clipboard.writeText(d.imei || '').then(() => {
-                                    message.success({ content: isEn ? `Copied IMEI: ${d.imei}` : `Đã copy IMEI: ${d.imei}`, duration: 1.5 });
-                                }).catch(() => {
-                                    message.error(isEn ? 'Copy failed' : 'Copy thất bại');
-                                });
-                            }}
-                        >IMEI: {d.imei}</span>
-                        <span className="dot">•</span>
-                        <span className="phone">
-                            {phoneLabel}{' '}
-                            {d.phone_number || 'Chưa gán'}
-                        </span>
-                        <span className="dot">•</span>
-                        <span className="driver">
-                            {isEn ? 'Driver' : 'Lái xe'}:{' '}
-                            {driverName || NA_TEXT}
-                        </span>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-});
-DeviceListItem.displayName = 'DeviceListItem';
-
 const MonitorPage = () => {
     const router = useRouter();
-    const pathname = usePathname() || '/';
-    const queryClient = useQueryClient();
+    const isEn = useIsEn();
+    const t = isEn ? locales.en.monitor : locales.vi.monitor;
 
-    // ===== token (client only) =====
     const token = useMemo(() => {
         if (typeof window === 'undefined') return '';
         return localStorage.getItem('accessToken') || '';
     }, []);
 
-    // ----- LANG & USER ROLE -----
-    const isEn = useIsEn();
-    const [deprecatedAddress, setDeprecatedAddress] = useState('');
     const user = useAuthStore((s) => s.user);
     const [localRole, setLocalRole] = useState('');
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
-        const r = localStorage.getItem('role') || '';
-        setLocalRole(r);
+        setLocalRole(localStorage.getItem('role') || '');
     }, []);
 
     const role = user?.position || user?.role || localRole;
-
     const lastMqttAtRef = useRef(0);
-    const mqttSilenceTimerRef = useRef(null);
-    const MQTT_SILENCE_MS = 60_000;
 
-    // ✅ MQTT liveness
-    const isMqttAlive = (lastMqttAtRef) => {
-        const last = lastMqttAtRef.current;
-        return !!last && Date.now() - last < MQTT_SILENCE_MS;
-    };
-
-    // Rule:
-    // - MQTT alive  -> chỉ đọc liveTelemetry
-    // - MQTT dead   -> fallback lastCruise -> batteryStatus (cho các field chung)
-    const pickField = (field, { liveTelemetry, lastCruise, batteryStatus }, lastMqttAtRef) => {
-        if (isMqttAlive(lastMqttAtRef)) return liveTelemetry?.[field];
-        return lastCruise?.[field] ?? batteryStatus?.[field];
-    };
-
-    // ✅ ACC: chỉ MQTT hoặc lastCruise (KHÔNG batteryStatus)
-    const pickAcc = ({ liveTelemetry, lastCruise }, lastMqttAtRef) => {
-        if (isMqttAlive(lastMqttAtRef)) return liveTelemetry?.acc;
-        return lastCruise?.acc;
-    };
-
-    // ✅ SPEED: chỉ MQTT hoặc lastCruise (ưu tiên vlp rồi spd rồi vgp) - KHÔNG batteryStatus
-    const pickSpeed = ({ liveTelemetry, lastCruise }, lastMqttAtRef) => {
-        if (isMqttAlive(lastMqttAtRef)) {
-            return liveTelemetry?.vlp ?? liveTelemetry?.spd ?? liveTelemetry?.vgp;
-        }
-        return lastCruise?.vlp ?? lastCruise?.spd ?? lastCruise?.vgp;
-    };
-
-    // ✅ DAT BIKE STATE: đọc từ liveTelemetry hoặc lastCruise (ưu tiên onl theo spec IKY rồi ste / state / sta)
-    const pickBikeState = ({ liveTelemetry, lastCruise }, lastMqttAtRef) => {
-        if (isMqttAlive(lastMqttAtRef)) {
-            return liveTelemetry?.onl ?? liveTelemetry?.ste ?? liveTelemetry?.state ?? liveTelemetry?.sta;
-        }
-        return lastCruise?.onl ?? lastCruise?.ste ?? lastCruise?.state ?? lastCruise?.sta;
-    };
-
-
-    const t = isEn ? locales.en.monitor : locales.vi.monitor;
-    const NA_TEXT = isEn ? 'N/A' : 'Chưa rõ';
-
-    // ----- UI STATE -----
     const [leftTab, setLeftTab] = useState('monitor');
-    const [showPopup, setShowPopup] = useState(false);
     const [detailTab, setDetailTab] = useState('status');
-    const [LMap, setLMap] = useState(null);
 
     const [historyDeviceId, setHistoryDeviceId] = useState('');
     const [historyStart, setHistoryStart] = useState('');
@@ -287,1166 +57,74 @@ const MonitorPage = () => {
     const [historyMessage, setHistoryMessage] = useState('');
     const [historyMessageType, setHistoryMessageType] = useState('');
 
-    const [searchText, setSearchText] = useState('');
-    const deferredSearchText = useDeferredValue(searchText);
-    const [statusFilter, setStatusFilter] = useState('all');
-    const [selectedDevice, setSelectedDevice] = useState(null);
-    const selectedDeviceRef = useRef(selectedDevice);
+    const openPopupRef = useRef(null);
+    const resetTelemetryRef = useRef(null);
+
+    const devicesHook = useMonitorDevices({
+        token,
+        onOpenPopup: () => openPopupRef.current?.(),
+        onDeviceSelectReset: (device) => {
+            resetTelemetryRef.current?.(device);
+        },
+    });
+
+    const mapHook = useMonitorLeafletMap({ lat: 10.7542506, lng: 106.6170202 });
+    openPopupRef.current = () => mapHook.setShowPopup(true);
+
     useEffect(() => {
-        selectedDeviceRef.current = selectedDevice;
-    }, [selectedDevice]);
+        if (devicesHook.selectedDevice) {
+            mapHook.setShowPopup(true);
+        }
+    }, [devicesHook.selectedDevice, mapHook.setShowPopup]);
 
-    // giữ state như cũ để UI không phải rewrite sâu
-    const [batteryStatus, setBatteryStatus] = useState(null);
-    const [deviceInfo, setDeviceInfo] = useState(null);
-    const [lastCruise, setLastCruise] = useState(null);
-    const [cruiseError, setCruiseError] = useState(null);
+    const telemetryHook = useMonitorTelemetry({
+        token,
+        selectedDevice: devicesHook.selectedDevice,
+        LMap: mapHook.LMap,
+        mapRef: mapHook.mapRef,
+        markerRef: mapHook.markerRef,
+        updatePopupPosition: mapHook.updatePopupPosition,
+        makeIconRef: mapHook.makeIconRef,
+        isMobileNowRef: mapHook.isMobileNowRef,
+        currentMarkerAssetRef: mapHook.currentMarkerAssetRef,
+        currentHeadingRef: mapHook.currentHeadingRef,
+        isEn,
+        t,
+        lastMqttAtRef,
+    });
 
-    const [lockLoading, setLockLoading] = useState(false);
-    const [lockError, setLockError] = useState(null);
-    const [pendingAction, setPendingAction] = useState(null); // 'lock' | 'unlock'
-
-    const [address, setAddress] = useState('');
-    const [loadingAddress, setLoadingAddress] = useState(false);
-    const [addressError, setAddressError] = useState(null);
-
-    const [lat] = useState(10.7542506);
-    const [lng] = useState(106.6170202);
-
-    const [liveTelemetry, setLiveTelemetry] = useState(null);
-    const mqttClientRef = useRef(null);
-
-    // ✅ RAF ref: throttle setMarkerScreenPos để tránh re-render toàn page khi kéo map
-    const popupRafRef = useRef(null);
-
-    // ✅ Debounce timer cho localStorage write (saveSocCache)
-    const socWriteTimerRef = useRef(null);
-
-    // ✅ SOC list (persist)
-    const [socByImei, setSocByImei] = useState(() => loadSocCache());
-
-    const upsertSoc = (imei, socVal) => {
-        if (!imei) return;
-        const next = clampSoc(socVal);
-        if (next == null) return;
-
-        setSocByImei((prev) => {
-            if (prev[imei] === next) return prev;
-            const merged = { ...prev, [imei]: next };
-            // ✅ Debounce localStorage write 5s — tránh ghi disk mỗi MQTT packet
-            clearTimeout(socWriteTimerRef.current);
-            socWriteTimerRef.current = setTimeout(() => saveSocCache(merged), 5000);
-            return merged;
-        });
+    resetTelemetryRef.current = (device) => {
+        telemetryHook.resetTelemetry(device);
+        mapHook.setShowPopup(true);
     };
 
-    // ⭐ anti-spam gọi last-cruise khi MQTT thiếu gps
-    const lastCruiseTimeoutRef = useRef(null);
-    const lastCruiseInFlightRef = useRef(false);
-    const lastCruiseCallAtRef = useRef(0);
-    const LAST_CRUISE_DEBOUNCE_MS = 800;
-    const LAST_CRUISE_MIN_INTERVAL_MS = 10_000;
-
-    useEffect(() => {
-        const loadLeaflet = async () => {
-            const L = await import('leaflet');
-            await import('leaflet/dist/leaflet.css');
-            setLMap(L);
-        };
-        loadLeaflet();
-    }, []);
-
-    const mapRef = useRef(null);
-    const markerRef = useRef(null);
-    const popupWrapperRef = useRef(null);
-
-    // ✅ Cập nhật vị trí popup trực tiếp vào DOM style, không gọi setState để tránh re-render toàn bộ MonitorPage khi kéo map (60 FPS)
-    const updatePopupPosition = useCallback((immediate = false) => {
-        if (!markerRef.current || !mapRef.current) return;
-        const doUpdate = () => {
-            const map = mapRef.current;
-            const marker = markerRef.current;
-            const popup = popupWrapperRef.current;
-
-            if (popup && marker && map && map._loaded && !map._removed && map._mapPane) {
-                try {
-                    const latlng = marker.getLatLng();
-                    if (!latlng || latlng.lat == null || latlng.lng == null) return;
-                    const point = map.latLngToContainerPoint(latlng);
-                    if (point && Number.isFinite(point.x) && Number.isFinite(point.y)) {
-                        popup.style.left = `${point.x}px`;
-                        popup.style.top = `${point.y}px`;
-                    }
-                } catch {
-                    // Tránh lỗi _leaflet_pos khi Leaflet mapPane đang render
-                }
-            }
-        };
-
-        if (immediate) {
-            if (popupRafRef.current) cancelAnimationFrame(popupRafRef.current);
-            popupRafRef.current = null;
-            doUpdate();
-            return;
-        }
-
-        if (popupRafRef.current) cancelAnimationFrame(popupRafRef.current);
-        popupRafRef.current = requestAnimationFrame(() => {
-            doUpdate();
-            popupRafRef.current = null;
-        });
-    }, []);
-
-    // Cập nhật vị trí popup ngay khi popup bật lên
-    useEffect(() => {
-        if (showPopup) {
-            updatePopupPosition(true);
-        }
-    }, [showPopup, updatePopupPosition]);
-
-    // giữ makeIcon + state mobile + asset hiện tại để resize / update icon
-    const makeIconRef = useRef(null);
-    const isMobileNowRef = useRef(() => false);
-    const currentMarkerAssetRef = useRef(markerIconStop);
-
-    // lưu tọa độ cuối cùng đã dùng để gọi API địa chỉ
-    const lastCoordsRef = useRef({ lat: null, lon: null });
-    const lastResolvedAddrRef = useRef({
-        lat: null,
-        lon: null,
-        lang: null,
-        address: '',
-        deprecatedAddress: '',
-    });
-    const addressReqSeqRef = useRef(0);
-
-    useEffect(() => {
-        return () => {
-            if (lastCruiseTimeoutRef.current) {
-                clearTimeout(lastCruiseTimeoutRef.current);
-                lastCruiseTimeoutRef.current = null;
-            }
-        };
-    }, []);
-
-    // ===== Marker icon selector (4 icons) =====
-    const getMarkerAssetByStatus = ({ accValNum, usedSpeed, datBikeState }) => {
-        if (datBikeState) {
-            if (!datBikeState.isEngineOn || !datBikeState.isMoving) return markerIconStop;
-            const spd = Number(usedSpeed ?? 0);
-            if (!Number.isFinite(spd) || spd <= 0) return markerIconStop;
-            if (spd >= 80) return markerRun80;
-            if (spd >= 50) return markerRun50;
-            return markerRun;
-        }
-
-        if (accValNum === 1) return markerIconStop;
-
-        const spd = Number(usedSpeed ?? 0);
-        if (!Number.isFinite(spd) || spd <= 0) return markerIconStop;
-
-        if (spd >= 80) return markerRun80;
-        if (spd >= 50) return markerRun50;
-        return markerRun;
-    };
-
-    // ✅ MAP INIT (chỉ 1 marker)
-    useEffect(() => {
-        if (!LMap) return;
-
-        const map = LMap.map('iky-map', {
-            center: [lat, lng],
-            zoom: 16,
-            zoomControl: false,
-            attributionControl: false,
-            dragging: true,
-            scrollWheelZoom: true,
-        });
-
-        mapRef.current = map;
-
-        LMap.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
-            maxZoom: 20,
-            subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
-        }).addTo(map);
-
-        // Đảm bảo map tính toán lại kích thước sau khi DOM ổn định (tránh lỗi bản đồ xám ở local/flexbox)
-        setTimeout(() => {
-            map.invalidateSize();
-        }, 100);
-
-        const BASE_ANCHOR = [18, 36];
-        const MOBILE_ANCHOR = [18, -15];
-
-        const isMobileNow = () =>
-            typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
-
-        isMobileNowRef.current = isMobileNow;
-
-        const makeIcon = (asset, isMobile) =>
-            LMap.icon({
-                iconUrl: asset?.src || asset,
-                iconAnchor: isMobile ? MOBILE_ANCHOR : BASE_ANCHOR,
-            });
-
-        makeIconRef.current = makeIcon;
-
-        currentMarkerAssetRef.current = markerIconStop;
-
-        const marker = LMap.marker([lat, lng], { icon: makeIcon(markerIconStop, isMobileNow()) }).addTo(map);
-        markerRef.current = marker;
-
-        updatePopupPosition(true);
-
-        marker.on('click', () => {
-            setShowPopup(true);
-            updatePopupPosition(true);
-        });
-        map.on('click', () => setShowPopup(false));
-        map.on('move zoom', () => updatePopupPosition(false));
-
-        map.on('zoomend', () => {
-            if (markerRef.current) {
-                const pos = markerRef.current.getLatLng();
-                map.setView(pos, map.getZoom(), { animate: false });
-                updatePopupPosition(true);
-            }
-        });
-
-        let lastIsMobile = isMobileNow();
-
-        const handleResize = () => {
-            map.invalidateSize();
-            updatePopupPosition(true);
-
-            const nowIsMobile = isMobileNow();
-            if (nowIsMobile !== lastIsMobile) {
-                lastIsMobile = nowIsMobile;
-
-                const asset = currentMarkerAssetRef.current || markerIconStop;
-                markerRef.current?.setIcon(makeIcon(asset, nowIsMobile));
-            }
-        };
-
-        window.addEventListener('resize', handleResize);
-
-        return () => {
-            // ✅ Cancel RAF pending khi unmount
-            if (popupRafRef.current) {
-                cancelAnimationFrame(popupRafRef.current);
-                popupRafRef.current = null;
-            }
-            window.removeEventListener('resize', handleResize);
-            map.off('move zoom');
-            map.off('zoomend');
-            map.remove();
-        };
-    }, [LMap, lat, lng, updatePopupPosition]);
-
-    // tự update icon theo trạng thái (stop/run/50/80)
-    useEffect(() => {
-        if (!LMap) return;
-        if (!markerRef.current) return;
-        if (!makeIconRef.current) return;
-
-        const accValNum = toNumberOrNull(pickAcc({ liveTelemetry, lastCruise }, lastMqttAtRef));
-        const usedSpeed = toNumberOrNull(pickSpeed({ liveTelemetry, lastCruise }, lastMqttAtRef));
-
-        const info = deviceInfo || selectedDevice;
-        const isDatBike = isDatBikeDevice(info);
-        const bikeStateVal = pickBikeState({ liveTelemetry, lastCruise }, lastMqttAtRef);
-        const datBikeState = (isDatBike || bikeStateVal != null) ? getDatBikeStateInfo(bikeStateVal, isEn) : null;
-
-        const nextAsset = getMarkerAssetByStatus({ accValNum, usedSpeed, datBikeState });
-
-        const current = currentMarkerAssetRef.current;
-        const changed = (current?.src || current) !== (nextAsset?.src || nextAsset);
-
-        if (changed) {
-            currentMarkerAssetRef.current = nextAsset;
-            const isMobile = isMobileNowRef.current ? isMobileNowRef.current() : false;
-            markerRef.current.setIcon(makeIconRef.current(nextAsset, isMobile));
-        }
-    }, [LMap, liveTelemetry, lastCruise, selectedDevice?.imei]);
-
-    // =========================
-    // ✅ TANSTACK QUERIES
-    // =========================
-    const devicesQuery = useQuery({
-        queryKey: ['monitor', 'devices', token],
-        enabled: !!token,
-        queryFn: async () => {
-            const data = await getDevices({ page: 1, limit: MAX_DEVICE_LIMIT });
-            if (data?.devices?.length) {
-                setCachedDevices(data.devices);
-            }
-            return data;
-        },
-        initialData: () => {
-            const cached = getCachedDevices();
-            if (cached && cached.length > 0) {
-                return { devices: cached };
-            }
-            return undefined;
-        },
-
-        // ✅ Cache 3 phút — tránh refetch liên tục gây flash UI và đơ CPU máy yếu
-        staleTime: 3 * 60_000,
-        gcTime: 10 * 60_000,
-
-        // ✅ Dùng cache tức thì khi chuyển tab/trang, không refetch liên tục
-        refetchOnMount: false,
-        refetchOnWindowFocus: false,
-        refetchOnReconnect: false,
+    const controlHook = useMonitorControl({
+        selectedDevice: devicesHook.selectedDevice,
+        liveTelemetry: telemetryHook.liveTelemetry,
+        lastCruise: telemetryHook.lastCruise,
+        batteryStatus: telemetryHook.batteryStatus,
+        lastMqttAtRef,
+        t,
     });
 
-    const deviceList = devicesQuery.data?.devices || [];
-    const loadingDevices = devicesQuery.isLoading && deviceList.length === 0;
-
-    // auto select device: ưu tiên từ URL param (?imei=... hoặc ?deviceId=...) hoặc localStorage, fallback xe đầu tiên
-    useEffect(() => {
-        if (!deviceList.length) return;
-
-        let preselectImei = null;
-        let preselectId = null;
-
-        if (typeof window !== 'undefined') {
-            try {
-                const params = new URLSearchParams(window.location.search);
-                preselectImei = params.get('imei') || params.get('dev');
-                preselectId = params.get('deviceId') || params.get('id');
-
-                if (!preselectImei && !preselectId) {
-                    preselectImei = localStorage.getItem('iky_preselect_imei');
-                    preselectId = localStorage.getItem('iky_preselect_device_id');
-                }
-
-                localStorage.removeItem('iky_preselect_imei');
-                localStorage.removeItem('iky_preselect_device_id');
-            } catch (_) {}
-        }
-
-        let target = null;
-        if (preselectImei) {
-            target = deviceList.find((d) => d.imei === preselectImei);
-        }
-        if (!target && preselectId) {
-            target = deviceList.find((d) => d._id === preselectId);
-        }
-        if (!target && !selectedDevice) {
-            target = deviceList[0];
-        }
-
-        if (target) {
-            setSelectedDevice(target);
-            setShowPopup(true);
-            if (preselectImei || preselectId) {
-                setSearchText(target.license_plate || target.imei || '');
-            }
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [deviceList]);
-
-    const batteryQuery = useQuery({
-        queryKey: ['monitor', 'batteryStatus', token, selectedDevice?.imei],
-        enabled: !!token && !!selectedDevice?.imei,
-        queryFn: () => getBatteryStatusByImei(token, selectedDevice.imei),
-    });
-
-    const deviceInfoQuery = useQuery({
-        queryKey: ['monitor', 'deviceInfo', token, selectedDevice?._id],
-        enabled: !!token && !!selectedDevice?._id,
-        queryFn: () => getDeviceInfo(token, selectedDevice._id),
-    });
-
-    const lastCruiseQuery = useQuery({
-        queryKey: ['monitor', 'lastCruise', token, selectedDevice?.imei],
-        enabled: !!token && !!selectedDevice?.imei,
-        queryFn: () => getLastCruise(selectedDevice.imei),
-    });
-
-    // sync query data -> local states (giữ UI logic cũ)
-    useEffect(() => {
-        const bs = batteryQuery.data?.batteryStatus || null;
-        setBatteryStatus(bs);
-
-        if (bs?.soc != null && selectedDevice?.imei) upsertSoc(selectedDevice.imei, bs.soc);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [batteryQuery.data, selectedDevice?.imei]);
-
-    useEffect(() => {
-        setDeviceInfo(deviceInfoQuery.data || null);
-    }, [deviceInfoQuery.data]);
-
-    useEffect(() => {
-        const cruise = lastCruiseQuery.data;
-
-        if (!selectedDevice?.imei) return;
-
-        if (!cruise || cruise?.error) {
-            addressReqSeqRef.current += 1;
-            lastResolvedAddrRef.current = { lat: null, lon: null, lang: null, address: '', deprecatedAddress: '' };
-            setLastCruise(null);
-            setCruiseError(t.error.noTripData);
-            setLoadingAddress(false);
-            setAddress('');
-            setDeprecatedAddress('');
-            setAddressError(null);
-            return;
-        }
-
-        setLastCruise(cruise);
-        setCruiseError(null);
-
-        if (mapRef.current && markerRef.current && cruise.lat && cruise.lon && LMap) {
-            try {
-                const map = mapRef.current;
-                if (map && map._loaded && !map._removed && map._mapPane) {
-                    const newLatLng = LMap.latLng(cruise.lat, cruise.lon);
-                    markerRef.current.setLatLng(newLatLng);
-                    map.setView(newLatLng, 16);
-                    updatePopupPosition(true);
-
-                    lastCoordsRef.current = { lat: cruise.lat, lon: cruise.lon };
-                    fetchAddress(cruise.lat, cruise.lon);
-                }
-            } catch (err) {
-                console.warn('Cruise map view error:', err);
-            }
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [lastCruiseQuery.data, selectedDevice?.imei, LMap, isEn]);
-
-    // history init
     useEffect(() => {
         if (typeof window === 'undefined') return;
-        if (!deviceList.length) return;
+        if (!devicesHook.deviceList.length) return;
 
-        if (!historyDeviceId && deviceList[0]) {
-            setHistoryDeviceId(deviceList[0]._id);
+        if (!historyDeviceId && devicesHook.deviceList[0]) {
+            setHistoryDeviceId(devicesHook.deviceList[0]._id);
         }
 
         if (!historyStart || !historyEnd) {
             const now = new Date();
-
             const start = new Date(now);
             start.setHours(0, 0, 0, 0);
-
             const end = new Date(now);
             end.setHours(23, 59, 0, 0);
-
             setHistoryStart(toLocalDateTimeInput(start));
             setHistoryEnd(toLocalDateTimeInput(end));
         }
-    }, [deviceList, historyDeviceId, historyStart, historyEnd]);
-
-    // FETCH ADDRESS (chặn <20m gọi trùng, đọc sync cache trước, chống race condition)
-    const fetchAddress = async (latVal, lonVal) => {
-        if (!isValidGeocodeCoord(latVal, lonVal)) {
-            addressReqSeqRef.current += 1;
-            setLoadingAddress(false);
-            setAddress('');
-            setDeprecatedAddress('');
-            setAddressError(null);
-            return;
-        }
-
-        const latNum = Number(latVal);
-        const lonNum = Number(lonVal);
-        const lang = isEn ? 'en' : 'vi';
-
-        const prevResolved = lastResolvedAddrRef.current;
-        if (
-            prevResolved.lang === lang &&
-            prevResolved.address &&
-            prevResolved.lat != null &&
-            prevResolved.lon != null
-        ) {
-            const movedDist = getDistanceMeters(prevResolved.lat, prevResolved.lon, latNum, lonNum);
-            if (movedDist != null && movedDist < 20) {
-                setLoadingAddress(false);
-                setAddressError(null);
-                setAddress(prevResolved.address);
-                setDeprecatedAddress(prevResolved.deprecatedAddress || '');
-                return;
-            }
-        }
-
-        const syncCached = getCachedAddressSync(latNum, lonNum, { lang, isEn });
-        if (syncCached?.address) {
-            addressReqSeqRef.current += 1;
-            setLoadingAddress(false);
-            setAddressError(null);
-            setAddress(syncCached.address);
-            setDeprecatedAddress(syncCached.deprecatedAddress || '');
-            lastResolvedAddrRef.current = {
-                lat: latNum,
-                lon: lonNum,
-                lang,
-                address: syncCached.address,
-                deprecatedAddress: syncCached.deprecatedAddress || '',
-            };
-            return;
-        }
-
-        const reqSeq = ++addressReqSeqRef.current;
-        setLoadingAddress(true);
-        setAddressError(null);
-        setDeprecatedAddress('');
-
-        try {
-            const result = await reverseGeocodeAddress(latNum, lonNum, {
-                lang,
-                isEn,
-            });
-
-            if (addressReqSeqRef.current !== reqSeq) return;
-
-            if (result && result.address) {
-                setAddress(result.address);
-                setDeprecatedAddress(result.deprecatedAddress || '');
-                lastResolvedAddrRef.current = {
-                    lat: latNum,
-                    lon: lonNum,
-                    lang,
-                    address: result.address,
-                    deprecatedAddress: result.deprecatedAddress || '',
-                };
-            } else {
-                setAddress('');
-                setDeprecatedAddress('');
-                setAddressError(t.error.address);
-            }
-        } catch (err) {
-            if (addressReqSeqRef.current !== reqSeq) return;
-            console.error('Fetch address error:', err);
-            setAddress('');
-            setDeprecatedAddress('');
-            setAddressError(t.error.address);
-        } finally {
-            if (addressReqSeqRef.current === reqSeq) {
-                setLoadingAddress(false);
-            }
-        }
-    };
-
-    // ⭐ schedule gọi API last-cruise khi MQTT thiếu gps
-    // ✅ dùng queryClient.fetchQuery để tận dụng cache + dedupe của TanStack
-    const scheduleRefreshLastCruise = () => {
-        if (!selectedDevice?.imei) return;
-        if (!token) return;
-
-        if (lastCruiseTimeoutRef.current) {
-            clearTimeout(lastCruiseTimeoutRef.current);
-            lastCruiseTimeoutRef.current = null;
-        }
-
-        lastCruiseTimeoutRef.current = setTimeout(async () => {
-            const now = Date.now();
-
-            if (now - lastCruiseCallAtRef.current < LAST_CRUISE_MIN_INTERVAL_MS) return;
-            if (lastCruiseInFlightRef.current) return;
-
-            const imei = selectedDevice.imei;
-
-            try {
-                lastCruiseInFlightRef.current = true;
-                lastCruiseCallAtRef.current = now;
-
-                const cruise = await queryClient.fetchQuery({
-                    queryKey: ['monitor', 'lastCruise', token, imei],
-                    queryFn: () => getLastCruise(imei),
-                    staleTime: 10_000,
-                });
-
-                if (!cruise || cruise.error) return;
-
-                setLastCruise(cruise);
-                setCruiseError(null);
-
-                if (mapRef.current && markerRef.current && cruise.lat && cruise.lon && LMap) {
-                    try {
-                        const map = mapRef.current;
-                        if (map && map._loaded && !map._removed && map._mapPane) {
-                            const newLatLng = LMap.latLng(cruise.lat, cruise.lon);
-                            markerRef.current.setLatLng(newLatLng);
-                            map.setView(newLatLng, 16);
-                            updatePopupPosition(true);
-
-                            lastCoordsRef.current = { lat: cruise.lat, lon: cruise.lon };
-                            fetchAddress(cruise.lat, cruise.lon);
-                        }
-                    } catch (err) {
-                        console.warn('scheduleRefreshLastCruise map view error:', err);
-                    }
-                }
-            } catch (e) {
-                console.error('Refresh lastCruise error:', e);
-            } finally {
-                lastCruiseInFlightRef.current = false;
-            }
-        }, LAST_CRUISE_DEBOUNCE_MS);
-    };
-
-    const publishControlCommand = (payload) => {
-        if (!selectedDevice || !selectedDevice.imei) {
-            const msgText = t.error.missingDeviceOrImei;
-            setLockError(msgText);
-            message.error(msgText);
-            return;
-        }
-
-        const client = mqttClientRef.current;
-        if (!client) {
-            const msgText = t.error.mqttNotReady;
-            setLockError(msgText);
-            message.error(msgText);
-            return;
-        }
-
-        const topic = `device/${selectedDevice.imei}/control`;
-
-        try {
-            client.publish(topic, JSON.stringify(payload), { qos: 1 }, (err) => {
-                if (err) {
-                    console.error('❌ Publish control error:', err);
-                    const msgText = t.error.controlFailed;
-                    setLockError(msgText);
-                    message.error(msgText);
-                } else {
-                    setLockError(null);
-                }
-            });
-        } catch (e) {
-            console.error('❌ Publish exception:', e);
-            const msgText = t.error.controlException;
-            setLockError(msgText);
-            message.error(msgText);
-        }
-    };
-
-    // ✅ SEARCH: dùng deferredSearchText để gõ chữ siêu mượt, không giật lag CPU
-    const filteredDevices = useMemo(() => {
-        const keyword = deferredSearchText.trim().toLowerCase();
-
-        return deviceList.filter((d) => {
-            const plate = (d.license_plate || '').toLowerCase();
-            const imei = (d.imei || '').toLowerCase();
-            const phone = (d.phone_number || '').toLowerCase();
-            const driver = (getDriverName(d) || '').toLowerCase();
-
-            const matchSearch =
-                !keyword ||
-                plate.includes(keyword) ||
-                imei.includes(keyword) ||
-                phone.includes(keyword) ||
-                driver.includes(keyword);
-
-            const isOnline = d.status === 10;
-            let matchStatus = true;
-            if (statusFilter === 'online') matchStatus = isOnline;
-            if (statusFilter === 'offline') matchStatus = !isOnline;
-
-            return matchSearch && matchStatus;
-        });
-    }, [deviceList, deferredSearchText, statusFilter]);
-
-    // ✅ Callback cố định: Sử dụng selectedDeviceRef để tránh re-render toàn bộ danh sách khi chuyển xe
-    const handleSelectDevice = useCallback(async (device) => {
-        if (!device) return;
-
-        const currentSel = selectedDeviceRef.current;
-        const sameDevice = currentSel?._id === device._id && currentSel?.imei === device.imei;
-
-        // ✅ Click lại đúng device đang active
-        if (sameDevice) {
-            setShowPopup(true);
-
-            if (!token) return;
-
-            // === Check stale theo dataUpdatedAt ===
-            const now = Date.now();
-            const STALE_MS = 10_000; // 10s cache
-
-            const keyBattery = ['monitor', 'batteryStatus', token, device.imei];
-            const keyInfo = ['monitor', 'deviceInfo', token, device._id];
-            const keyCruise = ['monitor', 'lastCruise', token, device.imei];
-
-            const isStaleKey = (key) => {
-                const st = queryClient.getQueryState(key);
-                if (!st || !st.dataUpdatedAt) return true; // chưa có data => coi như stale
-                return now - st.dataUpdatedAt >= STALE_MS;
-            };
-
-            const shouldRefetch = isStaleKey(keyBattery) || isStaleKey(keyInfo) || isStaleKey(keyCruise);
-
-            // ✅ Đủ 10s => refetch ngay (khỏi cần qua device khác)
-            if (shouldRefetch) {
-                await Promise.all([
-                    queryClient.refetchQueries({ queryKey: keyBattery, exact: true }),
-                    queryClient.refetchQueries({ queryKey: keyInfo, exact: true }),
-                    queryClient.refetchQueries({ queryKey: keyCruise, exact: true }),
-                ]);
-            }
-
-            return;
-        }
-
-        // ✅ Device khác -> reset + đổi selected (y như trước)
-        setSelectedDevice(device);
-        setShowPopup(true);
-
-        if (lastCruiseTimeoutRef.current) {
-            clearTimeout(lastCruiseTimeoutRef.current);
-            lastCruiseTimeoutRef.current = null;
-        }
-        lastCruiseInFlightRef.current = false;
-        lastCruiseCallAtRef.current = 0;
-
-        setLiveTelemetry(null);
-
-        currentMarkerAssetRef.current = markerIconStop;
-        if (markerRef.current && makeIconRef.current) {
-            const isMobile = isMobileNowRef.current ? isMobileNowRef.current() : false;
-            markerRef.current.setIcon(makeIconRef.current(markerIconStop, isMobile));
-        }
-
-        setBatteryStatus(null);
-        setDeviceInfo(null);
-        setLastCruise(null);
-        setCruiseError(null);
-        addressReqSeqRef.current += 1;
-        lastResolvedAddrRef.current = { lat: null, lon: null, lang: null, address: '', deprecatedAddress: '' };
-        setLoadingAddress(false);
-        setAddress('');
-        setDeprecatedAddress('');
-        setAddressError(null);
-        lastCoordsRef.current = { lat: null, lon: null };
-    }, [token, queryClient]);
-
-    const handleLockDevice = () => {
-        publishControlCommand({ sos: 1 });
-        message.success(t.control.lockSuccessToast);
-    };
-
-    const handleUnlockDevice = () => {
-        publishControlCommand({ sos: 0 });
-        message.success(t.control.unlockSuccessToast);
-    };
-
-    const handleConfirmLock = () => {
-        if (!selectedDevice) return;
-        const plate = selectedDevice.license_plate || selectedDevice.imei || t.common.deviceFallback;
-
-        confirm({
-            title: t.control.confirmLockTitle,
-            content: t.control.confirmLockContent.replace('{plate}', plate),
-            okText: t.control.confirmLockOk,
-            cancelText: t.control.confirmCancel,
-            onOk: () => {
-                setPendingAction('lock');
-                setLockLoading(true);
-                handleLockDevice();
-                setLockLoading(false);
-                setPendingAction(null);
-            },
-        });
-    };
-
-    const handleConfirmUnlock = () => {
-        if (!selectedDevice) return;
-        const plate = selectedDevice.license_plate || selectedDevice.imei || t.common.deviceFallback;
-
-        confirm({
-            title: t.control.confirmUnlockTitle,
-            content: t.control.confirmUnlockContent.replace('{plate}', plate),
-            okText: t.control.confirmUnlockOk,
-            cancelText: t.control.confirmCancel,
-            onOk: () => {
-                setPendingAction('unlock');
-                setLockLoading(true);
-                handleUnlockDevice();
-                setLockLoading(false);
-                setPendingAction(null);
-            },
-        });
-    };
-
-    // Cập nhật currentTime định kỳ mỗi 10 giây để tính trạng thái kết nối theo thời gian thực
-    const [currentTime, setCurrentTime] = useState(() => Date.now());
-
-    useEffect(() => {
-        const timer = setInterval(() => {
-            setCurrentTime(Date.now());
-        }, 10_000);
-        return () => clearInterval(timer);
-    }, []);
-
-    // Trạng thái kết nối dựa trên "Tại thời điểm" (tim)
-    // Nếu không có dữ liệu thời điểm hoặc mốc thời gian cách hiện tại > 2 phút (thời điểm < hiện tại - 2 phút) => Mất kết nối
-    const isConnected = useMemo(() => {
-        if (!selectedDevice) return false;
-        const ctx = { liveTelemetry, lastCruise, batteryStatus };
-        const timVal = pickField('tim', ctx, lastMqttAtRef) ?? lastCruise?.tim ?? batteryStatus?.tim;
-        if (!timVal) return false;
-
-        let atDate = parseTimToDate(timVal);
-        if (!atDate) {
-            const fallback = new Date(timVal);
-            if (!isNaN(fallback.getTime())) {
-                atDate = fallback;
-            }
-        }
-        if (!atDate) return false;
-
-        const diffMs = currentTime - atDate.getTime();
-        // Kết nối khi chênh lệch thời gian trong vòng 2 phút (120,000 ms)
-        return diffMs <= 2 * 60 * 1000 && diffMs >= -2 * 60 * 1000;
-    }, [selectedDevice, liveTelemetry, lastCruise, batteryStatus, currentTime]);
-
-    useEffect(() => {
-        if (!selectedDevice?.imei) return;
-
-        if (mqttSilenceTimerRef.current) {
-            clearInterval(mqttSilenceTimerRef.current);
-            mqttSilenceTimerRef.current = null;
-        }
-
-        lastMqttAtRef.current = 0;
-
-        mqttSilenceTimerRef.current = setInterval(() => {
-            const last = lastMqttAtRef.current;
-            if (!last) return;
-
-            const silent = Date.now() - last >= MQTT_SILENCE_MS;
-            if (silent) {
-                setLiveTelemetry(null);
-                scheduleRefreshLastCruise();
-            }
-        }, 5_000);
-
-        return () => {
-            if (mqttSilenceTimerRef.current) {
-                clearInterval(mqttSilenceTimerRef.current);
-                mqttSilenceTimerRef.current = null;
-            }
-        };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedDevice?.imei]);
-
-    // MQTT update (chỉ selected)
-    const handleMqttMessage = (topic, data) => {
-        if (!selectedDevice) return;
-
-        const arr = topic.split('/');
-        if (arr[1] !== selectedDevice.imei) return;
-
-        if (!data || typeof data !== 'object') return;
-
-        lastMqttAtRef.current = Date.now();
-
-        // update SOC cho list realtime + persist
-        if (data.soc != null) upsertSoc(selectedDevice.imei, data.soc);
-
-        if (data.gps == null) scheduleRefreshLastCruise();
-
-        setLiveTelemetry((prev) => {
-            const updated = { ...(prev || {}), ...data };
-            const isTelemetryPacket = 'ev' in data;
-
-            if (isTelemetryPacket) {
-                if (data.gps == null) delete updated.gps;
-                if (data.acc == null) delete updated.acc;
-                if (data.spd == null) delete updated.spd;
-                if (data.vgp == null) delete updated.vgp;
-                if (data.vlp == null) delete updated.vlp;
-                if (data.onl == null) delete updated.onl;
-                if (data.ste == null) delete updated.ste;
-                if (data.state == null) delete updated.state;
-            }
-
-            if (isTelemetryPacket && data.gps == null) delete updated.gps;
-
-            if (!isTelemetryPacket) {
-                if (!('sos' in data) && 'sos' in updated) delete updated.sos;
-                if (!('acc' in data) && 'acc' in updated) delete updated.acc;
-            }
-
-            return updated;
-        });
-
-        if (data.lat != null && data.lon != null && LMap && mapRef.current && markerRef.current) {
-            const latNum = Number(data.lat);
-            const lonNum = Number(data.lon);
-
-            if (!Number.isNaN(latNum) && !Number.isNaN(lonNum)) {
-                try {
-                    const map = mapRef.current;
-                    const marker = markerRef.current;
-                    if (!map || !map._loaded || map._removed || !map._mapPane) return;
-
-                    const currentPos = marker.getLatLng();
-                    const hasMoved =
-                        !currentPos ||
-                        Math.abs(currentPos.lat - latNum) > 0.00002 ||
-                        Math.abs(currentPos.lng - lonNum) > 0.00002;
-
-                    if (hasMoved) {
-                        const pos = LMap.latLng(latNum, lonNum);
-                        marker.setLatLng(pos);
-                        updatePopupPosition(true);
-
-                        // Chỉ pan mượt mà nếu xe chạy ra khỏi tầm nhìn (tránh giật map và giật popup mỗi giây)
-                        const bounds = map.getBounds();
-                        if (bounds && !bounds.contains(pos)) {
-                            map.panTo(pos, { animate: true, duration: 0.5 });
-                        }
-
-                        const prev = lastCoordsRef.current;
-                        const MIN_MOVE_METERS = 15;
-
-                        let tooClose = false;
-
-                        if (prev.lat != null && prev.lon != null) {
-                            const dist = getDistanceMeters(prev.lat, prev.lon, latNum, lonNum);
-                            if (dist != null && dist < MIN_MOVE_METERS) tooClose = true;
-                        }
-
-                        if (!tooClose) {
-                            lastCoordsRef.current = { lat: latNum, lon: lonNum };
-                            fetchAddress(latNum, lonNum);
-                        }
-                    }
-                } catch (err) {
-                    console.warn('Map update error suppressed:', err);
-                }
-            }
-        }
-    };
-
-    // RENDER BATTERY
-    const renderBatteryInfo = () => {
-        const src = liveTelemetry || {};
-        const bs = batteryStatus || {};
-
-        const soc = src.soc ?? bs.soc;
-        const soh = src.soh ?? bs.soh;
-        const voltage = src.vavg ?? src.vmax ?? src.vmin ?? bs.voltage;
-        const temp = src.tavg ?? src.tmax ?? bs.temperature;
-        const currentRaw = src.cur ?? bs.current;
-        const chc = src.chc ?? bs.chc;
-
-        const formatAmp = (val) => {
-            const n = toNumberOrNull(val);
-            if (n == null) return NA_TEXT;
-            const abs = Math.abs(n);
-            const s = abs.toFixed(2).replace('.', ',');
-            return `${s}A`;
-        };
-
-        let mode = t.battery.unknown;
-        let currentLine = t.battery.currentLineDefault;
-
-        const cur = toNumberOrNull(currentRaw);
-
-        if (cur == null) {
-            mode = t.battery.unknown;
-            currentLine = t.battery.currentLineDefault;
-        } else if (cur > 0) {
-            mode = t.battery.charging;
-            currentLine = `${t.battery.chargeCurrent} ${formatAmp(cur)}`;
-        } else if (cur < 0) {
-            mode = t.battery.discharging;
-            currentLine = `${t.battery.dischargeCurrent} ${formatAmp(cur)}`;
-        } else {
-            mode = t.battery.idle;
-            currentLine = t.battery.currentIdle;
-        }
-
-        const updatedAt = src.tim
-            ? parseTimToDate(src.tim)?.toLocaleString()
-            : bs.updatedAt
-              ? formatFixedDateTime(new Date(bs.updatedAt))
-              : NA_TEXT;
-
-        // can = 1: dữ liệu từ CAN bus (nguồn ngoài), đánh dấu (*) để phân biệt
-        // Ưu tiên: liveTelemetry (MQTT) → lastCruise (API) → batteryStatus
-        const canVal = toNumberOrNull(src.can ?? lastCruise?.can ?? bs.can);
-
-        return (
-            <>
-                <div>
-                    {t.battery.imei} {selectedDevice?.imei || NA_TEXT}
-                </div>
-                <div>
-                    {t.battery.voltage} {voltage != null ? <>{voltage} V</> : NA_TEXT}
-                </div>
-                <div>{currentLine}</div>
-                <div>
-                    {t.battery.status} {mode || NA_TEXT}
-                </div>
-                <div>
-                    {t.battery.soc} {soc != null ? `${soc}%` : NA_TEXT}
-                </div>
-                <div>
-                    {t.battery.soh} {soh != null ? `${soh}%` : NA_TEXT}
-                </div>
-                <div>
-                    {isEn ? 'Charge/Discharge cycles' : 'Chu kỳ sạc/xả'}: {chc != null ? chc : 0}
-                </div>
-                <div>
-                    {t.battery.temperature} {temp != null ? `${temp}°C` : NA_TEXT}
-                </div>
-                <div>
-                    {t.battery.updatedAt}{' '}
-                    <span>
-                        {updatedAt}{' '}
-                        {canVal === 1 && <span style={{ color: 'red', fontWeight: 600 }}>(*)</span>}
-                    </span>
-                </div>
-            </>
-        );
-    };
-
-    // RENDER STATUS
-    const renderStatusInfo = () => {
-        if (!selectedDevice) return <>{t.statusInfo.pleaseSelect}</>;
-
-        const info = deviceInfo || selectedDevice;
-        const ctx = { liveTelemetry, lastCruise, batteryStatus };
-
-        const odo = pickField('mil', ctx, lastMqttAtRef);
-        const distance = pickField('dst', ctx, lastMqttAtRef);
-
-        const timVal = pickField('tim', ctx, lastMqttAtRef);
-        const timeStr = timVal ? formatFixedDateTime(parseTimToDate(timVal)) : NA_TEXT;
-
-        const fwr = pickField('fwr', ctx, lastMqttAtRef);
-
-        const latVal = pickField('lat', ctx, lastMqttAtRef);
-        const lonVal = pickField('lon', ctx, lastMqttAtRef);
-
-        const accValNum = toNumberOrNull(pickAcc({ liveTelemetry, lastCruise }, lastMqttAtRef));
-        const usedSpeed = toNumberOrNull(pickSpeed({ liveTelemetry, lastCruise }, lastMqttAtRef));
-
-        const gpsValNum = toNumberOrNull(pickField('gps', ctx, lastMqttAtRef));
-
-        const isDatBike = isDatBikeDevice(info);
-        const bikeStateVal = pickBikeState({ liveTelemetry, lastCruise }, lastMqttAtRef);
-        const datBikeState = (isDatBike || bikeStateVal != null) ? getDatBikeStateInfo(bikeStateVal, isEn) : null;
-
-        let machineStatus;
-        let vehicleStatus;
-
-        if (datBikeState) {
-            machineStatus = datBikeState.isEngineOn ? t.statusInfo.engineOn : t.statusInfo.engineOff;
-            vehicleStatus = datBikeState.label;
-        } else {
-            const isEngineOff = accValNum === 1;
-            machineStatus = isEngineOff ? t.statusInfo.engineOff : t.statusInfo.engineOn;
-
-            vehicleStatus = t.statusInfo.vehicleStopped;
-            if (isEngineOff) {
-                vehicleStatus = t.statusInfo.vehicleParking;
-            } else {
-                if (usedSpeed != null && usedSpeed > 0) {
-                    vehicleStatus = t.statusInfo.vehicleRunning.replace('{speed}', String(usedSpeed));
-                } else {
-                    vehicleStatus = t.statusInfo.vehicleStopped;
-                }
-            }
-        }
-
-        const unknownPlateText = (t.list && t.list.unknownPlate) || (isEn ? 'No plate number' : 'Chưa có biển số');
-
-        const driverName = getDriverName(info);
-
-        return (
-            <>
-                <div>
-                    {t.statusInfo.plate} {info.license_plate || unknownPlateText}
-                </div>
-                <div>
-                    {isEn ? 'Driver' : 'Lái xe'}: {driverName || NA_TEXT}
-                </div>
-                <div>
-                    {t.statusInfo.version} {fwr || NA_TEXT}
-                </div>
-                <div>
-                    {t.statusInfo.vehicleType} {info.vehicle_category_id?.name || NA_TEXT}
-                </div>
-                <div>
-                    {t.statusInfo.deviceType} {info.device_category_id?.name || NA_TEXT}
-                </div>
-                <div>
-                    {t.statusInfo.atTime} {timeStr}
-                </div>
-                <div>
-                    {t.statusInfo.engineStatus} {machineStatus}
-                </div>
-                <div>
-                    {t.statusInfo.vehicleStatus} {vehicleStatus}
-                </div>
-
-                {/* Vận tốc: Luôn hiển thị cho Dat Bike (kể cả 0 km/h) như yêu cầu, và cho xe thường khi có vận tốc */}
-                {(isDatBike || (usedSpeed != null && usedSpeed > 0)) && (
-                    <div>
-                        {t.statusInfo.speed} {usedSpeed != null ? usedSpeed : 0} km/h
-                    </div>
-                )}
-
-                {distance != null && (
-                    <div>
-                        {t.statusInfo.distance} {distance} km
-                    </div>
-                )}
-
-                <div>ODO: {odo ?? 0} km</div>
-
-                <div className="iky-monitor__location-row">
-                    <span className="iky-monitor__location-label">{t.statusInfo.location}</span>
-                    <span className="iky-monitor__location-text">
-                        {address
-                            ? address
-                            : loadingAddress
-                              ? isEn
-                                  ? 'Resolving address...'
-                                  : 'Đang xác định vị trí...'
-                              : addressError
-                                ? addressError
-                                : (isEn ? 'No location data' : 'Chưa có dữ liệu vị trí')}
-                    </span>
-                </div>
-
-                {deprecatedAddress && (
-                    <div className="iky-monitor__location-row">
-                        <span className="iky-monitor__location-label">
-                            {isEn ? 'Former address:' : 'Vị trí trước sáp nhập:'}
-                        </span>
-                        <span className="iky-monitor__location-text">{deprecatedAddress}</span>
-                    </div>
-                )}
-
-                <div>
-                    {t.statusInfo.coordinate}{' '}
-                    {latVal != null && lonVal != null ? (
-                        <span>
-                            {`${latVal}, ${lonVal}`}{' '}
-                            {gpsValNum === 1 && <span style={{ color: 'red', fontWeight: 600 }}>(*)</span>}
-                        </span>
-                    ) : (
-                        NA_TEXT
-                    )}
-                </div>
-
-                {cruiseError && (
-                    <div className="iky-monitor__alert iky-monitor__alert--info" style={{ marginTop: 8 }}>
-                        {cruiseError}
-                    </div>
-                )}
-            </>
-        );
-    };
+    }, [devicesHook.deviceList, historyDeviceId, historyStart, historyEnd]);
 
     const handleSaveHistoryFilter = () => {
         setHistoryMessage('');
@@ -1475,7 +153,7 @@ const MonitorPage = () => {
 
         const filter = {
             deviceId: historyDeviceId,
-            imei: deviceList.find((d) => d._id === historyDeviceId)?.imei || '',
+            imei: devicesHook.deviceList.find((d) => d._id === historyDeviceId)?.imei || '',
             start: historyStart,
             end: historyEnd,
         };
@@ -1485,333 +163,72 @@ const MonitorPage = () => {
             router.push('/cruise');
             setHistoryMessage(t.history.saveSuccess);
             setHistoryMessageType('success');
-        } catch (e) {
+        } catch {
             setHistoryMessage(t.history.saveFailed);
             setHistoryMessageType('error');
         }
     };
 
-    const sosVal = isMqttAlive(lastMqttAtRef) ? liveTelemetry?.sos : lastCruise?.sos;
+    const sosVal = isMqttAlive(lastMqttAtRef) ? telemetryHook.liveTelemetry?.sos : telemetryHook.lastCruise?.sos;
     const isLocked = sosVal === 1 || sosVal === '1';
     const deviceStatusText = isLocked ? t.control.statusActivated : t.control.statusNotActivated;
     const deviceStatusClass = isLocked ? 'iky-monitor__tag-red' : 'iky-monitor__tag-green';
 
-    // loading flags theo query
-    const loadingBattery = batteryQuery.isFetching;
-    const loadingDeviceInfo = deviceInfoQuery.isFetching;
-    const loadingCruise = lastCruiseQuery.isFetching;
-
-    const isRefreshing = loadingDeviceInfo || loadingCruise || loadingBattery || loadingAddress;
-    const isStatusLoading = !selectedDevice || deviceInfoQuery.isFetching || lastCruiseQuery.isFetching;
-
-    const isBatteryLoading = !selectedDevice || batteryQuery.isFetching;
+    const loadingBattery = telemetryHook.batteryQuery.isFetching;
+    const loadingDeviceInfo = telemetryHook.deviceInfoQuery.isFetching;
+    const loadingCruise = telemetryHook.lastCruiseQuery.isFetching;
+    const isRefreshing = loadingDeviceInfo || loadingCruise || loadingBattery || telemetryHook.loadingAddress;
+    const isStatusLoading = !devicesHook.selectedDevice || loadingDeviceInfo || loadingCruise;
+    const isBatteryLoading = !devicesHook.selectedDevice || loadingBattery;
 
     return (
         <>
             <MqttConnector
-                imei={selectedDevice?.imei}
-                onMessage={handleMqttMessage}
-                onClientReady={(client) => {
-                    mqttClientRef.current = client;
-                }}
+                imei={devicesHook.selectedDevice?.imei}
+                onMessage={telemetryHook.handleMqttMessage}
+                onClientReady={(client) => { controlHook.mqttClientRef.current = client; }}
             />
 
             <div className="iky-monitor">
-                {/* LEFT */}
-                <aside className="iky-monitor__left">
-                    <div
-                        className={
-                            'iky-monitor__left-card' + (leftTab === 'monitor' ? ' iky-monitor__left-card--full' : '')
-                        }
-                    >
-                        <div className="iky-monitor__left-tabs">
-                            <button
-                                className={
-                                    'iky-monitor__left-tab' +
-                                    (leftTab === 'monitor' ? ' iky-monitor__left-tab--active' : '')
-                                }
-                                onClick={() => setLeftTab('monitor')}
-                            >
-                                {t.tabs.monitor}
-                            </button>
-                            <button
-                                className={
-                                    'iky-monitor__left-tab' +
-                                    (leftTab === 'history' ? ' iky-monitor__left-tab--active' : '')
-                                }
-                                onClick={() => setLeftTab('history')}
-                            >
-                                {t.tabs.history}
-                            </button>
-                        </div>
-
-                        {leftTab === 'monitor' && (
-                            <div className="iky-monitor__left-body">
-                                <div className="iky-monitor__left-section">
-                                    <div className="iky-monitor__left-label">{t.filter.searchLabel}</div>
-                                    <input
-                                        className="iky-monitor__input"
-                                        placeholder={t.filter.searchPlaceholder}
-                                        value={searchText}
-                                        onChange={(e) => setSearchText(e.target.value)}
-                                    />
-                                </div>
-
-                                <div className="iky-monitor__left-section">
-                                    <div className="iky-monitor__left-label">{t.filter.statusLabel}</div>
-                                    <select
-                                        className="iky-monitor__select"
-                                        value={statusFilter}
-                                        onChange={(e) => setStatusFilter(e.target.value)}
-                                    >
-                                        <option value="all">{t.filter.statusAll}</option>
-                                        <option value="online">{t.filter.statusOnline}</option>
-                                        <option value="offline">{t.filter.statusOffline}</option>
-                                    </select>
-                                </div>
-
-                                <div className="iky-monitor__left-section iky-monitor__left-section--list">
-                                    <div className="iky-monitor__left-label">
-                                        {t.list.label}{' '}
-                                        <span className="iky-monitor__count">({filteredDevices.length})</span>
-                                    </div>
-
-                                    <div className="iky-monitor__device-list">
-                                        {loadingDevices && <div className="iky-loading">{t.list.loading}</div>}
-
-                                        {!loadingDevices && filteredDevices.length === 0 && (
-                                            <div className="iky-monitor__empty">{t.list.empty}</div>
-                                        )}
-
-                                        {!loadingDevices &&
-                                            filteredDevices.map((d, idx) => (
-                                                <DeviceListItem
-                                                    key={d._id}
-                                                    d={d}
-                                                    idx={idx}
-                                                    isActive={selectedDevice?._id === d._id}
-                                                    socForItem={socByImei[d.imei]}
-                                                    isEn={isEn}
-                                                    unknownPlateText={t.list.unknownPlate}
-                                                    phoneLabel={t.list.phoneLabel}
-                                                    onSelectDevice={handleSelectDevice}
-                                                />
-                                            ))}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {leftTab === 'history' && (
-                            <div className="iky-monitor__left-body">
-                                <div className="iky-monitor__left-section">
-                                    <div className="iky-monitor__left-label">{t.history.selectVehicleLabel}</div>
-                                    <select
-                                        className="iky-monitor__select"
-                                        value={historyDeviceId}
-                                        onChange={(e) => setHistoryDeviceId(e.target.value)}
-                                    >
-                                        <option value="">{t.history.selectVehiclePlaceholder}</option>
-                                        {deviceList.map((d, idx) => (
-                                            <option key={d._id} value={d._id}>
-                                                {idx + 1}. {(d.license_plate || d.imei || t.history.unknown).trim()}
-                                                {getDriverName(d)
-                                                    ? ` - ${isEn ? 'Driver' : 'Tài xế'}: ${getDriverName(d)}`
-                                                    : ''}
-                                                {d.phone_number ? ` - ${d.phone_number}` : ''}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                <div className="iky-monitor__left-section">
-                                    <div className="iky-monitor__left-label">{t.history.fromLabel}</div>
-                                    <input
-                                        type="datetime-local"
-                                        className="iky-monitor__input"
-                                        value={historyStart}
-                                        onChange={(e) => setHistoryStart(e.target.value)}
-                                    />
-                                </div>
-
-                                <div className="iky-monitor__left-section">
-                                    <div className="iky-monitor__left-label">{t.history.toLabel}</div>
-                                    <input
-                                        type="datetime-local"
-                                        className="iky-monitor__input"
-                                        value={historyEnd}
-                                        onChange={(e) => setHistoryEnd(e.target.value)}
-                                    />
-                                </div>
-
-                                <button className="iky-monitor__primary-btn" onClick={handleSaveHistoryFilter}>
-                                    {t.history.saveButton}
-                                </button>
-
-                                {historyMessage && (
-                                    <div
-                                        className={
-                                            'iky-monitor__alert ' +
-                                            (historyMessageType === 'error'
-                                                ? 'iky-monitor__alert--error'
-                                                : 'iky-monitor__alert--success')
-                                        }
-                                    >
-                                        {historyMessage}
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                </aside>
+                <MonitorSidebar
+                    t={t} isEn={isEn} leftTab={leftTab} setLeftTab={setLeftTab}
+                    searchText={devicesHook.searchText} setSearchText={devicesHook.setSearchText}
+                    statusFilter={devicesHook.statusFilter} setStatusFilter={devicesHook.setStatusFilter}
+                    filteredDevices={devicesHook.filteredDevices} loadingDevices={devicesHook.loadingDevices}
+                    selectedDevice={devicesHook.selectedDevice} socByImei={telemetryHook.socByImei}
+                    handleSelectDevice={(d) => { devicesHook.handleSelectDevice(d); mapHook.setShowPopup(true); }}
+                    listContainerRef={devicesHook.listContainerRef}
+                    historyDeviceId={historyDeviceId} setHistoryDeviceId={setHistoryDeviceId}
+                    historyStart={historyStart} setHistoryStart={setHistoryStart}
+                    historyEnd={historyEnd} setHistoryEnd={setHistoryEnd}
+                    handleSaveHistoryFilter={handleSaveHistoryFilter}
+                    historyMessage={historyMessage} historyMessageType={historyMessageType}
+                    deviceList={devicesHook.deviceList}
+                />
 
                 <section className="iky-monitor__center">
                     <div className="iky-monitor__map">
                         <div id="iky-map" className="iky-monitor__map-inner" />
 
-                        {showPopup && (
-                            <div
-                                ref={popupWrapperRef}
-                                className="iky-monitor__popup-wrapper"
-                            >
-                                <div className="iky-monitor__popup">
-                                    <div className="iky-monitor__popup-tabs">
-                                        <button
-                                            className={
-                                                'iky-monitor__popup-tab' +
-                                                (detailTab === 'status' ? ' iky-monitor__popup-tab--active' : '')
-                                            }
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setDetailTab('status');
-                                            }}
-                                        >
-                                            {t.tabsDetail.status}
-                                        </button>
-
-                                        {role !== 'reporter' && (
-                                            <button
-                                                className={
-                                                    'iky-monitor__popup-tab' +
-                                                    (detailTab === 'control' ? ' iky-monitor__popup-tab--active' : '')
-                                                }
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    setDetailTab('control');
-                                                }}
-                                            >
-                                                {t.tabsDetail.control}
-                                            </button>
-                                        )}
-
-                                        <button
-                                            className={
-                                                'iky-monitor__popup-tab' +
-                                                (detailTab === 'battery' ? ' iky-monitor__popup-tab--active' : '')
-                                            }
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setDetailTab('battery');
-                                            }}
-                                        >
-                                            {t.tabsDetail.battery}
-                                        </button>
-                                    </div>
-
-                                    {isRefreshing && <div className="iky-monitor__refreshing-bar" />}
-
-                                    <div className="iky-monitor__popup-body">
-                                        {detailTab === 'status' && (
-                                            <div className="iky-monitor__popup-col">
-                                                {isStatusLoading ? (
-                                                    <Skeleton active paragraph={{ rows: 8 }} />
-                                                ) : (
-                                                    renderStatusInfo()
-                                                )}
-                                            </div>
-                                        )}
-
-                                        {detailTab === 'control' && (
-                                            <div className="iky-monitor__popup-col">
-                                                <div className="iky-monitor__control-row">
-                                                    <span>{t.control.connectionStatus}</span>
-                                                    <div
-                                                        className={
-                                                            'iky-monitor__connection ' +
-                                                            (isConnected
-                                                                ? 'iky-monitor__connection--on'
-                                                                : 'iky-monitor__connection--off')
-                                                        }
-                                                    >
-                                                        <span className="iky-monitor__connection-icon">
-                                                            {isConnected ? '✓' : '✕'}
-                                                        </span>
-                                                        <span className="iky-monitor__connection-text">
-                                                            {isConnected
-                                                                ? t.control.connectionOn
-                                                                : t.control.connectionOff}
-                                                        </span>
-                                                    </div>
-                                                </div>
-
-                                                <div className="iky-monitor__control-row">
-                                                    <span>{t.control.emergencyStop}</span>
-
-                                                    <div className={`iky-status-badge ${deviceStatusClass}`}>
-                                                        {isLocked ? (
-                                                            <LockFilled className="iky-status-icon" />
-                                                        ) : (
-                                                            <CheckCircleFilled className="iky-status-icon" />
-                                                        )}
-                                                        <span>{deviceStatusText}</span>
-                                                    </div>
-                                                </div>
-
-                                                <div className="iky-monitor__control-row iky-monitor__control-row--action">
-                                                    <span>{t.control.lockDevice}</span>
-                                                    <button
-                                                        className="iky-monitor__secondary-btn iky-monitor__secondary-btn--control"
-                                                        onClick={handleConfirmLock}
-                                                        disabled={lockLoading}
-                                                    >
-                                                        {lockLoading && pendingAction === 'lock'
-                                                            ? t.control.locking
-                                                            : t.control.lockButton}
-                                                    </button>
-                                                </div>
-
-                                                <div className="iky-monitor__control-row iky-monitor__control-row--action iky-monitor__control-row--unlock">
-                                                    <span>{t.control.unlockDevice}</span>
-                                                    <button
-                                                        className="iky-monitor__secondary-btn iky-monitor__secondary-btn--control"
-                                                        onClick={handleConfirmUnlock}
-                                                        disabled={lockLoading}
-                                                    >
-                                                        {lockLoading && pendingAction === 'unlock'
-                                                            ? t.control.unlocking
-                                                            : t.control.unlockButton}
-                                                    </button>
-                                                </div>
-                                                {lockError && (
-                                                    <div className="iky-monitor__alert iky-monitor__alert--error">
-                                                        {lockError}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
-
-                                        {detailTab === 'battery' && (
-                                            <div className="iky-monitor__popup-col">
-                                                {isBatteryLoading ? (
-                                                    <Skeleton active paragraph={{ rows: 7 }} />
-                                                ) : (
-                                                    renderBatteryInfo()
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
+                        {mapHook.showPopup && (
+                            <MonitorPopup
+                                popupWrapperRef={mapHook.popupWrapperRef}
+                                detailTab={detailTab} setDetailTab={setDetailTab}
+                                role={role} t={t} isRefreshing={isRefreshing}
+                                isStatusLoading={isStatusLoading} selectedDevice={devicesHook.selectedDevice}
+                                deviceInfo={telemetryHook.deviceInfo} liveTelemetry={telemetryHook.liveTelemetry}
+                                lastCruise={telemetryHook.lastCruise} batteryStatus={telemetryHook.batteryStatus}
+                                lastMqttAtRef={lastMqttAtRef} isEn={isEn} address={telemetryHook.address}
+                                deprecatedAddress={telemetryHook.deprecatedAddress}
+                                loadingAddress={telemetryHook.loadingAddress}
+                                addressError={telemetryHook.addressError} cruiseError={telemetryHook.cruiseError}
+                                isConnected={controlHook.isConnected} deviceStatusClass={deviceStatusClass}
+                                isLocked={isLocked} deviceStatusText={deviceStatusText}
+                                handleConfirmLock={controlHook.handleConfirmLock}
+                                handleConfirmUnlock={controlHook.handleConfirmUnlock}
+                                lockLoading={controlHook.lockLoading} pendingAction={controlHook.pendingAction}
+                                lockError={controlHook.lockError} isBatteryLoading={isBatteryLoading}
+                            />
                         )}
                     </div>
                 </section>

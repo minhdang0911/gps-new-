@@ -190,7 +190,7 @@ const Navbar = () => {
             <ProfileModal open={openProfile} onClose={() => setOpenProfile(false)} isEn={isEn} />
 
             <header className="iky-nav">
-                <Link className="iky-nav__logo" href="/">
+                <Link className="iky-nav__logo" href="/" prefetch={false}>
                     <img src={logo.src} alt="IKY GPS" className="iky-nav__logo-img" />
                 </Link>
 

@@ -3,27 +3,37 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 export function middleware(req: NextRequest) {
-    const url = req.nextUrl.clone();
-    const segments = url.pathname.split('/').filter(Boolean);
+    const { pathname } = req.nextUrl;
 
-    // không có segment nào thì thôi
-    if (segments.length === 0) {
-        return NextResponse.next();
-    }
+    // Chỉ can thiệp nếu trong pathname có segment 'en'
+    if (pathname.includes('/en')) {
+        const segments = pathname.split('/').filter(Boolean);
+        const enIndex = segments.indexOf('en');
 
-    // Tìm xem có 'en' ở đâu trong path
-    const enIndex = segments.indexOf('en');
+        if (enIndex !== -1) {
+            const baseSegments = segments.filter((seg) => seg !== 'en');
+            const basePath = baseSegments.length ? '/' + baseSegments.join('/') : '/';
 
-    if (enIndex !== -1) {
-        // Loại bỏ 'en' khỏi segments để tạo path gốc
-        const baseSegments = segments.filter((seg) => seg !== 'en');
-        const basePath = baseSegments.length ? '/' + baseSegments.join('/') : '/';
+            const url = req.nextUrl.clone();
+            url.pathname = basePath;
+            url.searchParams.set('lang', 'en');
 
-        url.pathname = basePath; // thực sự render path gốc
-        url.searchParams.set('lang', 'en'); // gắn lang=en cho FE xài
-
-        return NextResponse.rewrite(url);
+            return NextResponse.rewrite(url);
+        }
     }
 
     return NextResponse.next();
 }
+
+export const config = {
+    matcher: [
+        /*
+         * Khớp tất cả các đường dẫn TRỪ:
+         * - _next/static (static files)
+         * - _next/image (image optimization files)
+         * - favicon.ico, logo, media
+         * - api routes
+         */
+        '/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    ],
+};

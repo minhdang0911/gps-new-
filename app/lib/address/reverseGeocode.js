@@ -12,6 +12,7 @@ import {
 import { fetchAddressFromProviders, pickBestGoongV2Address, callGoongWithRotation } from './providers';
 
 export {
+    ensureAddressCacheHydrated,
     getCachedAddressSync,
     getCoordCacheKey,
     isValidGeocodeCoord,

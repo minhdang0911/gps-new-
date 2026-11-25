@@ -6,6 +6,11 @@ import {
     getCoordCacheKey,
     isValidGeocodeCoord,
 } from '../../../lib/address/reverseGeocode';
+import {
+    clusterCoordinatesByProximity,
+    splitArrayIntoChunks,
+    executeChunkedBatchGeocode,
+} from '../../../lib/address/spatialGeocodeCluster';
 
 export function useLastCruiseExcel({ processedData, isEn, t }) {
     const lang = isEn ? 'en' : 'vi';
@@ -61,29 +66,29 @@ export function useLastCruiseExcel({ processedData, isEn, t }) {
                 0,
             );
             try {
-                const uncachedEntries = Array.from(uncachedCoords.entries());
-                const dbMap = await reverseGeocodeBatch(
-                    uncachedEntries.map(([, c]) => ({ ...c, lang })),
-                    { lang, isEn, resolveMissing: false },
+                const uncachedEntries = Array.from(uncachedCoords.values()).map((coord) => ({
+                    lat: coord.lat,
+                    lon: coord.lon,
+                    lang,
+                }));
+
+                // IKY-SpatialGeocodeCore: gom cụm 35m & tự động chia chunk 25 items tuần tự
+                const { uniqueMedoidList, satelliteToMedoidKeyMap } = clusterCoordinatesByProximity(
+                    uncachedEntries,
+                    35
                 );
 
-                const stillMissing = [];
-                for (const [key, c] of uncachedEntries) {
-                    const hitAddr = dbMap?.[key]?.address;
-                    if (hitAddr) {
-                        resolvedByKey.set(key, hitAddr);
-                    } else {
-                        stillMissing.push([key, c]);
-                    }
-                }
+                const chunkedPayloads = splitArrayIntoChunks(uniqueMedoidList, 25);
+                const batchResultMap = await executeChunkedBatchGeocode(
+                    chunkedPayloads,
+                    (chunk) => reverseGeocodeBatch(chunk, { lang, isEn, resolveMissing: true }),
+                    { delayBetweenChunksMs: 40 }
+                );
 
-                if (stillMissing.length > 0) {
-                    const freshMap = await reverseGeocodeBatch(
-                        stillMissing.map(([, c]) => ({ ...c, lang })),
-                        { lang, isEn, resolveMissing: true },
-                    );
-                    for (const [key] of stillMissing) {
-                        resolvedByKey.set(key, freshMap?.[key]?.address || '');
+                for (const [satelliteKey, matchedMedoidKey] of satelliteToMedoidKeyMap.entries()) {
+                    const resolvedAddress = batchResultMap?.[matchedMedoidKey]?.address || '';
+                    if (resolvedAddress) {
+                        resolvedByKey.set(satelliteKey, resolvedAddress);
                     }
                 }
             } finally {

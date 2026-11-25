@@ -479,7 +479,7 @@
 .iky-cruise__events-head,
 .iky-cruise__events-row {
     display: grid;
-    grid-template-columns: 44px 1.2fr 1.2fr 1fr 1.2fr 1.2fr 80px;
+    grid-template-columns: 44px 1.2fr 1.2fr 1fr 1.6fr;
     gap: 6px; /* gọn hơn */
     padding: 8px 8px; /* gọn hơn */
 }
@@ -647,7 +647,7 @@
 /* ✅ nếu bạn dùng RouteDetail grid rộng hơn */
 .iky-cruise__route-head,
 .iky-cruise__route-row {
-    grid-template-columns: 44px 120px 120px 1.6fr 1.2fr 1.2fr 120px 80px;
+    grid-template-columns: 44px 120px 120px 1.6fr 1.2fr 1.2fr 120px;
 }
 
 /* nút mở lại (floating để tiện xem full map) */

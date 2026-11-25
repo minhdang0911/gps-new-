@@ -230,14 +230,9 @@ export async function exportByRegion({ devices, cruiseByImei, province, district
 
     const ws = XLSX.utils.json_to_sheet(rows, { origin: 'A3' });
     const colCount = Object.keys(rows[0]).length;
-    ws['A1'] = { v: titleText, t: 's' };
-    ws['!merges'] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: colCount - 1 } },
-        { s: { r: 1, c: 0 }, e: { r: 1, c: colCount - 1 } },
-    ];
-    ws['A1'].s = { font: { bold: true, sz: 16, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '0F766E' } }, alignment: { horizontal: 'center', vertical: 'center' } };
-    ws['A2'] = { v: subtitleText, t: 's' };
-    ws['A2'].s = { font: { italic: true, sz: 10, color: { rgb: '555555' } }, fill: { fgColor: { rgb: 'CCFBF1' } }, alignment: { horizontal: 'left', vertical: 'center' } };
+    ws['A1'] = { v: titleText, t: 's', s: { font: { bold: true, sz: 16, color: { rgb: 'FFFFFF' } }, fill: { fgColor: { rgb: '0F766E' } }, alignment: { horizontal: 'center', vertical: 'center' } } };
+    ws['A2'] = { v: subtitleText, t: 's', s: { font: { italic: true, sz: 10, color: { rgb: '555555' } }, fill: { fgColor: { rgb: 'CCFBF1' } }, alignment: { horizontal: 'left', vertical: 'center' } } };
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: colCount - 1 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: colCount - 1 } }];
     ws['!rows'] = [{ hpt: 28 }, { hpt: 18 }, { hpt: 22 }];
 
     applySheetStyle(ws, rows, '0F766E', 'F0FDFA');

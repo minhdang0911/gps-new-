@@ -564,3 +564,9 @@ export function __getAddressCacheStats() {
     };
 }
 
+// Tự động khởi động nạp ngầm IndexedDB ngay khi nạp module trên trình duyệt (0ms sẵn sàng)
+if (typeof window !== 'undefined') {
+    void ensureAddressCacheHydrated();
+}
+
+

@@ -1,30 +1,21 @@
-/* =========================
-   FILE 1: ManageDevicesPage.jsx
-   ========================= */
+// app/manage/devices/page.jsx
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { Form, message, Modal, DatePicker, Input } from 'antd';
-import dayjs from 'dayjs';
+import React, { useEffect, useState } from 'react';
+import { message } from 'antd';
+import dynamic from 'next/dynamic';
+import 'intro.js/introjs.css';
+import '../../styles/intro-custom.css';
 
-// map icons
 import markerIconStop from '../../assets/marker-red.png';
 import markerRun from '../../assets/marker-run.png';
 import markerRun50 from '../../assets/marker-run50.png';
 import markerRun80 from '../../assets/marker-run80.png';
 
 import { getTodayForFileName } from '../../util/FormatDate';
-
-import { getDevices, createDevice, updateDevice, deleteDevice } from '../../lib/api/devices';
-import { getDeviceCategories } from '../../lib/api/deviceCategory';
-import { getVehicleCategories } from '../../lib/api/vehicleCategory';
-import { getUserList } from '../../lib/api/user';
+import { getDevices } from '../../lib/api/devices';
 import { getLastCruise } from '../../lib/api/cruise';
 import { getBatteryStatusByImei } from '../../lib/api/batteryStatus';
-
-// ✅ maintain APIs
-import { startMaintenance, confirmMaintenance } from '../../lib/api/maintain';
-
 import vi from '../../locales/vi.json';
 import en from '../../locales/en.json';
 
@@ -32,73 +23,34 @@ import { useManageDevicesData } from '../../hooks/manageDevices/useManageDevices
 import { useDeviceDetail } from '../../hooks/manageDevices/useDeviceDetail';
 import { useLeafletDeviceMap } from '../../hooks/manageDevices/useLeafletDeviceMap';
 import { useDeviceCommandBar } from '../../hooks/manageDevices/useDeviceCommandBar';
-
 import { exportDevicesExcel } from '../../util/manageDevices/exportDevicesExcel';
-import { buildPendingFormValues, validatePhone, extractErrorMsg } from '../../util/manageDevices/deviceFormHandlers';
-
-import { useUndoDeleteToast } from '../../hooks/common/useUndoDeleteToast';
 import { refreshAllMasterData } from '../../hooks/useMasterData';
-
-import dynamic from 'next/dynamic';
-
-import DeviceListView from '../../components/manageDevices/DeviceListView';
-const DeviceDetailView = dynamic(() => import('../../components/manageDevices/DeviceDetailView'), { ssr: false });
-const DeviceUpsertModal = dynamic(() => import('../../components/manageDevices/DeviceUpsertModal'), { ssr: false });
-const DeviceCommandBarModal = dynamic(() => import('../../components/manageDevices/DeviceCommandBarModal'), { ssr: false });
-
-// ✅ Intro.js
-import 'intro.js/introjs.css';
-import '../../styles/intro-custom.css';
-
-// ✅ guided tour
-import { useGuidedTour } from '../../hooks/common/useGuidedTour';
-
-// ✅ Centralized hooks
 import { useIsEn } from '../../hooks/useLang';
 import { useAuthStore } from '../../stores/authStore';
 
-const { TextArea } = Input;
+import DeviceListView from '../../components/manageDevices/DeviceListView';
+import DeviceModalsContainer from './components/DeviceModalsContainer';
+import { useDeviceMaintenanceActions } from './hooks/useDeviceMaintenanceActions';
+import { useDeviceTourConfig } from './hooks/useDeviceTourConfig';
+import { useDeviceCrudActions } from './hooks/useDeviceCrudActions';
+
+const DeviceDetailView = dynamic(() => import('../../components/manageDevices/DeviceDetailView'), { ssr: false });
+
 const locales = { vi, en };
-
-function getConfirmedByFromLocalStorage() {
-    if (typeof window === 'undefined') return '';
-    const raw = localStorage.getItem('userid');
-    if (!raw) return '';
-
-    const s = raw.trim();
-    if (s.startsWith('{') || s.startsWith('[') || s.startsWith('"')) {
-        try {
-            const parsed = JSON.parse(s);
-            if (parsed && typeof parsed === 'object' && parsed._id) return String(parsed._id);
-            if (typeof parsed === 'string') return parsed;
-            return '';
-        } catch {
-            return s;
-        }
-    }
-    return s;
-}
-
-// ✅ Scroll restore constants
-const SCROLL_SESSION_KEY = 'iky_devices_scroll';
 const PAGE_SIZE_KEY = 'iky_devices_page_size';
+const FILTER_SESSION_KEY = 'iky_manage_devices_filters';
 
 export default function ManageDevicesPage() {
-    const user = useAuthStore((s) => s.user);
+    const user = useAuthStore((state) => state.user);
     const currentRole = user?.position || user?.role || (typeof window !== 'undefined' ? localStorage.getItem('role') || '' : '');
-
-    const canEditDevice   = currentRole === 'administrator' || currentRole === 'distributor';
-    const canAddDevice    = currentRole === 'administrator' || currentRole === 'distributor';
+    const canEditDevice = currentRole === 'administrator' || currentRole === 'distributor';
+    const canAddDevice = currentRole === 'administrator' || currentRole === 'distributor';
     const canDeleteDevice = currentRole === 'administrator';
 
-    // ✅ useLang hook tập trung thay vì duplicate logic
     const isEn = useIsEn();
     const t = isEn ? locales.en.manageDevices : locales.vi.manageDevices;
 
-    const FILTER_SESSION_KEY = 'iky_manage_devices_filters';
-
     const [filters, setFilters] = useState(() => {
-        // Khôi phục filter từ sessionStorage (tồn tại trong tab hiện tại)
         if (typeof window === 'undefined') return { phone_number: '', license_plate: '', imei: '', driver: '' };
         try {
             const saved = sessionStorage.getItem(FILTER_SESSION_KEY);
@@ -108,40 +60,26 @@ export default function ManageDevicesPage() {
         }
     });
 
-    // Lưu filter mỗi khi thay đổi
     useEffect(() => {
         try { sessionStorage.setItem(FILTER_SESSION_KEY, JSON.stringify(filters)); } catch {}
     }, [filters]);
 
-    const [viewMode, setViewMode] = useState('list');
-    const [selectedDevice, setSelectedDevice] = useState(null);
-
-    const [modalMode, setModalMode] = useState(null);
-    const [pendingFormValues, setPendingFormValues] = useState(null);
-    const [form] = Form.useForm();
-
     const [currentPage, setCurrentPage] = useState(1);
-
-    // ✅ Persist pageSize vào localStorage
     const [pageSize, setPageSize] = useState(() => {
         if (typeof window === 'undefined') return 10;
         const saved = parseInt(localStorage.getItem(PAGE_SIZE_KEY), 10);
         return saved > 0 ? saved : 10;
     });
 
-    // Lưu pageSize mỗi khi thay đổi
     useEffect(() => {
         try { localStorage.setItem(PAGE_SIZE_KEY, String(pageSize)); } catch {}
     }, [pageSize]);
 
-    // ✅ Ưu tiên load danh sách thiết bị trước, sau đó mới load options (hoặc ngay khi mở modal)
     const [optionsReady, setOptionsReady] = useState(false);
     useEffect(() => {
-        const t = setTimeout(() => setOptionsReady(true), 600);
-        return () => clearTimeout(t);
+        const timer = setTimeout(() => setOptionsReady(true), 600);
+        return () => clearTimeout(timer);
     }, []);
-
-    const shouldLoadOptions = modalMode !== null || optionsReady;
 
     const {
         devices,
@@ -149,7 +87,6 @@ export default function ManageDevicesPage() {
         devicesLoading,
         devicesValidating,
         mutateDevices,
-
         deviceCategories,
         vehicleCategories,
         userOptions,
@@ -162,7 +99,7 @@ export default function ManageDevicesPage() {
         pageSize,
         filters,
         getDevices,
-        loadOptions: shouldLoadOptions,
+        loadOptions: optionsReady,
     });
 
     const handleRefresh = async () => {
@@ -171,18 +108,28 @@ export default function ManageDevicesPage() {
         message.success({ content: isEn ? 'Refreshed' : 'Đã làm mới dữ liệu', key: 'refresh_devices', duration: 1.5 });
     };
 
+    const crud = useDeviceCrudActions({
+        canAddDevice,
+        canEditDevice,
+        canDeleteDevice,
+        refreshOptions,
+        mutateDevices,
+        destroyMap: () => {},
+        isEn,
+        t,
+    });
+
     const { cruiseInfo, mutateCruise, batteryInfo, getEngineStatusText, getVehicleStatusText } = useDeviceDetail({
-        viewMode,
-        selectedDevice,
+        viewMode: crud.viewMode,
+        selectedDevice: crud.selectedDevice,
         isEn,
         getLastCruise,
         getBatteryStatusByImei,
     });
 
-
     const { destroyMap } = useLeafletDeviceMap({
-        enabled: viewMode === 'detail',
-        selectedDevice,
+        enabled: crud.viewMode === 'detail',
+        selectedDevice: crud.selectedDevice,
         cruiseInfo,
         batteryInfo,
         markerAssets: { stop: markerIconStop, run: markerRun, run50: markerRun50, run80: markerRun80 },
@@ -197,134 +144,8 @@ export default function ManageDevicesPage() {
             const rs = await exportDevicesExcel({ getDevices, total, filters, t, isEn, getTodayForFileName });
             if (!rs.ok && rs.reason === 'NO_DATA') return message.warning(t.noData);
             message.success(t.exportSuccess || (isEn ? 'Export Excel success' : 'Xuất Excel thành công'));
-        } catch (err) {
-            console.error(err);
+        } catch {
             message.error(t.exportFailed || (isEn ? 'Export Excel failed' : 'Xuất Excel thất bại'));
-        }
-    };
-
-    const openAdd = () => {
-        if (!canAddDevice) return message.warning(t.noPermissionAdd);
-        setSelectedDevice(null);
-        setPendingFormValues(null);
-        refreshOptions?.();
-        setModalMode('add');
-    };
-
-    const openEdit = (item) => {
-        if (!canEditDevice) return message.warning(t.noPermissionEdit);
-        setSelectedDevice(item);
-        setPendingFormValues(buildPendingFormValues(item));
-        refreshOptions?.();
-        setModalMode('edit');
-    };
-
-    const handleSave = async () => {
-        try {
-            const values = await form.validateFields();
-            if (!validatePhone(values.phone_number)) {
-                return message.error(t.invalidPhone || (isEn ? 'Invalid phone number' : 'Số điện thoại không hợp lệ'));
-            }
-
-            const payload = {
-                imei: values.imei,
-                phone_number: values.phone_number,
-                license_plate: values.license_plate,
-                driver: values.driver,
-                device_category_id: values.device_category_id,
-                vehicle_category_id: values.vehicle_category_id,
-                user_id: values.user_id,
-                distributor_id: values.distributor_id,
-            };
-
-            if (modalMode === 'edit') {
-                await updateDevice(selectedDevice._id, payload);
-                message.success(t.updateSuccess);
-            } else if (modalMode === 'add') {
-                await createDevice(payload);
-                message.success(t.createSuccess);
-            }
-
-            setModalMode(null);
-            setPendingFormValues(null);
-            mutateDevices();
-        } catch (err) {
-            message.error(extractErrorMsg(err, isEn));
-        }
-    };
-
-    const goBack = () => {
-        setViewMode('list');
-        setSelectedDevice(null);
-        destroyMap();
-        // ✅ Restore scroll position sau khi back về list
-        setTimeout(() => {
-            try {
-                const saved = sessionStorage.getItem(SCROLL_SESSION_KEY);
-                if (saved) window.scrollTo({ top: parseInt(saved, 10), behavior: 'instant' });
-            } catch {}
-        }, 50);
-    };
-
-    const handleSelectDevice = (item) => {
-        // ✅ Lưu scroll position trước khi vào detail
-        try { sessionStorage.setItem(SCROLL_SESSION_KEY, String(window.scrollY)); } catch {}
-        setSelectedDevice(item);
-        setViewMode('detail');
-    };
-
-    const { start: startUndoDelete } = useUndoDeleteToast();
-
-    const handleDelete = (item) => {
-        if (!canDeleteDevice) return message.warning(t.noPermissionDelete);
-
-        startUndoDelete({
-            id: item._id,
-            item,
-            ms: 5000,
-            renderTitle: (it) => (
-                <span>
-                    {isEn ? 'Deleting device ' : 'Đang xoá thiết bị'} <b>{it?.imei}</b>
-                </span>
-            ),
-            renderUndoText: () => (isEn ? 'Undo' : 'Hoàn tác'),
-            renderCountdownText: (remainMs) => (
-                <>
-                    {isEn ? 'Finalizing in ' : 'Xoá sau '}
-                    <b>{Math.ceil(remainMs / 1000)}</b>
-                    {isEn ? 's' : ' giây'}
-                </>
-            ),
-            optimisticRemove: () => {
-                mutateDevices(
-                    (prev) => {
-                        if (!prev?.devices) return prev;
-                        return { ...prev, devices: prev.devices.filter((d) => d._id !== item._id) };
-                    },
-                    { revalidate: false },
-                );
-            },
-            rollback: () => mutateDevices(),
-            apiDelete: () => deleteDevice(item._id),
-            onSuccess: () => {
-                message.success(t.deleteSuccess);
-                mutateDevices();
-            },
-            onError: (err) => message.error(extractErrorMsg(err, isEn)),
-        });
-    };
-
-    const popupInParent = (node) => node.parentElement;
-    const optionsLoading = dcLoading || vcLoading || usersLoading;
-
-    const onModalOpenChange = (open) => {
-        if (!open) return;
-
-        if (modalMode === 'add') {
-            form.resetFields();
-        } else if (modalMode === 'edit') {
-            form.resetFields();
-            if (pendingFormValues) form.setFieldsValue(pendingFormValues);
         }
     };
 
@@ -333,134 +154,19 @@ export default function ManageDevicesPage() {
         isEn,
         canAddDevice,
         getDevices,
-        viewMode,
-        selectedDevice,
+        viewMode: crud.viewMode,
+        selectedDevice: crud.selectedDevice,
         onExportExcel,
-        onOpenAdd: openAdd,
-        onGoBack: goBack,
+        onOpenAdd: crud.openAdd,
+        onGoBack: () => { crud.goBack(); destroyMap(); },
     });
 
-    // ✅ TOUR CONFIG (per-page)
-    const tourSteps = useMemo(() => {
-        const steps = [
-            {
-                element: '[data-tour="filters"]',
-                intro: isEn ? 'Use filters to quickly find devices.' : 'Dùng bộ lọc để tìm thiết bị nhanh.',
-            },
-            {
-                element: '[data-tour="searchBtn"]',
-                intro: isEn ? 'Click to search with current filters.' : 'Bấm để tìm theo bộ lọc hiện tại.',
-            },
-            {
-                element: '[data-tour="cmdk"]',
-                intro: isEn ? 'Press Ctrl+K to open Command Bar.' : 'Nhấn Ctrl+K để mở Command Bar.',
-            },
-            { element: '[data-tour="table"]', intro: isEn ? 'This is the device list.' : 'Đây là danh sách thiết bị.' },
-        ];
-
-        if (canAddDevice) {
-            steps.push({
-                element: '[data-tour="addBtn"]',
-                intro: isEn ? 'Admins can add new devices here.' : 'Admin có thể thêm thiết bị ở đây.',
-            });
-        }
-        return steps;
-    }, [isEn, canAddDevice]);
-
-    const tour = useGuidedTour({
-        isEn,
-        enabled: viewMode === 'list',
-        steps: tourSteps,
-    });
-
-    // =========================
-    // ✅ FIX: loading per-row (activate)
-    // =========================
-    const [activatingId, setActivatingId] = useState(null);
-
-    const handleActivateDevice = async (device) => {
-        if (!device?._id) return message.warning(isEn ? 'Invalid device.' : 'Thiết bị không hợp lệ.');
-        try {
-            setActivatingId(device._id);
-            await startMaintenance({ device_id: device._id });
-            message.success(isEn ? 'Activated device.' : 'Kích hoạt thiết bị thành công.');
-        } catch (err) {
-            console.error(err);
-            const backendMsg = err?.response?.data?.message || '';
-            if (backendMsg === 'Maintenance already started') {
-                message.info(isEn ? 'Maintenance already started.' : 'Thiết bị đã được kích hoạt trước đó.');
-                return;
-            }
-            message.error(isEn ? 'Activate failed.' : 'Kích hoạt thiết bị thất bại.');
-        } finally {
-            setActivatingId(null);
-        }
-    };
-
-    const confirmedBy = useMemo(() => getConfirmedByFromLocalStorage(), []);
-    const [confirmOpen, setConfirmOpen] = useState(false);
-    const [confirming, setConfirming] = useState(false);
-    const [confirmForm] = Form.useForm();
-    const [deviceToMaintain, setDeviceToMaintain] = useState(null);
-
-    const openMaintainModal = (device) => {
-        if (!device) return;
-        if (!confirmedBy)
-            return message.error(
-                isEn ? 'Missing user info. Please login again.' : 'Không tìm thấy tài khoản. Vui lòng đăng nhập lại.',
-            );
-        if (!device?.imei) return message.error(isEn ? 'Missing IMEI.' : 'Thiếu IMEI để xác nhận.');
-
-        setDeviceToMaintain(device);
-        setConfirmOpen(true);
-        confirmForm.setFieldsValue({
-            maintenanceDate: dayjs(),
-            note: '',
-        });
-    };
-
-    const handleConfirmMaintenance = async () => {
-        if (!deviceToMaintain?.imei) return message.error(isEn ? 'Missing IMEI.' : 'Thiếu IMEI để xác nhận.');
-        if (!confirmedBy) return message.error(isEn ? 'Missing user info.' : 'Không tìm thấy tài khoản.');
-
-        try {
-            setConfirming(true);
-
-            const values = confirmForm.getFieldsValue();
-            const dateValue = values?.maintenanceDate;
-            const maintenanceDate = dateValue ? dayjs(dateValue).format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD');
-            const note = values?.note?.trim();
-
-            const payload = { imei: deviceToMaintain.imei, confirmedBy, maintenanceDate };
-            if (note) payload.note = note;
-
-            await confirmMaintenance(payload);
-
-            message.success(isEn ? 'Confirmed maintenance.' : 'Xác nhận bảo dưỡng thành công.');
-            setConfirmOpen(false);
-            setDeviceToMaintain(null);
-            confirmForm.resetFields();
-        } catch (err) {
-            console.error(err);
-            const backendMsg = err?.response?.data?.message || '';
-            if (backendMsg.includes('E11000') && backendMsg.includes('imei')) {
-                message.info(
-                    isEn ? 'This maintenance was already confirmed.' : 'Thiết bị chưa đủ điều kiện để bảo dưỡng.',
-                );
-                setConfirmOpen(false);
-                setDeviceToMaintain(null);
-                confirmForm.resetFields();
-                return;
-            }
-            message.error(isEn ? 'Confirm maintenance failed.' : 'Xác nhận bảo dưỡng thất bại.');
-        } finally {
-            setConfirming(false);
-        }
-    };
+    const tour = useDeviceTourConfig({ isEnglish: isEn, viewMode: crud.viewMode, canAddDevice });
+    const maintenance = useDeviceMaintenanceActions({ isEnglish: isEn });
 
     return (
         <>
-            {viewMode === 'list' ? (
+            {crud.viewMode === 'list' ? (
                 <DeviceListView
                     t={t}
                     isEn={isEn}
@@ -477,123 +183,48 @@ export default function ManageDevicesPage() {
                     canAddDevice={canAddDevice}
                     canEditDevice={canEditDevice}
                     canDeleteDevice={canDeleteDevice}
-                    onOpenAdd={openAdd}
-                    onOpenEdit={openEdit}
-                    onDelete={handleDelete}
-                    onSelectDevice={handleSelectDevice}
+                    onOpenAdd={crud.openAdd}
+                    onOpenEdit={crud.openEdit}
+                    onDelete={crud.handleDelete}
+                    onSelectDevice={crud.handleSelectDevice}
                     onExportExcel={onExportExcel}
                     onOpenCommandBar={cmd.open}
                     onStartTour={tour.start}
-                    // ✅ NEW row actions
-                    onActivateDevice={handleActivateDevice}
-                    onMaintainDevice={openMaintainModal}
-                    activatingId={activatingId}
+                    onActivateDevice={maintenance.handleActivateDevice}
+                    onMaintainDevice={maintenance.openMaintainModal}
+                    activatingId={maintenance.activatingDeviceId}
                     onRefresh={handleRefresh}
-
                 />
             ) : (
                 <DeviceDetailView
                     t={t}
                     isEn={isEn}
-                    selectedDevice={selectedDevice}
+                    selectedDevice={crud.selectedDevice}
                     cruiseInfo={cruiseInfo}
                     batteryInfo={batteryInfo}
                     getEngineStatusText={getEngineStatusText}
                     getVehicleStatusText={getVehicleStatusText}
                     mutateCruise={mutateCruise}
-                    onBack={goBack}
+                    onBack={() => { crud.goBack(); destroyMap(); }}
                 />
             )}
 
-            <DeviceCommandBarModal
-                open={cmd.cmdOpen}
-                onClose={cmd.close}
+            <DeviceModalsContainer
+                cmd={cmd}
+                crud={crud}
+                maintenance={maintenance}
                 isEn={isEn}
                 t={t}
-                cmdQuery={cmd.cmdQuery}
-                setCmdQuery={cmd.setCmdQuery}
-                cmdLoading={cmd.cmdLoading}
-                cmdResults={cmd.cmdResults}
-                onRunAction={(a) => {
-                    cmd.close();
-                    a?.run?.();
-                }}
-                onSelectDevice={(d) => {
-                    cmd.close();
-                    handleSelectDevice(d);
-                }}
                 canEditDevice={canEditDevice}
                 canDeleteDevice={canDeleteDevice}
-                onEditDevice={(d) => {
-                    cmd.close();
-                    openEdit(d);
-                }}
-                onDeleteDevice={(d) => {
-                    cmd.close();
-                    handleDelete(d);
-                }}
-            />
-
-            <DeviceUpsertModal
-                open={!!modalMode}
-                title={modalMode === 'add' ? t.modal.addTitle : t.modal.editTitle}
-                t={t}
-                form={form}
-                onCancel={() => {
-                    setModalMode(null);
-                    setPendingFormValues(null);
-                }}
-                onOk={handleSave}
-                afterOpenChange={onModalOpenChange}
                 deviceCategories={deviceCategories}
                 vehicleCategories={vehicleCategories}
                 userOptions={userOptions}
                 dcLoading={dcLoading}
                 vcLoading={vcLoading}
                 usersLoading={usersLoading}
-                optionsLoading={optionsLoading}
-                popupInParent={popupInParent}
-                isEn={isEn}
                 currentRole={currentRole}
             />
-
-            {/* ✅ Confirm maintenance modal */}
-            <Modal
-                title={isEn ? 'Confirm maintenance' : 'Xác nhận bảo dưỡng'}
-                open={confirmOpen}
-                onCancel={() => {
-                    setConfirmOpen(false);
-                    setDeviceToMaintain(null);
-                    confirmForm.resetFields();
-                }}
-                okText={isEn ? 'Confirm' : 'Xác nhận'}
-                cancelText={isEn ? 'Cancel' : 'Hủy'}
-                onOk={handleConfirmMaintenance}
-                confirmLoading={confirming}
-                destroyOnHidden
-            >
-                <div style={{ marginBottom: 12 }}>
-                    <b>{isEn ? 'Device:' : 'Thiết bị:'}</b>{' '}
-                    {deviceToMaintain?.license_plate || deviceToMaintain?.imei || '-'}
-                    <br />
-                    <b>IMEI:</b> {deviceToMaintain?.imei || '-'}
-                </div>
-
-                <Form layout="vertical" form={confirmForm}>
-                    <Form.Item label={isEn ? 'Maintenance date' : 'Ngày bảo dưỡng'} name="maintenanceDate">
-                        <DatePicker
-                            format="YYYY-MM-DD"
-                            allowClear
-                            style={{ width: '100%' }}
-                            getPopupContainer={(trigger) => trigger.parentElement}
-                        />
-                    </Form.Item>
-
-                    <Form.Item label={isEn ? 'Note (optional)' : 'Ghi chú (không bắt buộc)'} name="note">
-                        <TextArea rows={3} placeholder={isEn ? 'Enter note if needed...' : 'Nhập ghi chú nếu cần...'} />
-                    </Form.Item>
-                </Form>
-            </Modal>
         </>
     );
 }
