@@ -18,6 +18,7 @@ export {
     isValidGeocodeCoord,
     pickBestGoongV2Address,
     callGoongWithRotation,
+    saveAddressToCache,
 };
 
 const WRITE_BATCH_CHUNK_SIZE = 25;
@@ -126,7 +127,17 @@ export const reverseGeocodeAddress = async (lat, lon, opts = {}) => {
 
     return resolveAddressWithCache(lat, lon, { lang, isEn }, async (latNum, lonNum, resolvedLang) => {
         if (typeof window === 'undefined' || skipServerApi) {
-            return fetchAddressFromProviders(latNum, lonNum, resolvedLang);
+            const fetched = await fetchAddressFromProviders(latNum, lonNum, resolvedLang);
+            if (fetched?.address && typeof window !== 'undefined') {
+                void fetchServerApi('/api/geocode/reverse', {
+                    lat: latNum,
+                    lon: lonNum,
+                    lang: resolvedLang,
+                    address: fetched.address,
+                    deprecatedAddress: fetched.deprecatedAddress || '',
+                }).catch(() => {});
+            }
+            return fetched;
         }
 
         const serverPromise = callServerGeocodeReverse(latNum, lonNum, resolvedLang).then((res) => {

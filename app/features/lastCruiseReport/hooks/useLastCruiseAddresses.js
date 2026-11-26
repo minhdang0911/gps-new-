@@ -1,11 +1,13 @@
 // app/features/lastCruiseReport/hooks/useLastCruiseAddresses.js
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
+    reverseGeocodeAddress,
     reverseGeocodeBatch,
     getCachedAddressSync,
     getCoordCacheKey,
     isValidGeocodeCoord,
     ensureAddressCacheHydrated,
+    saveAddressToCache,
 } from '../../../lib/address/reverseGeocode';
 import {
     clusterCoordinatesByProximity,
@@ -101,7 +103,7 @@ export function useLastCruiseAddresses({ rows = [], allRows = [], isEn = false, 
 
             const clearLoadingKey = (coordKey) => {
                 inflightKeysRef.current.delete(coordKey);
-                if (!isEffectActive || !mountedRef.current) return;
+                if (!mountedRef.current) return;
                 setLoadingByKey((prev) => {
                     if (!prev[coordKey]) return prev;
                     const nextState = { ...prev };
@@ -133,6 +135,7 @@ export function useLastCruiseAddresses({ rows = [], allRows = [], isEn = false, 
                     const resolvedAddress = fastDbResultMap?.[medoid.key]?.address;
                     if (resolvedAddress) {
                         fastResolvedUpdates[medoid.key] = resolvedAddress;
+                        addressByKeyRef.current[medoid.key] = resolvedAddress;
                     } else {
                         stillUnresolvedMedoids.push(medoid);
                     }
@@ -148,7 +151,7 @@ export function useLastCruiseAddresses({ rows = [], allRows = [], isEn = false, 
                     }
                 }
 
-                if (isEffectActive && mountedRef.current && Object.keys(fastResolvedUpdates).length > 0) {
+                if (mountedRef.current && Object.keys(fastResolvedUpdates).length > 0) {
                     setAddressByKey((prev) => ({ ...prev, ...fastResolvedUpdates }));
                 }
 
@@ -166,15 +169,25 @@ export function useLastCruiseAddresses({ rows = [], allRows = [], isEn = false, 
                 await Promise.all(
                     stillUnresolvedMedoids.map(async (medoid) => {
                         try {
-                            const res = await reverseGeocodeAddress(medoid.lat, medoid.lon, { lang, isEn });
+                            const res = await reverseGeocodeAddress(medoid.lat, medoid.lon, {
+                                lang,
+                                isEn,
+                                skipServerApi: true,
+                            });
                             const address = res?.address || '';
-                            for (const [satKey, targetMedoidKey] of satelliteToMedoidKeyMap.entries()) {
-                                if (targetMedoidKey === medoid.key) {
-                                    if (address) {
+                            if (address) {
+                                for (const [satKey, targetMedoidKey] of satelliteToMedoidKeyMap.entries()) {
+                                    if (targetMedoidKey === medoid.key) {
                                         addressByKeyRef.current[satKey] = address;
                                         slowResolvedUpdates[satKey] = address;
+                                        clearLoadingKey(satKey);
                                     }
-                                    clearLoadingKey(satKey);
+                                }
+                            } else {
+                                for (const [satKey, targetMedoidKey] of satelliteToMedoidKeyMap.entries()) {
+                                    if (targetMedoidKey === medoid.key) {
+                                        clearLoadingKey(satKey);
+                                    }
                                 }
                             }
                         } catch {
@@ -187,7 +200,7 @@ export function useLastCruiseAddresses({ rows = [], allRows = [], isEn = false, 
                     })
                 );
 
-                if (isEffectActive && mountedRef.current && Object.keys(slowResolvedUpdates).length > 0) {
+                if (mountedRef.current && Object.keys(slowResolvedUpdates).length > 0) {
                     setAddressByKey((prev) => ({ ...prev, ...slowResolvedUpdates }));
                 }
             } catch (err) {
@@ -283,6 +296,7 @@ export function useLastCruiseAddresses({ rows = [], allRows = [], isEn = false, 
                 const coordKey = getCoordCacheKey(row.lat, row.lon, lang);
                 const resolved =
                     addressByKey[coordKey] ??
+                    addressByKeyRef.current[coordKey] ??
                     getCachedAddressSync(row.lat, row.lon, { lang, isEn })?.address ??
                     '';
 
