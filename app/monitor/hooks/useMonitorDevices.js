@@ -30,16 +30,16 @@ export function useMonitorDevices({ token, onDeviceSelectReset, onOpenPopup }) {
             }
             return data;
         },
-        initialData: () => {
+        placeholderData: () => {
             const cached = getCachedDevices();
             if (cached && cached.length > 0) {
                 return { devices: cached };
             }
             return undefined;
         },
-        staleTime: 3 * 60_000,
+        staleTime: 0,
         gcTime: 10 * 60_000,
-        refetchOnMount: false,
+        refetchOnMount: 'always',
         refetchOnWindowFocus: false,
         refetchOnReconnect: false,
     });
@@ -76,15 +76,25 @@ export function useMonitorDevices({ token, onDeviceSelectReset, onOpenPopup }) {
         if (!target && preselectId) {
             target = deviceList.find((d) => d._id === preselectId);
         }
-        if (!target && !selectedDevice) {
+        if (!target && selectedDeviceRef.current) {
+            target = deviceList.find(
+                (d) => d._id === selectedDeviceRef.current._id || d.imei === selectedDeviceRef.current.imei
+            );
+        }
+        if (!target) {
             target = deviceList[0];
         }
 
         if (target) {
-            setSelectedDevice(target);
-            onOpenPopup?.();
-            if (preselectImei || preselectId) {
-                setSearchText(target.license_plate || target.imei || '');
+            const current = selectedDeviceRef.current;
+            const isInitial = !current;
+            const isChanged = !current || current._id !== target._id || current.imei !== target.imei;
+            if (isChanged) {
+                setSelectedDevice(target);
+                if (isInitial) onOpenPopup?.();
+                if (preselectImei || preselectId) {
+                    setSearchText(target.license_plate || target.imei || '');
+                }
             }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
